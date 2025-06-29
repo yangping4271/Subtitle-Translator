@@ -1,0 +1,29 @@
+[project]
+name = "subtitle-translator"
+version = "0.1.0"
+description = "A unified tool for speech transcription and subtitle translation."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "openai",
+    "retry",
+    "python-dotenv",
+    "requests",
+    "dacite>=1.9.2",
+    "huggingface-hub>=0.30.2",
+    "librosa>=0.11.0",
+    "mlx>=0.22.1",
+    "numpy>=2.2.5",
+    "typer>=0.15.3",
+    "httpx[socks]",
+]
+
+[project.scripts]
+subtitle-translate = "subtitle_translator.cli:app"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
