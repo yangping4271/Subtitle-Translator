@@ -18,6 +18,9 @@ def setup_environment():
     加载顺序 (后者覆盖前者):
     1. 用户全局配置文件 (~/.config/subtitle_translator/.env)
     2. 项目配置文件 (从当前目录向上找到的第一个 .env)
+    
+    特殊功能：
+    - 如果全局配置不存在，但找到项目配置，会自动复制项目配置作为全局配置
     """
     global _env_loaded
     
@@ -27,14 +30,30 @@ def setup_environment():
     
     env_loaded = False
     
-    # 1. 加载用户全局配置文件 (适用于已安装的应用)
-    # typer.get_app_dir() 会创建目录，如果它不存在的话
+    # 准备路径
     app_dir = Path(typer.get_app_dir(APP_NAME, force_posix=True))
     user_env_path = app_dir / ".env"
     
     # 确保目录存在
     app_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 查找项目本地的 .env 文件
+    project_env_path_str = find_dotenv(usecwd=True)
+    project_env_path = Path(project_env_path_str) if project_env_path_str else None
+    
+    # 🎯 智能配置复制：如果全局配置不存在但项目配置存在，自动复制
+    if not user_env_path.is_file() and project_env_path and project_env_path.is_file():
+        try:
+            import shutil
+            shutil.copy2(project_env_path, user_env_path)
+            logging.info(f"✅ 首次运行检测到项目配置文件，已自动复制到全局配置:")
+            logging.info(f"   源文件: {project_env_path}")
+            logging.info(f"   目标文件: {user_env_path}")
+            logging.info(f"   现在你可以在任意目录下运行 subtitle-translate 命令！")
+        except Exception as e:
+            logging.warning(f"⚠️  复制配置文件失败: {e}")
 
+    # 1. 加载用户全局配置文件 (适用于已安装的应用)
     if user_env_path.is_file():
         # 加载全局配置，但不覆盖已存在的环境变量，关闭verbose输出
         load_dotenv(user_env_path, verbose=False)
@@ -42,15 +61,11 @@ def setup_environment():
         env_loaded = True
         
     # 2. 加载项目本地的 .env 文件 (方便开发，并可覆盖全局配置)
-    # find_dotenv(usecwd=True) 会从当前工作目录向上查找
-    project_env_path_str = find_dotenv(usecwd=True)
-    if project_env_path_str:
-        project_env_path = Path(project_env_path_str)
-        if project_env_path.is_file():
-            # 使用 override=True 来覆盖任何已存在的环境变量，确保项目配置优先，关闭verbose输出
-            load_dotenv(project_env_path, verbose=False, override=True)
-            logging.info(f"已加载项目环境配置 (覆盖全局配置): {project_env_path}")
-            env_loaded = True
+    if project_env_path and project_env_path.is_file():
+        # 使用 override=True 来覆盖任何已存在的环境变量，确保项目配置优先，关闭verbose输出
+        load_dotenv(project_env_path, verbose=False, override=True)
+        logging.info(f"已加载项目环境配置 (覆盖全局配置): {project_env_path}")
+        env_loaded = True
 
     if not env_loaded:
         logging.warning(

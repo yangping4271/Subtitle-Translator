@@ -29,7 +29,27 @@ uv tool install .
 
 ### 配置
 
-创建 `.env` 文件配置 API 密钥：
+#### 方式一：自动配置（推荐）
+
+1. 复制示例配置文件：
+```bash
+cp env.example .env
+```
+
+2. 编辑 `.env` 文件，填写你的实际 API 密钥：
+```bash
+# 编辑配置文件
+nano .env  # 或使用你喜欢的编辑器
+```
+
+3. 使用 uv 安装工具：
+```bash
+uv tool install .
+```
+
+4. 首次运行时，工具会自动将项目配置复制到全局配置目录，之后你就可以在任意目录运行命令了！
+
+#### 方式二：手动配置
 
 ```bash
 # 在项目根目录或 ~/.config/subtitle_translator/ 目录下创建 .env 文件
@@ -97,8 +117,24 @@ Options:
 工具支持灵活的配置方式，按优先级顺序：
 
 1. **项目配置** (优先级最高): 项目根目录的 `.env` 文件
-2. **全局配置**: `~/.config/subtitle_translator/.env` 文件
+2. **全局配置**: `~/.subtitle_translator/.env` 文件 (macOS/Linux)
 3. **系统环境变量**: 系统级环境变量
+
+#### 🎯 智能配置复制
+
+当你首次运行工具时，如果检测到：
+- 全局配置文件不存在
+- 但当前项目目录存在 `.env` 文件
+
+工具会**自动将项目配置复制到全局配置目录**，并显示以下信息：
+```
+✅ 首次运行检测到项目配置文件，已自动复制到全局配置:
+   源文件: /path/to/project/.env
+   目标文件: ~/.subtitle_translator/.env
+   现在你可以在任意目录下运行 subtitle-translate 命令！
+```
+
+这意味着你只需要在项目中配置一次，就能在系统的任何地方使用该工具！
 
 ### 必需配置
 
@@ -185,45 +221,6 @@ uv run python -m subtitle_translator.cli --help
 
 - `pyproject.toml` - 项目配置和依赖声明
 - `uv.lock` - 锁定的依赖版本
-
-### 关键依赖
-
-- `parakeet-mlx` - 语音转录
-- `python-dotenv` - 环境变量管理
-- `typer` - 命令行接口
-- `rich` - 富文本输出
-- `openai` - LLM API 调用
-
-## ⚠️ 已知问题
-
-### 1. 环境变量重复加载输出
-- **现象**: 运行时出现多次"已加载环境配置"消息
-- **影响**: 仅输出显示，不影响功能
-- **状态**: 正在调查中
-
-### 2. SRT2ASS 语法警告
-- **现象**: 正则表达式转义序列警告
-- **影响**: 不影响功能，仅显示警告
-- **状态**: 计划修复
-
-## 📈 使用统计
-
-经过实际测试验证：
-
-- ✅ 成功处理 96 个字幕条目的视频文件
-- ✅ 生成 20KB 的高质量双语 ASS 文件
-- ✅ 翻译准确性和术语一致性优秀
-- ✅ 多线程处理稳定高效
-
-## 🤝 贡献指南
-
-欢迎贡献代码和反馈问题！
-
-1. Fork 项目
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
 
 ## 📄 许可证
 
