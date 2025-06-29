@@ -1,9 +1,39 @@
+import os
+from pathlib import Path
+
+# 立即尝试加载 .env 文件
+def _immediate_load_env():
+    """立即加载环境变量，确保在任何配置初始化之前完成"""
+    try:
+        from dotenv import load_dotenv, find_dotenv
+        
+        # 全局配置路径
+        global_env = Path.home() / ".config" / "subtitle_translator" / ".env"
+        
+        # 项目配置路径
+        project_env_str = find_dotenv(usecwd=True)
+        project_env = Path(project_env_str) if project_env_str else None
+        
+        # 加载全局配置
+        if global_env.exists():
+            load_dotenv(global_env, verbose=False)
+            print(f"已加载全局配置: {global_env}")
+        
+        # 加载项目配置（可覆盖全局配置）
+        if project_env and project_env.exists():
+            load_dotenv(project_env, verbose=False, override=True)
+            print(f"已加载项目配置: {project_env}")
+            
+    except Exception as e:
+        print(f"加载环境变量失败: {e}")
+
+# 立即执行环境变量加载
+_immediate_load_env()
+
 import typer
 from typing_extensions import Annotated
-from pathlib import Path
 import logging
 import glob
-import os
 from dotenv import load_dotenv, find_dotenv
 
 # 应用名称，用于配置文件目录
@@ -21,6 +51,7 @@ def setup_environment():
     
     特殊功能：
     - 如果全局配置不存在，但找到项目配置，会自动复制项目配置作为全局配置
+    - 使用标准的 .config 目录存储全局配置
     """
     global _env_loaded
     
@@ -30,8 +61,8 @@ def setup_environment():
     
     env_loaded = False
     
-    # 准备路径
-    app_dir = Path(typer.get_app_dir(APP_NAME, force_posix=True))
+    # 准备路径 - 使用标准的 .config 目录
+    app_dir = Path.home() / ".config" / APP_NAME
     user_env_path = app_dir / ".env"
     
     # 确保目录存在
@@ -112,6 +143,8 @@ class OpenAIAPIError(Exception):
 
 class SubtitleTranslatorService:
     def __init__(self):
+        # 确保环境变量已加载
+        setup_environment()
         self.config = get_default_config()
         self.summarizer = SubtitleSummarizer(config=self.config)
 
@@ -200,7 +233,10 @@ class SubtitleTranslatorService:
             logger.error(f"翻译失败: {str(e)}")
             raise
 
-app = typer.Typer(help="一个集成了语音转录、字幕翻译和格式转换的命令行工具")
+app = typer.Typer(
+    help="一个集成了语音转录、字幕翻译和格式转换的命令行工具",
+    epilog="💡 首次使用请运行: subtitle-translate init 来配置API密钥"
+)
 
 @app.callback(invoke_without_command=True)
 def main(
@@ -214,11 +250,14 @@ def main(
     reflect: bool = typer.Option(False, "--reflect", "-r", help="启用反思翻译模式，提高翻译质量但会增加处理时间。"),
     debug: bool = typer.Option(False, "--debug", "-d", help="启用调试日志级别，显示更详细的处理信息。"),
 ):
-    # 将环境设置移到这里，确保只执行一次
+    """字幕翻译工具主命令"""
     setup_environment()
-
+    
+    # 如果调用了子命令，就不执行主逻辑
     if ctx.invoked_subcommand is not None:
         return
+
+
         
     if debug:
         os.environ['DEBUG'] = 'true'
@@ -483,6 +522,192 @@ Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
                 print(f"[bold green]输入文件为SRT，保持原文件不变:[/bold green] {temp_srt_path}")
             else:
                 print(f"[bold green]保留原始转录文件:[/bold green] {temp_srt_path}")
+
+@app.command("init")
+def init():
+    """初始化全局配置 - 检查当前目录.env文件或交互式输入配置"""
+    print("[bold green]🚀 字幕翻译工具配置初始化[/bold green]")
+    
+    # 获取全局配置目录和文件路径 - 使用标准的 .config 目录
+    app_dir = Path.home() / ".config" / APP_NAME
+    global_env_path = app_dir / ".env"
+    current_env_path = Path(".env")
+    
+    # 确保全局配置目录存在
+    app_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"全局配置目录: [cyan]{app_dir}[/cyan]")
+    
+    # 检查当前目录是否有.env文件
+    if current_env_path.exists():
+        print(f"✅ 发现当前目录的 .env 文件: [cyan]{current_env_path.absolute()}[/cyan]")
+        
+        # 显示当前.env文件内容（隐藏敏感信息）
+        try:
+            with open(current_env_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            print("\n📄 当前配置文件内容预览:")
+            for line in content.split('\n'):
+                if line.strip() and not line.strip().startswith('#'):
+                    if 'API_KEY' in line:
+                        key, value = line.split('=', 1)
+                        masked_value = value[:10] + '*' * (len(value) - 10) if len(value) > 10 else '*' * len(value)
+                        print(f"   {key}={masked_value}")
+                    else:
+                        print(f"   {line}")
+        except Exception as e:
+            print(f"⚠️  读取配置文件失败: {e}")
+        
+        # 询问是否复制
+        print("\n是否将此配置复制到全局配置? (y/N): ", end="", flush=True)
+        
+        # 使用标准输入读取用户选择
+        import sys
+        response = sys.stdin.readline().strip().lower()
+        
+        if response in ['y', 'yes', '是', '确定']:
+            try:
+                import shutil
+                shutil.copy2(current_env_path, global_env_path)
+                print(f"✅ 配置已复制到: [bold green]{global_env_path}[/bold green]")
+                print("🎉 现在你可以在任意目录下运行 subtitle-translate 命令！")
+            except Exception as e:
+                print(f"[bold red]❌ 复制失败: {e}[/bold red]")
+                raise typer.Exit(code=1)
+        else:
+            print("⏭️  跳过复制，配置未更改")
+    
+    else:
+        print("📝 当前目录没有 .env 文件，开始交互式配置...")
+        
+        # 交互式输入配置
+        print("\n请输入以下配置信息:")
+        import sys
+        
+        # API基础URL
+        print("🌐 API基础URL [默认: https://api.openai.com/v1]: ", end="", flush=True)
+        base_url = sys.stdin.readline().strip()
+        if not base_url:
+            base_url = "https://api.openai.com/v1"
+        
+        # API密钥
+        print("🔑 API密钥: ", end="", flush=True)
+        api_key = sys.stdin.readline().strip()
+        
+        if not api_key.strip():
+            print("[bold red]❌ API密钥不能为空[/bold red]")
+            raise typer.Exit(code=1)
+        
+        # LLM模型
+        model_options = [
+            "gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo",
+            "claude-3-sonnet", "claude-3-haiku",
+            "google/gemini-2.5-flash-lite-preview-06-17"
+        ]
+        
+        print(f"\n🤖 可选的LLM模型:")
+        for i, model in enumerate(model_options, 1):
+            print(f"   {i}. {model}")
+        
+        print("请选择LLM模型 (输入序号或直接输入模型名) [默认: gpt-4o-mini]: ", end="", flush=True)
+        llm_model = sys.stdin.readline().strip()
+        if not llm_model:
+            llm_model = "gpt-4o-mini"
+        
+        # 如果输入的是数字，转换为对应的模型
+        if llm_model.isdigit():
+            idx = int(llm_model) - 1
+            if 0 <= idx < len(model_options):
+                llm_model = model_options[idx]
+            else:
+                print("⚠️  无效选择，使用默认模型: gpt-4o-mini")
+                llm_model = "gpt-4o-mini"
+        
+        # 可选配置
+        print("📊 日志级别 (DEBUG/INFO/WARNING/ERROR) [默认: INFO]: ", end="", flush=True)
+        log_level = sys.stdin.readline().strip().upper()
+        if not log_level:
+            log_level = "INFO"
+        
+        print("🐛 启用调试模式? (y/N) [默认: N]: ", end="", flush=True)
+        debug_response = sys.stdin.readline().strip().lower()
+        debug_mode = debug_response in ['y', 'yes', '是', '确定']
+        
+        # 生成配置文件内容
+        config_content = f"""# Subtitle Translator 配置文件
+# 由 subtitle-translate init 命令自动生成
+
+# OpenAI API 配置 (必需)
+# API 基础URL
+OPENAI_BASE_URL={base_url}
+
+# API 密钥
+OPENAI_API_KEY={api_key}
+
+# 默认 LLM 模型
+LLM_MODEL={llm_model}
+
+# 可选配置
+# 日志级别
+LOG_LEVEL={log_level}
+
+# 调试模式
+DEBUG={str(debug_mode).lower()}
+
+# 使用说明
+# 1. 此配置文件已保存到全局配置目录 (~/.config/subtitle_translator/.env)
+# 2. 你现在可以在任意目录下运行 subtitle-translate 命令
+# 3. 如需修改配置，可以编辑此文件或重新运行 subtitle-translate init
+"""
+        
+        # 保存到全局配置
+        try:
+            with open(global_env_path, 'w', encoding='utf-8') as f:
+                f.write(config_content)
+            print(f"\n✅ 配置已保存到: [bold green]{global_env_path}[/bold green]")
+            
+            # 显示配置摘要
+            print("\n📋 配置摘要:")
+            print(f"   🌐 API URL: {base_url}")
+            print(f"   🔑 API Key: {api_key[:10]}{'*' * (len(api_key) - 10)}")
+            print(f"   🤖 LLM模型: {llm_model}")
+            print(f"   📊 日志级别: {log_level}")
+            print(f"   🐛 调试模式: {debug_mode}")
+            
+            print("\n🎉 配置完成！现在你可以在任意目录下运行 subtitle-translate 命令！")
+            
+        except Exception as e:
+            print(f"[bold red]❌ 保存配置失败: {e}[/bold red]")
+            raise typer.Exit(code=1)
+    
+    # 验证配置
+    print("\n🔍 验证配置...")
+    try:
+        # 重新加载环境变量
+        global _env_loaded
+        _env_loaded = False
+        setup_environment()
+        
+        # 测试API连接
+        from .translation_core.utils.test_opanai import test_openai
+        
+        base_url = os.getenv('OPENAI_BASE_URL')
+        api_key = os.getenv('OPENAI_API_KEY')
+        model = os.getenv('LLM_MODEL')
+        
+        print(f"正在测试API连接... ({model})")
+        success, message = test_openai(base_url, api_key, model)
+        
+        if success:
+            print("✅ API连接测试成功！")
+            print(f"响应: {message[:100]}...")
+        else:
+            print(f"❌ API连接测试失败: {message}")
+            
+    except Exception as e:
+        print(f"⚠️  配置验证过程中出现错误: {e}")
+        print("但配置文件已成功保存，你可以稍后手动验证")
 
 if __name__ == "__main__":
     app()
