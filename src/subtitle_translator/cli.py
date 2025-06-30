@@ -6,6 +6,8 @@ from dotenv import find_dotenv, load_dotenv
 import typer
 from typing_extensions import Annotated
 import glob
+import sys
+import time
 
 
 # 应用名称，用于配置文件目录
@@ -72,7 +74,6 @@ def setup_environment():
     # 初始化logger（需要在环境变量加载后进行）
     if logger is None:
         # 检测debug模式：检查命令行参数和环境变量
-        import sys
         debug_mode = ('-d' in sys.argv or '--debug' in sys.argv or 
                      os.environ.get('DEBUG', '').lower() in ('1', 'true', 'yes'))
         
@@ -102,7 +103,6 @@ def setup_environment():
             if missing_vars:
                 logger.error(f"缺少必需的环境变量: {', '.join(missing_vars)}")
                 logger.error("请运行 'subtitle-translate init' 来配置API密钥，或设置相应的环境变量。")
-                import sys
                 sys.exit(1)
 
 # 在所有其他项目导入之前，首先加载环境变量
@@ -122,10 +122,10 @@ from .transcription_core.cli import to_srt
 from .translation_core.optimizer import SubtitleOptimizer
 from .translation_core.summarizer import SubtitleSummarizer
 from .translation_core.spliter import merge_segments
-from .translation_core.config import get_default_config
+from .translation_core.config import get_default_config, SubtitleConfig
 from .translation_core.data import load_subtitle, SubtitleData
 from .translation_core.utils.test_openai import test_openai
-from .translation_core.utils.logger import setup_logger
+from .translation_core.utils.logger import setup_logger, log_section_start, log_section_end, log_stats, create_progress_logger
 
 
 # 配置日志
@@ -139,49 +139,71 @@ class OpenAIAPIError(Exception):
 
 class SubtitleTranslatorService:
     def __init__(self):
-        self.config = get_default_config()
-        self.summarizer = SubtitleSummarizer(config=self.config)
+        self.config = SubtitleConfig()
+        self.summarizer = SubtitleSummarizer(self.config)
 
     def _init_translation_env(self, llm_model: str) -> None:
-        """初始化翻译环境"""
+        """初始化翻译环境并测试连接"""
+        start_time = time.time()
+        log_section_start(logger, "翻译环境初始化", "⚙️")
+        
         if llm_model:
-            # 如果指定了模型，将其设置为所有功能的默认模型
-            self.config.llm_model = llm_model
             self.config.split_model = llm_model
             self.config.summary_model = llm_model
             self.config.translation_model = llm_model
 
-        logger.info(f"使用 {self.config.openai_base_url} 作为API端点")
-        logger.info(f"模型配置:")
-        logger.info(f"  断句模型: {self.config.split_model}")
-        logger.info(f"  总结模型: {self.config.summary_model}")
-        logger.info(f"  翻译模型: {self.config.translation_model}")
+        logger.info(f"🌐 API端点: {self.config.openai_base_url}")
+        
+        model_config = {
+            "断句模型": self.config.split_model,
+            "总结模型": self.config.summary_model,
+            "翻译模型": self.config.translation_model
+        }
+        log_stats(logger, model_config, "模型配置")
         
         # 使用翻译模型进行连接测试
+        logger.info("🔌 正在测试API连接...")
         success, error_msg = test_openai(self.config.openai_base_url, self.config.openai_api_key, self.config.translation_model)
         if not success:
+            logger.error(f"❌ API连接测试失败: {error_msg}")
             raise OpenAIAPIError(error_msg)
+        
+        logger.info("✅ API连接测试成功")
+        
+        elapsed_time = time.time() - start_time
+        log_section_end(logger, "翻译环境初始化", elapsed_time, "✅")
 
     def translate_srt(self, input_srt_path: Path, target_lang: str, output_dir: Path, 
                       llm_model: Optional[str] = None, reflect: bool = False) -> Path:
         """翻译字幕文件"""
         try:
-            logger.info("字幕翻译任务开始...")     
+            task_start_time = time.time()
+            log_section_start(logger, "字幕翻译任务", "🎬")
+            
             # 初始化翻译环境
             self._init_translation_env(llm_model)
             
             # 加载字幕文件
+            logger.info("📂 正在加载字幕文件...")
             asr_data = load_subtitle(str(input_srt_path))
-            logger.debug(f"字幕内容: {asr_data.to_txt()[:100]}...")  
+            logger.info(f"📊 字幕统计: 共 {len(asr_data.segments)} 条字幕")
+            logger.debug(f"字幕内容预览: {asr_data.to_txt()[:100]}...")  
             
-            # 检查是否需要重新断句 (这里简化处理，如果需要更复杂的断句逻辑，可以从原项目复制)
+            # 检查是否需要重新断句
             if asr_data.is_word_timestamp():
+                section_start_time = time.time()
+                log_section_start(logger, "字幕断句处理", "✂️")
+                
                 model = self.config.split_model
-                logger.info(f"正在使用{model} 断句")
-                logger.info(f"句子限制长度为{self.config.max_word_count_english}字")
+                logger.info(f"🤖 使用模型: {model}")
+                logger.info(f"📏 句子长度限制: {self.config.max_word_count_english} 字")
+                
                 asr_data = merge_segments(asr_data, model=model, 
                                        num_threads=self.config.thread_num, 
-                                       save_split=None) # 暂时不保存断句结果
+                                       save_split=None)
+                
+                section_elapsed = time.time() - section_start_time
+                log_section_end(logger, "字幕断句处理", section_elapsed, "✅")
             
             # 获取字幕摘要
             summarize_result = self._get_subtitle_summary(asr_data, str(input_srt_path))
@@ -190,49 +212,77 @@ class SubtitleTranslatorService:
             translate_result = self._translate_subtitles(asr_data, summarize_result, reflect)
             
             # 保存字幕
+            logger.info("💾 正在保存翻译结果...")
             base_name = input_srt_path.stem
-            # 假设目标语言是中文，输出文件名为 original_filename.zh.srt
-            # 如果需要支持多种目标语言，这里需要更复杂的逻辑来生成文件名
             zh_output_path = output_dir / f"{base_name}.{target_lang}.srt"
-            en_output_path = output_dir / f"{base_name}.en.srt" # 假设也保存英文原版
+            en_output_path = output_dir / f"{base_name}.en.srt"
 
             asr_data.save_translations_to_files(
                 translate_result,
                 str(en_output_path),
                 str(zh_output_path)
             )
-            # logger.info(f"翻译完成，输出文件: {zh_output_path}")
+            
+            total_elapsed = time.time() - task_start_time
+            
+            # 任务完成统计
+            final_stats = {
+                "输入文件": input_srt_path.name,
+                "字幕数量": len(asr_data.segments),
+                "目标语言": target_lang,
+                "翻译模式": "反思翻译" if reflect else "常规翻译",
+                "总耗时": f"{total_elapsed:.1f}秒"
+            }
+            log_stats(logger, final_stats, "任务完成统计")
+            log_section_end(logger, "字幕翻译任务", total_elapsed, "🎉")
+            
             return zh_output_path
                 
         except OpenAIAPIError as e:
-            error_msg = f"\n{'='*50}\n错误: {str(e)}\n{'='*50}\n"
-            logger.error(error_msg)
+            logger.error(f"🚨 API错误: {str(e)}")
             raise typer.Exit(code=1)
             
         except Exception as e:
-            error_msg = f"\n{'='*50}\n处理过程中发生错误: {str(e)}\n{'='*50}\n"
-            logger.exception(error_msg)
+            logger.error(f"💥 处理过程中发生错误: {str(e)}")
+            logger.exception("详细错误信息:")
             raise typer.Exit(code=1)
 
     def _get_subtitle_summary(self, asr_data: SubtitleData, input_file: str) -> dict:
         """获取字幕内容摘要"""
-        logger.info(f"正在使用 {self.config.summary_model} 总结字幕...")
+        section_start_time = time.time()
+        log_section_start(logger, "字幕内容分析", "🔍")
+        
+        logger.info(f"🤖 使用模型: {self.config.summary_model}")
         summarize_result = self.summarizer.summarize(asr_data.to_txt(), input_file)
         logger.info(f"总结字幕内容:\n{summarize_result.get('summary')}\n")
+        
+        section_elapsed = time.time() - section_start_time
+        log_section_end(logger, "字幕内容分析", section_elapsed, "✅")
+        
         return summarize_result
 
     def _translate_subtitles(self, asr_data: SubtitleData, summarize_result: dict, reflect: bool = False) -> list:
         """翻译字幕内容"""
-        logger.info(f"正在使用 {self.config.translation_model} 翻译字幕...")
+        section_start_time = time.time()
+        mode_name = "反思翻译" if reflect else "常规翻译"
+        log_section_start(logger, f"字幕{mode_name}", "🌍")
+        
+        logger.info(f"🤖 使用模型: {self.config.translation_model}")
+        logger.info(f"⚡ 线程数: {self.config.thread_num}")
+        
         try:
             translator = SubtitleOptimizer(
                 config=self.config,
                 need_reflect=reflect
             )
             translate_result = translator.translate(asr_data, summarize_result)
+            
+            section_elapsed = time.time() - section_start_time
+            log_section_end(logger, f"字幕{mode_name}", section_elapsed, "🎉")
+            
             return translate_result
         except Exception as e:
-            logger.error(f"翻译失败: {str(e)}")
+            logger.error(f"❌ 翻译失败: {str(e)}")
             raise
 
 app = typer.Typer(

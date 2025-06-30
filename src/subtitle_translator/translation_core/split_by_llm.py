@@ -81,7 +81,8 @@ def split_by_end_marks(sentence: str) -> List[str]:
 def split_by_llm(text: str,
                 model: str = None,
                 max_word_count_english: int = 14,
-                max_retries: int = 3) -> List[str]:
+                max_retries: int = 3,
+                batch_index: int = None) -> List[str]:
     """
     使用LLM拆分句子
     
@@ -90,19 +91,18 @@ def split_by_llm(text: str,
         model: 使用的语言模型，如果为None则使用配置中的断句模型
         max_word_count_english: 英文最大单词数
         max_retries: 最大重试次数
+        batch_index: 批次索引，用于日志显示
         
     Returns:
         List[str]: 拆分后的句子列表
     """
-    logger.info(f"单词数{count_words(text)}, 分段文本: {text[:50]}...{text[-50:]}")
+    logger.info(f"📝 处理文本: 共{count_words(text)}个单词")
     
     # 初始化客户端
     config = SubtitleConfig()
     # 如果没有指定模型，使用配置中的断句模型
     if model is None:
         model = config.split_model
-    
-    logger.info(f"使用断句模型: {model}")
     
     client = OpenAI(
         base_url=config.openai_base_url,
@@ -144,6 +144,9 @@ def split_by_llm(text: str,
 
         # 验证句子长度
         new_sentences = []
+        long_sentence_count = 0
+        super_long_count = 0
+        
         for sentence in sentences:
             # 首先按结束标记拆分句子
             segments = split_by_end_marks(sentence)
@@ -154,9 +157,11 @@ def split_by_llm(text: str,
                 word_count = count_words(segment)
                 
                 if max_word_count_english < word_count < threshold:
-                    logger.info(f"长句: {word_count}, 文本: {segment}")
-                if word_count > threshold:
-                    logger.info(f"超长句: {word_count}, 文本: {segment}")
+                    long_sentence_count += 1
+                    logger.debug(f"⚠️ 长句: {word_count}字 - {segment[:30]}...")
+                elif word_count > threshold:
+                    super_long_count += 1
+                    logger.info(f"🔄 超长句分割: {word_count}字 - {segment[:30]}...")
                     # 尝试切分句子
                     split_results = split_by_common_words(segment)
                     new_sentences.extend(split_results)
@@ -165,20 +170,28 @@ def split_by_llm(text: str,
         
         sentences = new_sentences
 
+        # 记录统计信息
+        if long_sentence_count > 0:
+            logger.info(f"📊 发现 {long_sentence_count} 个长句")
+        if super_long_count > 0:
+            logger.info(f"✂️ 自动分割 {super_long_count} 个超长句")
+
         # 验证结果
         word_count = count_words(text)
         expected_segments = word_count / max_word_count_english
         actual_segments = len(sentences)
         
         if actual_segments < expected_segments * 0.9:
-            logger.warning(f"断句数量不足：预期 {expected_segments:.1f}，实际 {actual_segments}")
-            
+            logger.warning(f"⚠️ 断句数量不足：预期 {expected_segments:.1f}，实际 {actual_segments}")
+        
+        batch_prefix = f"[批次{batch_index}]" if batch_index else ""
+        logger.info(f"✅ {batch_prefix} 断句完成: {len(sentences)} 个句子")
         return sentences
         
     except Exception as e:
         if max_retries > 0:
             logger.warning(f"API调用失败: {str(e)}，剩余重试次数: {max_retries-1}")
-            return split_by_llm(text, model, max_word_count_english, max_retries-1)
+            return split_by_llm(text, model, max_word_count_english, max_retries-1, batch_index)
         else:
             logger.error(f"API调用失败, 无法拆分句子: {str(e)}")
             # 如果API调用失败，使用简单的句子拆分

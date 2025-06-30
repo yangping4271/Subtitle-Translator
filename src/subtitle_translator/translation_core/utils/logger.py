@@ -6,6 +6,7 @@ from pathlib import Path
 import queue
 import threading
 from typing import Optional
+import time
 
 # 路径
 ROOT_PATH = Path(__file__).parent.parent
@@ -23,6 +24,108 @@ def is_debug_mode():
 
 # 日志配置
 # LOG_LEVEL = logging.DEBUG if is_debug_mode() else logging.INFO # 这一行将被移除
+
+class ColoredFormatter(logging.Formatter):
+    """带颜色和emoji的日志格式化器"""
+    
+    # ANSI 颜色代码
+    COLORS = {
+        'DEBUG': '\033[36m',    # 青色
+        'INFO': '\033[32m',     # 绿色
+        'WARNING': '\033[33m',  # 黄色
+        'ERROR': '\033[31m',    # 红色
+        'CRITICAL': '\033[35m', # 紫色
+        'RESET': '\033[0m'      # 重置
+    }
+    
+    # 日志级别对应的emoji
+    EMOJIS = {
+        'DEBUG': '🔍',
+        'INFO': '📋',
+        'WARNING': '⚠️',
+        'ERROR': '❌',
+        'CRITICAL': '🚨'
+    }
+    
+    def __init__(self, use_color=True, use_emoji=True):
+        self.use_color = use_color
+        self.use_emoji = use_emoji
+        super().__init__()
+    
+    def format(self, record):
+        # 获取基础时间格式
+        time_str = self.formatTime(record, '%Y-%m-%d %H:%M:%S')
+        
+        # 添加emoji（如果启用）
+        emoji = self.EMOJIS.get(record.levelname, '') if self.use_emoji else ''
+        
+        # 获取模块名简化版
+        module_name = self._get_simplified_module_name(record.name)
+        
+        # 构建日志消息
+        if self.use_color:
+            color = self.COLORS.get(record.levelname, '')
+            reset = self.COLORS['RESET']
+            formatted_msg = f"{time_str} {emoji} [{color}{module_name}{reset}] {record.getMessage()}"
+        else:
+            formatted_msg = f"{time_str} {emoji} [{module_name}] {record.getMessage()}"
+        
+        return formatted_msg
+    
+    def _get_simplified_module_name(self, name):
+        """简化模块名显示"""
+        name_mapping = {
+            '__main__': '主程序',
+            'subtitle_spliter': '断句处理',
+            'subtitle_summarizer': '内容总结',
+            'subtitle_optimizer': '翻译优化',
+            'subtitle_aligner': '字幕对齐',
+            'subtitle_data': '数据处理'
+        }
+        return name_mapping.get(name, name)
+
+class ProgressLogger:
+    """进度日志工具"""
+    
+    def __init__(self, logger, total_steps, task_name="任务"):
+        self.logger = logger
+        self.total_steps = total_steps
+        self.task_name = task_name
+        self.current_step = 0
+        self.start_time = time.time()
+    
+    def update(self, step=None, message=""):
+        """更新进度"""
+        if step is not None:
+            self.current_step = step
+        else:
+            self.current_step += 1
+            
+        percentage = (self.current_step / self.total_steps) * 100
+        elapsed = time.time() - self.start_time
+        
+        # 生成进度条
+        bar_length = 20
+        filled_length = int(bar_length * self.current_step / self.total_steps)
+        bar = '█' * filled_length + '▒' * (bar_length - filled_length)
+        
+        # 预估剩余时间
+        if self.current_step > 0:
+            eta = (elapsed / self.current_step) * (self.total_steps - self.current_step)
+            eta_str = f" (预计剩余: {eta:.0f}秒)" if eta > 1 else ""
+        else:
+            eta_str = ""
+        
+        progress_msg = f"🚀 {self.task_name} [{bar}] {percentage:.1f}% ({self.current_step}/{self.total_steps}){eta_str}"
+        if message:
+            progress_msg += f" - {message}"
+            
+        self.logger.info(progress_msg)
+    
+    def complete(self, message="任务完成"):
+        """标记任务完成"""
+        elapsed = time.time() - self.start_time
+        self.logger.info(f"✅ {self.task_name}完成！总耗时: {elapsed:.1f}秒 - {message}")
 
 class QueueListenerHandler(logging.handlers.QueueHandler):
     """
@@ -44,25 +147,22 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
             self._queue_listener.start()
             
     def _create_handlers(self):
-        formatter = logging.Formatter(
-            '%(asctime)s [%(name)s] %(levelname)s: %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        # 控制台处理器
+        # 控制台处理器（带颜色和emoji）
         console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        console_handler.setLevel(self.level) # 使用实例的level
+        console_formatter = ColoredFormatter(use_color=True, use_emoji=True)
+        console_handler.setFormatter(console_formatter)
+        console_handler.setLevel(self.level)
         
-        # 文件处理器
+        # 文件处理器（不带颜色但有emoji）
         Path(LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(
             LOG_FILE,
             mode='w',  # 使用写入模式，覆盖旧文件
             encoding='utf-8'
         )
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(self.level) # 使用实例的level
+        file_formatter = ColoredFormatter(use_color=False, use_emoji=True)
+        file_handler.setFormatter(file_formatter)
+        file_handler.setLevel(self.level)
         
         return [console_handler, file_handler]
 
@@ -92,7 +192,7 @@ def setup_logger(name: str,
     
     # 创建队列处理器（如果还没有创建）
     if queue_handler is None:
-        queue_handler = QueueListenerHandler(log_queue, level) # 传入level
+        queue_handler = QueueListenerHandler(log_queue, level)
         queue_handler.start_listener()
     
     logger.addHandler(queue_handler)
@@ -103,6 +203,25 @@ def setup_logger(name: str,
         logging.getLogger(lib).setLevel(logging.ERROR)
     
     return logger
+
+def create_progress_logger(logger, total_steps, task_name="任务"):
+    """创建进度日志器的便捷函数"""
+    return ProgressLogger(logger, total_steps, task_name)
+
+def log_section_start(logger, section_name, emoji="🔧"):
+    """记录节开始"""
+    logger.info(f"\n{emoji} {section_name} 开始")
+
+def log_section_end(logger, section_name, elapsed_time=None, emoji="✅"):
+    """记录节结束"""
+    time_info = f" (耗时: {elapsed_time:.1f}秒)" if elapsed_time else ""
+    logger.info(f"{emoji} {section_name} 完成{time_info}\n")
+
+def log_stats(logger, stats_dict, title="统计信息"):
+    """记录统计信息"""
+    logger.info(f"📊 {title}:")
+    for key, value in stats_dict.items():
+        logger.info(f"   {key}: {value}")
 
 def shutdown_logging():
     """

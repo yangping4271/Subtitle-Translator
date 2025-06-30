@@ -35,7 +35,7 @@ class SubtitleSummarizer:
             # 获取不带扩展名的文件名
             readable_filename = path.stem.replace('_', ' ').replace('-', ' ')
 
-            logger.info(f"可读性文件名: {readable_filename}")            
+            logger.info(f"📋 可读性文件名: {readable_filename}")            
             # 更新提示词，强调文件名的权威性
             message = [
                 {"role": "system", "content": (

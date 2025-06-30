@@ -72,8 +72,8 @@ class SubtitleOptimizer:
         self.thread_num = self.config.thread_num
         self.batch_num = self.config.batch_size
         self.executor = ThreadPoolExecutor(max_workers=self.thread_num)
-        # 改用字典存储日志，使用ID作为键以自动去重
-        self.batch_logs = {}
+        # 使用列表存储日志
+        self.batch_logs = []
 
     def translate(self, asr_data, summary_content: Dict) -> List[Dict]:
         """
@@ -264,19 +264,15 @@ class SubtitleOptimizer:
             i = end_idx
         
         # 记录批次信息
-        logger.info(f"开始批量翻译任务: 预设每批次{self.batch_num}条字幕")
-        logger.info(f"共{len(chunks)}个批次, 平均{sum(len(chunk) for chunk in chunks)/len(chunks):.0f}条字幕")
+        logger.info(f"📋 翻译任务规划: {len(chunks)}个批次，每批次约{self.batch_num}条字幕")
         
         adjusted_count = getattr(self, '_adjusted_batch_count', 0)
         if adjusted_count > 0:
-            logger.info(f"有{adjusted_count}个批次因句子不完整而进行了调整，确保句子完整性")
+            logger.info(f"🔧 已优化{adjusted_count}个批次边界，确保句子完整性")
         
         # 检查是否达到最大线程限制
         actual_threads = min(len(chunks), self.thread_num)
-        if actual_threads < self.thread_num:
-            logger.info(f"实际使用线程数: {actual_threads}/{self.thread_num}")
-        else:
-            logger.info(f"实际使用线程数: {actual_threads}/{self.thread_num} (已达到配置的最大线程数)")
+        logger.info(f"⚡ 并发线程: {actual_threads}个")
         
         # 创建翻译任务
         futures = []
@@ -296,7 +292,10 @@ class SubtitleOptimizer:
         failed_chunks = []  # 记录失败的批次
         
         total = len(futures)
-        for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
+        completed = 0
+        
+        for future in concurrent.futures.as_completed(futures):
+            completed += 1
             try:
                 result = future.result()
                 for item in result:
@@ -311,11 +310,16 @@ class SubtitleOptimizer:
                         }
                     else:
                         translated_subtitles[k] = item["translation"]
-                logger.info(f"批量翻译进度: 第{i}/{total} 已完成翻译")
+                
+                # 显示进度（每完成25%显示一次）
+                progress_percentage = completed / total * 100
+                if completed == 1 or completed == total or progress_percentage % 25 < (100 / total):
+                    logger.info(f"🚀 翻译进度: {progress_percentage:.0f}% ({completed}/{total})")
+                    
             except Exception as e:
-                logger.error(f"批量翻译任务失败（批次 {i}/{total}）：{e}")
-                # 记录失败的批次，而不是立即抛出异常
-                failed_chunks.append(chunk_map[future])
+                failed_chunk = chunk_map[future]
+                logger.error(f"❌ 批次翻译失败: {e}")
+                failed_chunks.append(failed_chunk)
         
         # 返回成功的结果和失败的批次
         return {
@@ -459,76 +463,66 @@ class SubtitleOptimizer:
                         if len(removed) > 3 and len(added) > 3 and not any(c in removed for c in added):
                             return True
             return False
-            
-        # 统计计数
+
+        # 统计变更类型
         format_changes = 0
         content_changes = 0
         wrong_changes = 0
-            
-        # 按ID排序输出
-        sorted_ids = sorted(self.batch_logs.keys())
-        for i, id_num in enumerate(sorted_ids):
-            log = self.batch_logs[id_num]
-            original = log['original']
-            optimized = log['optimized']
-            
-            # 判断改动类型并使用不同级别输出日志
-            if is_format_change_only(original, optimized):
-                format_changes += 1
-                logger.debug(f"字幕ID {id_num} - 格式优化:")
-                logger.debug(f"原始: {original}")
-                logger.debug(f"优化: {optimized}")
-                # 格式优化使用debug级别分隔线
-                if i < len(sorted_ids) - 1:
-                    logger.debug("---")
-            else:
-                if is_wrong_replacement(original, optimized):
-                    wrong_changes += 1
-                    logger.error(f"字幕ID {id_num} - 可能存在错误替换:")
-                    logger.error(f"原始: {original}")
-                    logger.error(f"优化: {optimized}")
-                    # 错误替换使用error级别分隔线
-                    if i < len(sorted_ids) - 1:
-                        logger.error("---")
-                else:
-                    content_changes += 1
-                    logger.info(f"字幕ID {id_num} - 内容优化:")
-                    logger.info(f"原始: {original}")
-                    logger.info(f"优化: {optimized}")
-                    # 内容优化使用info级别分隔线
-                    if i < len(sorted_ids) - 1:
-                        logger.info("---")
+        reflect_changes = 0
 
-            if 'revised_translation' in log and log['revised_translation'] != log['translation']:
-                logger.info(f"字幕ID: {id_num} - 翻译优化:")
-                logger.info(f"字幕: {log['optimized']}")
-                logger.info(f"翻译: {log['translation']}")
-                logger.info(f"反思建议: {log['revise_suggestions']}")
-                logger.info(f"反思后翻译: {log['revised_translation']}")
-                if i < len(sorted_ids) - 1:
-                    logger.info("---")
-        
-        # 输出统计信息
-        logger.info("统计信息:")
-        logger.info(f"格式优化数量: {format_changes}")
-        logger.info(f"内容修改数量: {content_changes}")
+        # 遍历所有日志，只打印有实际改动的
+        change_count = 0
+        for log in self.batch_logs:
+            if log["type"] == "content_optimization":
+                id_num = log["id"]
+                original = log["original"]
+                optimized = log["optimized"]
+                
+                # 只在实际有变化时打印
+                if original != optimized:
+                    change_count += 1
+                    logger.info(f"🔧 字幕ID {id_num} - 内容优化:")
+                    logger.info(f"   原文: {original}")
+                    logger.info(f"   优化: {optimized}")
+                    
+                    # 分类统计
+                    if is_format_change_only(original, optimized):
+                        format_changes += 1
+                    elif is_wrong_replacement(original, optimized):
+                        wrong_changes += 1
+                    else:
+                        content_changes += 1
+            
+            elif log["type"] == "reflect_translation":
+                reflect_changes += 1
+                id_num = log["id"]
+                logger.info(f"🤔 字幕ID {id_num} - 反思翻译:")
+                logger.info(f"   字幕: {log['optimized']}")
+                logger.info(f"   初译: {log['translation']}")
+                logger.info(f"   建议: {log['revise_suggestions']}")
+                logger.info(f"   终译: {log['revised_translation']}")
+
+        # 显示统计摘要
+        logger.info("📈 优化统计:")
+        logger.info(f"   格式优化: {format_changes} 项")
+        logger.info(f"   内容修改: {content_changes} 项")
         if wrong_changes > 0:
-            logger.error(f"疑似错误替换数量: {wrong_changes}")
-        logger.info(f"总修改数量: {format_changes + content_changes + wrong_changes}")
-        logger.info("✅ 字幕优化结果汇总完成")
-        # 清空日志字典
-        self.batch_logs.clear()
+            logger.info(f"   ⚠️ 可疑替换: {wrong_changes} 项")
+        if reflect_changes > 0:
+            logger.info(f"   反思翻译: {reflect_changes} 项")
+        
+        total_changes = format_changes + content_changes + wrong_changes
+        logger.info(f"   总计修改: {total_changes} 项")
+        logger.info("✅ 字幕优化汇总完成")
 
     @retry.retry(tries=2)
     def _reflect_translate(self, original_subtitle: Dict[str, str], 
                           summary_content: Dict, batch_num=None, total_batches=None) -> List[Dict]:
         """反思翻译字幕"""
         subtitle_keys = sorted(map(int, original_subtitle.keys()))
-        batch_info = f"[批次 {batch_num}/{total_batches}] " if batch_num and total_batches else ""
-        if len(subtitle_keys) == self.batch_num:
-            logger.info(f"[+]{batch_info}正在反思翻译字幕：{subtitle_keys[0]} - {subtitle_keys[-1]}")
-        else:
-            logger.info(f"[+]{batch_info}正在反思翻译字幕：{subtitle_keys[0]} - {subtitle_keys[-1]} (共{len(subtitle_keys)}条)")
+        batch_info = f"[批次{batch_num}/{total_batches}]" if batch_num and total_batches else ""
+        
+        logger.debug(f"🤔 {batch_info} 反思翻译 {len(subtitle_keys)} 条字幕")
 
         max_retries = 2  # 最大重试次数
         current_try = 0
@@ -551,16 +545,16 @@ class SubtitleOptimizer:
                 if not response_content:
                     current_try += 1
                     if current_try < max_retries:
-                        logger.warning(f"反思翻译API返回空结果，第{current_try}次重试整个批次")
+                        logger.warning(f"⚠️ {batch_info} API返回空结果，第{current_try}次重试")
                         continue
-                    logger.error(f"反思翻译批次重试{max_retries}次后仍然失败，将使用默认翻译")
+                    logger.error(f"❌ {batch_info} 重试{max_retries}次仍失败，使用默认翻译")
                     response_content = {}
 
                 # 检查API返回的结果是否完整
                 problematic_ids = []
                 for k in original_subtitle.keys():
                     if str(k) not in response_content:
-                        logger.warning(f"API返回结果缺少字幕ID: {k}，将使用原始字幕")
+                        logger.warning(f"⚠️ API返回结果缺少字幕ID: {k}")
                         problematic_ids.append(k)
                         response_content[str(k)] = {
                             "optimized_subtitle": original_subtitle[str(k)],
@@ -604,15 +598,23 @@ class SubtitleOptimizer:
                     translated_subtitle.append(translated_text)
 
                     # 收集日志
-                    if (translated_text["original"] != translated_text["optimized"] or 
-                        translated_text["translation"] != translated_text["revised_translation"]):
-                        self.batch_logs[k] = {
+                    if translated_text["original"] != translated_text["optimized"]:
+                        self.batch_logs.append({
+                            'type': 'content_optimization',
+                            'id': k,
                             'original': translated_text['original'],
+                            'optimized': translated_text['optimized']
+                        })
+                    
+                    if translated_text["translation"] != translated_text["revised_translation"]:
+                        self.batch_logs.append({
+                            'type': 'reflect_translation',
+                            'id': k,
                             'optimized': translated_text['optimized'],
                             'translation': translated_text['translation'],
                             'revised_translation': translated_text['revised_translation'],
                             'revise_suggestions': translated_text['revise_suggestions']
-                        }
+                        })
 
                 return translated_subtitle
 
@@ -642,11 +644,9 @@ class SubtitleOptimizer:
                   summary_content: Dict, batch_num=None, total_batches=None) -> List[Dict]:
         """翻译字幕"""
         subtitle_keys = sorted(map(int, original_subtitle.keys()))
-        batch_info = f"[批次 {batch_num}/{total_batches}] " if batch_num and total_batches else ""
-        if len(subtitle_keys) == self.batch_num:
-            logger.info(f"[+]{batch_info}正在翻译字幕：{subtitle_keys[0]} - {subtitle_keys[-1]}")
-        else:
-            logger.info(f"[+]{batch_info}正在翻译字幕：{subtitle_keys[0]} - {subtitle_keys[-1]} (共{len(subtitle_keys)}条)")
+        batch_info = f"[批次{batch_num}/{total_batches}]" if batch_num and total_batches else ""
+        
+        logger.debug(f"🌍 {batch_info} 翻译 {len(subtitle_keys)} 条字幕")
 
         max_retries = 2  # 最大重试次数
         current_try = 0
@@ -669,27 +669,27 @@ class SubtitleOptimizer:
                 if not response_content:
                     current_try += 1
                     if current_try < max_retries:
-                        logger.warning(f"API返回空结果，第{current_try}次重试整个批次")
+                        logger.warning(f"⚠️ {batch_info} API返回空结果，第{current_try}次重试")
                         continue
-                    logger.error(f"批次重试{max_retries}次后仍然失败，将使用默认翻译")
+                    logger.error(f"❌ {batch_info} 重试{max_retries}次仍失败，使用默认翻译")
                     response_content = {}
 
                 # 检查API返回的结果是否完整
                 problematic_ids = []
                 for k in original_subtitle.keys():
                     if str(k) not in response_content:
-                        logger.warning(f"API返回结果缺少字幕ID: {k}，将使用原始字幕")
+                        logger.warning(f"⚠️ API返回结果缺少字幕ID: {k}")
                         problematic_ids.append(k)
                         response_content[str(k)] = {
                             "optimized_subtitle": original_subtitle[str(k)],
                             "translation": f"[翻译失败] {original_subtitle[str(k)]}"
                         }
                     elif "optimized_subtitle" not in response_content[str(k)]:
-                        logger.warning(f"字幕ID {k} 缺少optimized_subtitle字段，将使用原始字幕")
+                        logger.warning(f"⚠️ 字幕ID {k} 缺少optimized_subtitle字段")
                         response_content[str(k)]["optimized_subtitle"] = original_subtitle[str(k)]
                         problematic_ids.append(k)
                     elif "translation" not in response_content[str(k)]:
-                        logger.warning(f"字幕ID {k} 缺少translation字段，将使用默认翻译")
+                        logger.warning(f"⚠️ 字幕ID {k} 缺少translation字段")
                         response_content[str(k)]["translation"] = f"[翻译失败] {original_subtitle[str(k)]}"
                         problematic_ids.append(k)
 
@@ -706,20 +706,21 @@ class SubtitleOptimizer:
 
                     # 收集日志
                     if translated_text["original"] != translated_text["optimized"]:
-                        self.batch_logs[k] = {
+                        self.batch_logs.append({
+                            'type': 'content_optimization',
+                            'id': k,
                             'original': translated_text['original'],
-                            'optimized': translated_text['optimized'],
-                            'translation': translated_text['translation']
-                        }
+                            'optimized': translated_text['optimized']
+                        })
 
                 return translated_subtitle
 
             except Exception as e:
                 current_try += 1
                 if current_try < max_retries:
-                    logger.error(f"翻译失败，第{current_try}次重试整个批次。错误：{e}")
+                    logger.error(f"❌ {batch_info} 翻译失败，第{current_try}次重试: {e}")
                     continue
-                logger.error(f"翻译失败，重试{max_retries}次后仍然失败。错误：{e}")
+                logger.error(f"❌ {batch_info} 重试{max_retries}次仍失败: {e}")
                 # 创建默认的翻译结果
                 translated_subtitle = []
                 for k, v in original_subtitle.items():

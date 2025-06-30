@@ -258,13 +258,13 @@ def process_by_llm(segments: List[SubtitleSegment],
                    max_word_count_english: int = None,
                    batch_index: int = None) -> List[SubtitleSegment]:
     """
-    使用LLM处理分段
+    使用LLM处理字幕分段，进行拆分和合并
     
     Args:
         segments: 字幕分段列表
         model: 使用的语言模型，如果为None则使用配置中的断句模型
-        max_word_count_english: 英文最大单词数
-        batch_index: 批次编号
+        max_word_count_english: 英文最大单词数，如果为None则使用配置中的设置
+        batch_index: 批次索引，用于日志显示
         
     Returns:
         List[SubtitleSegment]: 处理后的字幕分段列表
@@ -280,13 +280,16 @@ def process_by_llm(segments: List[SubtitleSegment],
     txt = " ".join([seg.text.strip() for seg in segments])
     # 记录当前批次的单词数
     current_words = count_words(txt)
-    logger.info(f"批次 {batch_index}: 处理文本单词数: {current_words}")
+    batch_prefix = f"[批次{batch_index}]" if batch_index else ""
+    logger.debug(f"📝 {batch_prefix} 处理 {current_words} 个单词")
     
     # 使用LLM拆分句子
     sentences = split_by_llm(txt, 
                            model=model, 
-                           max_word_count_english=max_word_count_english)
-    logger.info(f"批次 {batch_index}: 句子提取完成，共 {len(sentences)} 句")
+                           max_word_count_english=max_word_count_english,
+                           batch_index=batch_index)
+    logger.debug(f"✂️ {batch_prefix} 提取 {len(sentences)} 个句子")
+    
     # 对当前分段进行合并处理
     merged_segments = merge_segments_based_on_sentences(segments, sentences)
     return merged_segments
@@ -420,6 +423,8 @@ def merge_segments(asr_data: SubtitleData,
         num_threads: 线程数量
         save_split: 保存断句结果的文件路径
     """
+    import time
+    from concurrent.futures import ThreadPoolExecutor
     
     # 如果没有指定模型，使用配置中的断句模型
     if model is None:
@@ -433,55 +438,69 @@ def merge_segments(asr_data: SubtitleData,
     word_threshold = 500
     asr_data_segments = split_by_sentences(asr_data, word_threshold=word_threshold)
     total_segments = len(asr_data_segments)
-    logger.info(f"按每组{word_threshold}个单词分组，共 {total_segments} 批次")
-
-    # 检查每个批次的单词数
+    
+    # 记录批次信息
+    logger.info(f"📋 批次规划: 每组{word_threshold}字，共 {total_segments} 个批次")
+    
+    # 显示批次分布（简化）
+    batch_info = []
     for i, segment in enumerate(asr_data_segments):
-        text = " ".join([seg.text.strip() for seg in segment.segments])
-        word_count = count_words(text)
-        logger.info(f"批次 {i+1}/{total_segments}: 单词数 {word_count}")
-
+        segment_text = " ".join([seg.text.strip() for seg in segment.segments])
+        word_count = count_words(segment_text)
+        batch_info.append(f"批次{i+1}: {word_count}字")
+    
+    logger.debug(f"批次详情: {', '.join(batch_info)}")
+    logger.info("🚀 开始并行断句处理...")
+    
     # 多线程处理每个分段
-    logger.info("开始并行处理每个分段...")
+    all_segments = []
+    start_time = time.time()
+    
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         def process_segment(args):
             index, asr_data_part = args
             try:
                 return process_by_llm(asr_data_part.segments, model=model, batch_index=index+1)
             except Exception as e:
+                logger.error(f"❌ 批次 {index+1} 处理失败: {str(e)}")
                 raise Exception(f"批次 {index+1} LLM处理失败: {str(e)}")
 
         # 并行处理所有分段，添加批次编号
-        processed_segments = list(executor.map(process_segment, enumerate(asr_data_segments)))
+        try:
+            processed_segments = list(executor.map(process_segment, enumerate(asr_data_segments)))
+        except Exception as e:
+            logger.error(f"💥 并行处理失败: {str(e)}")
+            raise
 
     # 合并所有处理后的分段
-    final_segments = []
-    for segment in processed_segments:
-        final_segments.extend(segment)
+    for i, segment in enumerate(processed_segments):
+        all_segments.extend(segment)
+        logger.debug(f"📈 处理进度: {((i+1)/len(processed_segments)*100):.0f}% ({i+1}/{len(processed_segments)})")
 
-    final_segments.sort(key=lambda seg: seg.start_time)
+    all_segments.sort(key=lambda seg: seg.start_time)
 
     # 如果需要保存断句结果
     if save_split:
         try:
-            # 获取所有文本
+            from .data import save_split_result
+            
+            # 获取输入的全部文本
             all_text = asr_data.to_txt()
             # 获取所有处理后的分段文本
-            all_segments = [seg.text for seg in final_segments]
+            split_sentences = [seg.text for seg in all_segments]
             
             # 显示断句结果
-            logger.info(f"所有分段断句完成，共 {len(all_segments)} 句")
-            for i, segment in enumerate(all_segments, 1):
-                logger.debug(f"第 {i} 句: {segment}")
-            
-            # 保存结果
-            # save_split_results(all_text, all_segments, save_split)
-
+            save_split_result(all_text, split_sentences, save_split)
+            logger.info(f"📄 断句结果已保存到: {save_split}")
         except Exception as e:
-            logger.error(f"保存断句结果失败: {str(e)}")
+            logger.error(f"❌ 保存断句结果失败: {str(e)}")
 
-    merge_short_segment(final_segments)
+    merge_short_segment(all_segments)
 
     # 创建最终的字幕数据对象
-    final_asr_data = SubtitleData(final_segments)
+    final_asr_data = SubtitleData(all_segments)
+
+    processing_time = time.time() - start_time
+    logger.info(f"✅ 所有断句完成! 共 {len(all_segments)} 句，耗时 {processing_time:.1f}秒")
+
     return final_asr_data
