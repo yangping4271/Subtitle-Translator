@@ -6,7 +6,7 @@ from openai import OpenAI
 from .data import SubtitleSegment
 from .prompts import SPLIT_SYSTEM_PROMPT
 from .config import SubtitleConfig, get_default_config
-from .utils.logger import setup_logger
+from ..logger import setup_logger
 
 logger = setup_logger("subtitle_spliter")
 

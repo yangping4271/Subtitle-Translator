@@ -77,7 +77,7 @@ def setup_environment():
         debug_mode = ('-d' in sys.argv or '--debug' in sys.argv or 
                      os.environ.get('DEBUG', '').lower() in ('1', 'true', 'yes'))
         
-        from .translation_core.utils.logger import setup_logger
+        from .logger import setup_logger
         logger = setup_logger(__name__, debug_mode=debug_mode)
         
         # 只在需要提醒用户或出现问题时输出日志信息
@@ -125,7 +125,7 @@ from .translation_core.spliter import merge_segments
 from .translation_core.config import get_default_config, SubtitleConfig
 from .translation_core.data import load_subtitle, SubtitleData
 from .translation_core.utils.test_openai import test_openai
-from .translation_core.utils.logger import setup_logger, log_section_start, log_section_end, log_stats, create_progress_logger
+from .logger import setup_logger, log_section_start, log_section_end, log_stats, create_progress_logger
 
 
 # 配置日志
@@ -325,6 +325,7 @@ def main(
     if input_file:
         # 单文件模式
         files_to_process = [input_file]
+        logger.info(f"开始处理单个文件: {input_file.name}")
         print(f"开始处理单个文件: [bold cyan]{input_file.name}[/bold cyan]")
     else:
         # 批量处理模式：查找当前目录中的媒体文件
@@ -390,6 +391,7 @@ def main(
     count = 0
     for i, current_input_file in enumerate(files_to_process):
         print()
+        logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
         print(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): [bold cyan]{current_input_file.name}[/bold cyan]")
         
         try:
@@ -398,11 +400,13 @@ def main(
                 llm_model, reflect, debug
             )
             count += 1
+            logger.info(f"✅ {current_input_file.stem} 处理完成！")
             print(f"[bold green]✅ {current_input_file.stem} 处理完成！[/bold green]")
             
             # 检查是否生成了ASS文件
             ass_file = output_dir / f"{current_input_file.stem}.ass"
             if ass_file.exists():
+                logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
                 print(f"📺 双语ASS文件已生成: [cyan]{ass_file.name}[/cyan]")
         
         except Exception as e:
@@ -412,26 +416,35 @@ def main(
     
     # 显示处理结果
     print()
+    logger.info("🎉 批量处理完成！")
+    logger.info(f"总计处理文件数: {count}")
     print(f"[bold green]🎉 批量处理完成！[/bold green]")
     print(f"总计处理文件数: [bold cyan]{count}[/bold cyan]")
     
     if count > 0:
+        logger.info("生成的文件：")
         print("\n生成的文件：")
         ass_files = list(output_dir.glob("*.ass"))
         if ass_files:
             for f in ass_files:
+                logger.info(f"  {f.name}")
                 print(f"  {f.name}")
         else:
+            logger.info("  没有生成ASS文件")
             print("  没有生成ASS文件")
         
+        logger.info("原始字幕文件：")
         print("\n原始字幕文件：")
         srt_files = [f for f in output_dir.glob("*.srt") if not ("_zh" in f.name or "_en" in f.name)]
         if srt_files:
             for f in srt_files:
+                logger.info(f"  {f.name}")
                 print(f"  {f.name}")
         else:
+            logger.info("  没有保留的SRT文件")
             print("  没有保留的SRT文件")
     
+    logger.info("处理完毕！")
     print("处理完毕！")
 
 
@@ -447,6 +460,7 @@ def _process_single_file(
         temp_srt_path = input_file
     else:
         # --- 转录阶段 ---
+        logger.info(">>> 开始转录...")
         print("[bold green]>>> 开始转录...[/bold green]")
         temp_srt_path = output_dir / f"{input_file.stem}.srt"
         try:
@@ -468,6 +482,7 @@ def _process_single_file(
             srt_content = to_srt(result, timestamps=True)
             with open(temp_srt_path, "w", encoding="utf-8") as f:
                 f.write(srt_content)
+            logger.info(f"转录完成，SRT文件保存至: {temp_srt_path}")
             print(f"[bold green]转录完成，SRT文件保存至:[/bold green] {temp_srt_path}")
 
         except Exception as e:
@@ -478,6 +493,7 @@ def _process_single_file(
     final_translated_en_path = None
 
     # --- 翻译阶段 ---
+    logger.info(">>> 开始翻译...")
     print("[bold green]>>> 开始翻译...[/bold green]")
     try:
         translator_service = SubtitleTranslatorService()
@@ -495,16 +511,20 @@ def _process_single_file(
         # 确保这里正确赋值
         final_translated_en_path = output_dir / f"{temp_srt_path.stem}.en.srt"
 
+        logger.info(f"翻译完成，中文翻译文件保存至: {final_translated_zh_path}")
+        logger.info(f"英文翻译文件保存至: {final_translated_en_path}")
         print(f"[bold green]翻译完成，中文翻译文件保存至:[/bold green] {final_translated_zh_path}")
         print(f"[bold green]英文翻译文件保存至:[/bold green] {final_translated_en_path}")
 
         # --- 转换为 ASS ---
+        logger.info(">>> 正在转换为 ASS 格式...")
         print("[bold green]>>> 正在转换为 ASS 格式...[/bold green]")
 
         # 提取 srt2ass.py 的核心逻辑
         from .translation_core.utils.ass_converter import convert_srt_to_ass
 
         final_ass_path = convert_srt_to_ass(final_translated_zh_path, final_translated_en_path, output_dir)
+        logger.info(f"ASS 文件生成成功: {final_ass_path}")
         print(f"[bold green]ASS 文件生成成功:[/bold green] {final_ass_path}")
 
     except Exception as e:
@@ -512,12 +532,15 @@ def _process_single_file(
         raise typer.Exit(code=1)
     finally:
         # --- 清理中间翻译文件，保留原始转录文件 ---
+        logger.info(">>> 正在清理中间翻译文件...")
         print("[bold green]>>> 正在清理中间翻译文件...[/bold green]")
         if final_translated_zh_path and final_translated_zh_path.exists():
             os.remove(final_translated_zh_path)
+            logger.info(f"已删除中间文件: {final_translated_zh_path}")
             print(f"已删除中间文件: {final_translated_zh_path}")
         if final_translated_en_path and final_translated_en_path.exists():
             os.remove(final_translated_en_path)
+            logger.info(f"已删除中间文件: {final_translated_en_path}")
             print(f"已删除中间文件: {final_translated_en_path}")
         
         # 处理原始SRT文件
@@ -525,6 +548,7 @@ def _process_single_file(
             if input_file.suffix.lower() == '.srt':
                 print(f"[bold green]输入文件为SRT，保持原文件不变:[/bold green] {temp_srt_path}")
             else:
+                logger.info(f"保留原始转录文件: {temp_srt_path}")
                 print(f"[bold green]保留原始转录文件:[/bold green] {temp_srt_path}")
 
 @app.command("init")

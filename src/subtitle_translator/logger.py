@@ -8,8 +8,8 @@ import threading
 from typing import Optional
 import time
 
-# 路径
-ROOT_PATH = Path(__file__).parent.parent
+# 路径 - 日志文件放在项目根目录
+ROOT_PATH = Path(__file__).parent.parent.parent  # 从src/subtitle_translator/回到项目根目录
 LOG_PATH = ROOT_PATH / "logs"
 LOG_FILE = str(LOG_PATH / 'app.log')
 

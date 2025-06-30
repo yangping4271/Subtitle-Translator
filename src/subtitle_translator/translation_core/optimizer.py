@@ -14,7 +14,7 @@ from .prompts import (
 )
 from .config import SubtitleConfig
 from .utils.json_repair import parse_llm_response
-from .utils.logger import setup_logger
+from ..logger import setup_logger
 
 logger = setup_logger("subtitle_optimizer")
 

@@ -5,7 +5,7 @@ from typing import List
 from .split_by_llm import split_by_llm
 from .data import SubtitleData, SubtitleSegment, save_split_results
 from .config import get_default_config
-from .utils.logger import setup_logger
+from ..logger import setup_logger
 
 logger = setup_logger("subtitle_spliter")
 

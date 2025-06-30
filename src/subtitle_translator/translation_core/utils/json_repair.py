@@ -25,7 +25,7 @@ All supported use cases are in the unit tests
 import os
 import json
 from typing import Any, Dict, List, Optional, Union, TextIO, Tuple
-from .logger import setup_logger
+from ...logger import setup_logger
 
 logger = setup_logger("json_repair")
 
