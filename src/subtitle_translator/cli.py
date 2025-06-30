@@ -79,24 +79,31 @@ def setup_environment():
         from .translation_core.utils.logger import setup_logger
         logger = setup_logger(__name__, debug_mode=debug_mode)
         
-        # 输出环境加载日志信息
+        # 只在需要提醒用户或出现问题时输出日志信息
         if config_copied:
             logger.info(f"✅ 首次运行检测到项目配置文件，已自动复制到全局配置:")
             logger.info(f"   源文件: {project_env_path}")
             logger.info(f"   目标文件: {user_env_path}")
             logger.info(f"   现在你可以在任意目录下运行 subtitle-translate 命令！")
-        
-        if env_loaded:
-            if user_env_path.is_file():
-                logger.info(f"已加载用户全局环境配置: {user_env_path}")
-            if project_env_path and project_env_path.is_file():
-                logger.info(f"已加载项目环境配置 (覆盖全局配置): {project_env_path}")
-        else:
+        elif not env_loaded:
             logger.warning(
                 f"未找到任何 .env 文件。程序将依赖于系统环境变量。\n"
                 f"如需通过文件配置，请在项目根目录或用户配置目录 "
                 f"({app_dir}) 中创建一个 .env 文件。"
             )
+            
+            # 检查关键环境变量是否存在
+            required_vars = ['OPENAI_BASE_URL', 'OPENAI_API_KEY', 'LLM_MODEL']
+            missing_vars = []
+            for var in required_vars:
+                if not os.environ.get(var):
+                    missing_vars.append(var)
+            
+            if missing_vars:
+                logger.error(f"缺少必需的环境变量: {', '.join(missing_vars)}")
+                logger.error("请运行 'subtitle-translate init' 来配置API密钥，或设置相应的环境变量。")
+                import sys
+                sys.exit(1)
 
 # 在所有其他项目导入之前，首先加载环境变量
 # setup_environment()  <-- 我将删除这一行
