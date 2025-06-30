@@ -254,7 +254,7 @@ def merge_by_time_gaps(segments: List[SubtitleSegment], max_gap: int = MAX_GAP, 
 
 
 def process_by_llm(segments: List[SubtitleSegment], 
-                   model: str = "gpt-4o-mini",
+                   model: str = None,
                    max_word_count_english: int = None,
                    batch_index: int = None) -> List[SubtitleSegment]:
     """
@@ -262,7 +262,7 @@ def process_by_llm(segments: List[SubtitleSegment],
     
     Args:
         segments: 字幕分段列表
-        model: 使用的语言模型
+        model: 使用的语言模型，如果为None则使用配置中的断句模型
         max_word_count_english: 英文最大单词数
         batch_index: 批次编号
         
@@ -271,6 +271,10 @@ def process_by_llm(segments: List[SubtitleSegment],
     """
     config = get_default_config()
     max_word_count_english = max_word_count_english or config.max_word_count_english
+    
+    # 如果没有指定模型，使用配置中的断句模型
+    if model is None:
+        model = config.split_model
         
     # 修改合并文本的方式，添加空格
     txt = " ".join([seg.text.strip() for seg in segments])
@@ -404,7 +408,7 @@ def split_by_sentences(asr_data: SubtitleData, word_threshold: int = 500) -> Lis
 
 
 def merge_segments(asr_data: SubtitleData, 
-                   model: str = "gpt-4o-mini", 
+                   model: str = None, 
                    num_threads: int = FIXED_NUM_THREADS, 
                    save_split: str = None) -> SubtitleData:
     """
@@ -412,11 +416,16 @@ def merge_segments(asr_data: SubtitleData,
     
     Args:
         asr_data: 字幕数据
-        model: 使用的语言模型
+        model: 使用的语言模型，如果为None则使用配置中的断句模型
         num_threads: 线程数量
         save_split: 保存断句结果的文件路径
     """
-
+    
+    # 如果没有指定模型，使用配置中的断句模型
+    if model is None:
+        config = get_default_config()
+        model = config.split_model
+    
     # 预处理字幕数据，移除纯标点符号的分段，并处理仅包含字母和撇号的文本
     asr_data.segments = preprocess_segments(asr_data.segments)
     

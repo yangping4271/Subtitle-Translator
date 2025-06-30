@@ -380,7 +380,7 @@ class SubtitleOptimizer:
                 logger.info(f"[+]正在翻译字幕ID: {key}")
                 message.append({"role": "user", "content": value})
                 response = self.client.chat.completions.create(
-                    model=self.config.llm_model,
+                    model=self.config.translation_model,
                     stream=False,
                     messages=message,
                     temperature=0.7,
@@ -537,7 +537,7 @@ class SubtitleOptimizer:
             try:
                 message = self._create_translate_message(original_subtitle, summary_content, reflect=True)
                 response = self.client.chat.completions.create(
-                    model=self.config.llm_model,
+                    model=self.config.translation_model,
                     stream=False,
                     messages=message,
                     temperature=0.7,
@@ -655,7 +655,7 @@ class SubtitleOptimizer:
             try:
                 message = self._create_translate_message(original_subtitle, summary_content, reflect=False)
                 response = self.client.chat.completions.create(
-                    model=self.config.llm_model,
+                    model=self.config.translation_model,
                     stream=False,
                     messages=message,
                     temperature=0.7,

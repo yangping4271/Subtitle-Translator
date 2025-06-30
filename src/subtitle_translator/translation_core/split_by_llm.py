@@ -79,7 +79,7 @@ def split_by_end_marks(sentence: str) -> List[str]:
     return segments if segments else [sentence]
 
 def split_by_llm(text: str,
-                model: str = "gpt-4o-mini",
+                model: str = None,
                 max_word_count_english: int = 14,
                 max_retries: int = 3) -> List[str]:
     """
@@ -87,7 +87,7 @@ def split_by_llm(text: str,
     
     Args:
         text: 要拆分的文本
-        model: 使用的语言模型
+        model: 使用的语言模型，如果为None则使用配置中的断句模型
         max_word_count_english: 英文最大单词数
         max_retries: 最大重试次数
         
@@ -98,6 +98,12 @@ def split_by_llm(text: str,
     
     # 初始化客户端
     config = SubtitleConfig()
+    # 如果没有指定模型，使用配置中的断句模型
+    if model is None:
+        model = config.split_model
+    
+    logger.info(f"使用断句模型: {model}")
+    
     client = OpenAI(
         base_url=config.openai_base_url,
         api_key=config.openai_api_key

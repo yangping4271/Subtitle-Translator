@@ -52,7 +52,7 @@ class SubtitleSummarizer:
             ]
             
             response = self.client.chat.completions.create(
-                model=self.config.llm_model,
+                model=self.config.summary_model,
                 messages=message,
                 temperature=0.7,
                 timeout=80

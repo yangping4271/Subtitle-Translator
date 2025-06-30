@@ -145,12 +145,20 @@ class SubtitleTranslatorService:
     def _init_translation_env(self, llm_model: str) -> None:
         """初始化翻译环境"""
         if llm_model:
+            # 如果指定了模型，将其设置为所有功能的默认模型
             self.config.llm_model = llm_model
+            self.config.split_model = llm_model
+            self.config.summary_model = llm_model
+            self.config.translation_model = llm_model
 
         logger.info(f"使用 {self.config.openai_base_url} 作为API端点")
-        logger.info(f"使用 {self.config.llm_model} 作为LLM模型")
+        logger.info(f"模型配置:")
+        logger.info(f"  断句模型: {self.config.split_model}")
+        logger.info(f"  总结模型: {self.config.summary_model}")
+        logger.info(f"  翻译模型: {self.config.translation_model}")
         
-        success, error_msg = test_openai(self.config.openai_base_url, self.config.openai_api_key, self.config.llm_model)
+        # 使用翻译模型进行连接测试
+        success, error_msg = test_openai(self.config.openai_base_url, self.config.openai_api_key, self.config.translation_model)
         if not success:
             raise OpenAIAPIError(error_msg)
 
@@ -168,7 +176,7 @@ class SubtitleTranslatorService:
             
             # 检查是否需要重新断句 (这里简化处理，如果需要更复杂的断句逻辑，可以从原项目复制)
             if asr_data.is_word_timestamp():
-                model = os.getenv("LLM_MODEL")
+                model = self.config.split_model
                 logger.info(f"正在使用{model} 断句")
                 logger.info(f"句子限制长度为{self.config.max_word_count_english}字")
                 asr_data = merge_segments(asr_data, model=model, 
@@ -208,14 +216,14 @@ class SubtitleTranslatorService:
 
     def _get_subtitle_summary(self, asr_data: SubtitleData, input_file: str) -> dict:
         """获取字幕内容摘要"""
-        logger.info(f"正在使用 {self.config.llm_model} 总结字幕...")
+        logger.info(f"正在使用 {self.config.summary_model} 总结字幕...")
         summarize_result = self.summarizer.summarize(asr_data.to_txt(), input_file)
         logger.info(f"总结字幕内容:\n{summarize_result.get('summary')}\n")
         return summarize_result
 
     def _translate_subtitles(self, asr_data: SubtitleData, summarize_result: dict, reflect: bool = False) -> list:
         """翻译字幕内容"""
-        logger.info(f"正在使用 {self.config.llm_model} 翻译字幕...")
+        logger.info(f"正在使用 {self.config.translation_model} 翻译字幕...")
         try:
             translator = SubtitleOptimizer(
                 config=self.config,
