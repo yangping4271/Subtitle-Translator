@@ -193,7 +193,7 @@ class SubtitleTranslatorService:
                 str(en_output_path),
                 str(zh_output_path)
             )
-            logger.info(f"翻译完成，输出文件: {zh_output_path}")
+            # logger.info(f"翻译完成，输出文件: {zh_output_path}")
             return zh_output_path
                 
         except OpenAIAPIError as e:
@@ -312,9 +312,9 @@ def main(
             
             if input_file_found:
                 files_to_process.append(input_file_found)
-                print(f"INFO: 发现文件 {input_file_found}")
+                print(f"📄 发现文件 [cyan]{input_file_found}[/cyan]")
             else:
-                print(f"ERROR: 没有找到 {base_name} 的输入文件")
+                print(f"❌ 没有找到 [yellow]{base_name}[/yellow] 的输入文件")
         
         if not files_to_process:
             print("[bold yellow]没有找到需要处理的新文件。[/bold yellow]")
@@ -331,8 +331,8 @@ def main(
     # 处理文件
     count = 0
     for i, current_input_file in enumerate(files_to_process):
-        print("=" * 50)
-        print(f"处理文件 ({i+1}/{len(files_to_process)}): [bold cyan]{current_input_file.name}[/bold cyan]")
+        print()
+        print(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): [bold cyan]{current_input_file.name}[/bold cyan]")
         
         try:
             _process_single_file(
@@ -340,21 +340,21 @@ def main(
                 llm_model, reflect, debug
             )
             count += 1
-            print(f"[bold green]SUCCESS: {current_input_file.stem} 处理完成！[/bold green]")
+            print(f"[bold green]✅ {current_input_file.stem} 处理完成！[/bold green]")
             
             # 检查是否生成了ASS文件
             ass_file = output_dir / f"{current_input_file.stem}.ass"
             if ass_file.exists():
-                print(f"INFO: 双语ASS文件已生成: {ass_file.name}")
+                print(f"📺 双语ASS文件已生成: [cyan]{ass_file.name}[/cyan]")
         
         except Exception as e:
-            print(f"[bold red]ERROR: {current_input_file.stem} 处理失败！{e}[/bold red]")
+            print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
         
         print()  # 添加空行分隔
     
     # 显示处理结果
-    print("=" * 50)
-    print(f"[bold green]批量处理完成！[/bold green]")
+    print()
+    print(f"[bold green]🎉 批量处理完成！[/bold green]")
     print(f"总计处理文件数: [bold cyan]{count}[/bold cyan]")
     
     if count > 0:

@@ -432,7 +432,7 @@ class SubtitleOptimizer:
         if not self.batch_logs:
             return
             
-        logger.info("================ 字幕优化结果汇总 ================")
+        logger.info("📊 字幕优化结果汇总")
 
         def is_format_change_only(original, optimized):
             """判断是否只有格式变化（大小写和标点符号）"""
@@ -480,7 +480,7 @@ class SubtitleOptimizer:
                 logger.debug(f"优化: {optimized}")
                 # 格式优化使用debug级别分隔线
                 if i < len(sorted_ids) - 1:
-                    logger.debug("-" * 50)
+                    logger.debug("---")
             else:
                 if is_wrong_replacement(original, optimized):
                     wrong_changes += 1
@@ -489,7 +489,7 @@ class SubtitleOptimizer:
                     logger.error(f"优化: {optimized}")
                     # 错误替换使用error级别分隔线
                     if i < len(sorted_ids) - 1:
-                        logger.error("-" * 50)
+                        logger.error("---")
                 else:
                     content_changes += 1
                     logger.info(f"字幕ID {id_num} - 内容优化:")
@@ -497,7 +497,7 @@ class SubtitleOptimizer:
                     logger.info(f"优化: {optimized}")
                     # 内容优化使用info级别分隔线
                     if i < len(sorted_ids) - 1:
-                        logger.info("-" * 50)
+                        logger.info("---")
 
             if 'revised_translation' in log and log['revised_translation'] != log['translation']:
                 logger.info(f"字幕ID: {id_num} - 翻译优化:")
@@ -506,7 +506,7 @@ class SubtitleOptimizer:
                 logger.info(f"反思建议: {log['revise_suggestions']}")
                 logger.info(f"反思后翻译: {log['revised_translation']}")
                 if i < len(sorted_ids) - 1:
-                    logger.info("-" * 50)
+                    logger.info("---")
         
         # 输出统计信息
         logger.info("统计信息:")
@@ -515,7 +515,7 @@ class SubtitleOptimizer:
         if wrong_changes > 0:
             logger.error(f"疑似错误替换数量: {wrong_changes}")
         logger.info(f"总修改数量: {format_changes + content_changes + wrong_changes}")
-        logger.info("================ 字幕优化结果结束 ================")
+        logger.info("✅ 字幕优化结果汇总完成")
         # 清空日志字典
         self.batch_logs.clear()
 
