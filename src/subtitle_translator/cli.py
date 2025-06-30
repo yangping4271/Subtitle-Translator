@@ -32,7 +32,6 @@ _immediate_load_env()
 
 import typer
 from typing_extensions import Annotated
-import logging
 import glob
 from dotenv import load_dotenv, find_dotenv
 
@@ -77,29 +76,29 @@ def setup_environment():
         try:
             import shutil
             shutil.copy2(project_env_path, user_env_path)
-            logging.info(f"✅ 首次运行检测到项目配置文件，已自动复制到全局配置:")
-            logging.info(f"   源文件: {project_env_path}")
-            logging.info(f"   目标文件: {user_env_path}")
-            logging.info(f"   现在你可以在任意目录下运行 subtitle-translate 命令！")
+            logger.info(f"✅ 首次运行检测到项目配置文件，已自动复制到全局配置:")
+            logger.info(f"   源文件: {project_env_path}")
+            logger.info(f"   目标文件: {user_env_path}")
+            logger.info(f"   现在你可以在任意目录下运行 subtitle-translate 命令！")
         except Exception as e:
-            logging.warning(f"⚠️  复制配置文件失败: {e}")
+            logger.warning(f"⚠️  复制配置文件失败: {e}")
 
     # 1. 加载用户全局配置文件 (适用于已安装的应用)
     if user_env_path.is_file():
         # 加载全局配置，但不覆盖已存在的环境变量，关闭verbose输出
         load_dotenv(user_env_path, verbose=False)
-        logging.info(f"已加载用户全局环境配置: {user_env_path}")
+        logger.info(f"已加载用户全局环境配置: {user_env_path}")
         env_loaded = True
         
     # 2. 加载项目本地的 .env 文件 (方便开发，并可覆盖全局配置)
     if project_env_path and project_env_path.is_file():
         # 使用 override=True 来覆盖任何已存在的环境变量，确保项目配置优先，关闭verbose输出
         load_dotenv(project_env_path, verbose=False, override=True)
-        logging.info(f"已加载项目环境配置 (覆盖全局配置): {project_env_path}")
+        logger.info(f"已加载项目环境配置 (覆盖全局配置): {project_env_path}")
         env_loaded = True
 
     if not env_loaded:
-        logging.warning(
+        logger.warning(
             f"未找到任何 .env 文件。程序将依赖于系统环境变量。\n"
             f"如需通过文件配置，请在项目根目录或用户配置目录 "
             f"({app_dir}) 中创建一个 .env 文件。"
@@ -110,8 +109,6 @@ def setup_environment():
 
 # 在所有其他项目导入之前，首先加载环境变量
 # setup_environment()  <-- 我将删除这一行
-
-logging.info(f"OPENAI_BASE_URL: {os.getenv('OPENAI_BASE_URL', 'NOT_SET')}")
 
 import sys
 from typing import Optional
@@ -134,8 +131,9 @@ from .translation_core.utils.logger import setup_logger
 # from .translation_core import translate_and_convert  # 这个函数不存在，暂时注释掉
 
 # 配置日志
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s') # 这一行已被移除
+logger = setup_logger(__name__)
+logger.info(f"OPENAI_BASE_URL: {os.getenv('OPENAI_BASE_URL', 'NOT_SET')}")
 
 class OpenAIAPIError(Exception):
     """OpenAI API 相关错误"""
