@@ -1,39 +1,12 @@
 import os
 from pathlib import Path
 
-# 立即尝试加载 .env 文件
-def _immediate_load_env():
-    """立即加载环境变量，确保在任何配置初始化之前完成"""
-    try:
-        from dotenv import load_dotenv, find_dotenv
-        
-        # 全局配置路径
-        global_env = Path.home() / ".config" / "subtitle_translator" / ".env"
-        
-        # 项目配置路径
-        project_env_str = find_dotenv(usecwd=True)
-        project_env = Path(project_env_str) if project_env_str else None
-        
-        # 加载全局配置
-        if global_env.exists():
-            load_dotenv(global_env, verbose=False)
-            print(f"已加载全局配置: {global_env}")
-        
-        # 加载项目配置（可覆盖全局配置）
-        if project_env and project_env.exists():
-            load_dotenv(project_env, verbose=False, override=True)
-            print(f"已加载项目配置: {project_env}")
-            
-    except Exception as e:
-        print(f"加载环境变量失败: {e}")
-
-# 立即执行环境变量加载
-_immediate_load_env()
+from dotenv import find_dotenv, load_dotenv
 
 import typer
 from typing_extensions import Annotated
 import glob
-from dotenv import load_dotenv, find_dotenv
+
 
 # 应用名称，用于配置文件目录
 APP_NAME = "subtitle_translator"
@@ -52,7 +25,7 @@ def setup_environment():
     - 如果全局配置不存在，但找到项目配置，会自动复制项目配置作为全局配置
     - 使用标准的 .config 目录存储全局配置
     """
-    global _env_loaded
+    global _env_loaded, logger
     
     # 如果已经加载过环境配置，直接返回
     if _env_loaded:
@@ -72,45 +45,63 @@ def setup_environment():
     project_env_path = Path(project_env_path_str) if project_env_path_str else None
     
     # 🎯 智能配置复制：如果全局配置不存在但项目配置存在，自动复制
+    config_copied = False
     if not user_env_path.is_file() and project_env_path and project_env_path.is_file():
         try:
             import shutil
             shutil.copy2(project_env_path, user_env_path)
-            logger.info(f"✅ 首次运行检测到项目配置文件，已自动复制到全局配置:")
-            logger.info(f"   源文件: {project_env_path}")
-            logger.info(f"   目标文件: {user_env_path}")
-            logger.info(f"   现在你可以在任意目录下运行 subtitle-translate 命令！")
+            config_copied = True
         except Exception as e:
-            logger.warning(f"⚠️  复制配置文件失败: {e}")
+            print(f"⚠️  复制配置文件失败: {e}")
 
     # 1. 加载用户全局配置文件 (适用于已安装的应用)
     if user_env_path.is_file():
         # 加载全局配置，但不覆盖已存在的环境变量，关闭verbose输出
         load_dotenv(user_env_path, verbose=False)
-        logger.info(f"已加载用户全局环境配置: {user_env_path}")
         env_loaded = True
         
     # 2. 加载项目本地的 .env 文件 (方便开发，并可覆盖全局配置)
     if project_env_path and project_env_path.is_file():
         # 使用 override=True 来覆盖任何已存在的环境变量，确保项目配置优先，关闭verbose输出
         load_dotenv(project_env_path, verbose=False, override=True)
-        logger.info(f"已加载项目环境配置 (覆盖全局配置): {project_env_path}")
         env_loaded = True
-
-    if not env_loaded:
-        logger.warning(
-            f"未找到任何 .env 文件。程序将依赖于系统环境变量。\n"
-            f"如需通过文件配置，请在项目根目录或用户配置目录 "
-            f"({app_dir}) 中创建一个 .env 文件。"
-        )
     
     # 标记环境已加载
     _env_loaded = True
+    
+    # 初始化logger（需要在环境变量加载后进行）
+    if logger is None:
+        # 检测debug模式：检查命令行参数和环境变量
+        import sys
+        debug_mode = ('-d' in sys.argv or '--debug' in sys.argv or 
+                     os.environ.get('DEBUG', '').lower() in ('1', 'true', 'yes'))
+        
+        from .translation_core.utils.logger import setup_logger
+        logger = setup_logger(__name__, debug_mode=debug_mode)
+        
+        # 输出环境加载日志信息
+        if config_copied:
+            logger.info(f"✅ 首次运行检测到项目配置文件，已自动复制到全局配置:")
+            logger.info(f"   源文件: {project_env_path}")
+            logger.info(f"   目标文件: {user_env_path}")
+            logger.info(f"   现在你可以在任意目录下运行 subtitle-translate 命令！")
+        
+        if env_loaded:
+            if user_env_path.is_file():
+                logger.info(f"已加载用户全局环境配置: {user_env_path}")
+            if project_env_path and project_env_path.is_file():
+                logger.info(f"已加载项目环境配置 (覆盖全局配置): {project_env_path}")
+        else:
+            logger.warning(
+                f"未找到任何 .env 文件。程序将依赖于系统环境变量。\n"
+                f"如需通过文件配置，请在项目根目录或用户配置目录 "
+                f"({app_dir}) 中创建一个 .env 文件。"
+            )
 
 # 在所有其他项目导入之前，首先加载环境变量
 # setup_environment()  <-- 我将删除这一行
 
-import sys
+
 from typing import Optional
 
 from rich import print
@@ -126,14 +117,14 @@ from .translation_core.summarizer import SubtitleSummarizer
 from .translation_core.spliter import merge_segments
 from .translation_core.config import get_default_config
 from .translation_core.data import load_subtitle, SubtitleData
-from .translation_core.utils.test_opanai import test_openai
+from .translation_core.utils.test_openai import test_openai
 from .translation_core.utils.logger import setup_logger
-# from .translation_core import translate_and_convert  # 这个函数不存在，暂时注释掉
+
 
 # 配置日志
 # logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s') # 这一行已被移除
-logger = setup_logger(__name__)
-logger.info(f"OPENAI_BASE_URL: {os.getenv('OPENAI_BASE_URL', 'NOT_SET')}")
+# 延迟初始化logger，在setup_environment中初始化
+logger = None
 
 class OpenAIAPIError(Exception):
     """OpenAI API 相关错误"""
@@ -141,8 +132,6 @@ class OpenAIAPIError(Exception):
 
 class SubtitleTranslatorService:
     def __init__(self):
-        # 确保环境变量已加载
-        setup_environment()
         self.config = get_default_config()
         self.summarizer = SubtitleSummarizer(config=self.config)
 
@@ -257,11 +246,7 @@ def main(
 
 
         
-    if debug:
-        os.environ['DEBUG'] = 'true'
-        logger.setLevel(os.environ.get('LOG_LEVEL', 'DEBUG').upper())
-    else:
-        logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO').upper())
+    
 
     # 如果没有指定输出目录，默认使用当前目录
     if output_dir is None:
@@ -280,9 +265,11 @@ def main(
         # 批量处理模式：查找当前目录中的媒体文件
         import re
         
+        MEDIA_EXTENSIONS = ["*.srt", "*.mp3", "*.mp4"]
+
         # 查找所有媒体文件
         media_files = []
-        for pattern in ["*.srt", "*.mp3", "*.mp4"]:
+        for pattern in MEDIA_EXTENSIONS:
             media_files.extend(glob.glob(pattern))
         
         if not media_files:
@@ -450,53 +437,7 @@ def _process_single_file(
         print("[bold green]>>> 正在转换为 ASS 格式...[/bold green]")
 
         # 提取 srt2ass.py 的核心逻辑
-        def convert_srt_to_ass(zh_srt_path: Path, en_srt_path: Path, output_dir: Path):
-            # 导入 srt2ass.py 中的 fileopen 和 srt2ass 函数 (原始名称)
-            from .translation_core.utils.srt2ass import fileopen, srt2ass as srt2ass_original_func
-
-            head_str = '''[Script Info]
-; This is an Advanced Sub Station Alpha v4+ script.
-Title:
-ScriptType: v4.00+
-Collisions: Normal
-PlayDepth: 0
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Noto Serif,18,&H0000FFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,1,1,7,1
-Style: Secondary,宋体-简 黑体,11,&H0000FF00,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,1,1,7,1
-
-[Events]
-Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text'''
-
-            # 直接调用 srt2ass 函数，并传入文件路径和样式
-            # srt2ass.py 的 main 函数中，它会根据文件名中的 'zh' 和 'en' 来决定样式
-            # 这里我们直接指定样式
-            subLines1 = srt2ass_original_func(str(zh_srt_path), 'Secondary')
-            subLines2 = srt2ass_original_func(str(en_srt_path), 'Default')
-            
-            # 使用 zh_srt_path 来获取编码和基础文件名
-            src = fileopen(str(zh_srt_path))
-            tmp = src[0]
-            encoding = src[1]
-
-            if u'\ufeff' in tmp:
-                tmp = tmp.replace(u'\ufeff', '')
-            
-            tmp = tmp.replace("", "")
-            lines = [x.strip() for x in tmp.split("\n") if x.strip()]
-            
-            # 确保输出文件名是基于原始文件名，而不是带有 .zh 或 .en 的
-            base_name = zh_srt_path.stem.replace('.zh', '') # 移除 .zh 后缀
-            output_file = output_dir / f"{base_name}.ass"
-            
-            output_str = head_str + '\n' + subLines1 + subLines2
-            output_str = output_str.encode(encoding)
-
-            with open(output_file, 'wb') as output:
-                output.write(output_str)
-            
-            return output_file
+        from .translation_core.utils.ass_converter import convert_srt_to_ass
 
         final_ass_path = convert_srt_to_ass(final_translated_zh_path, final_translated_en_path, output_dir)
         print(f"[bold green]ASS 文件生成成功:[/bold green] {final_ass_path}")
@@ -534,18 +475,18 @@ def init():
     # 确保全局配置目录存在
     app_dir.mkdir(parents=True, exist_ok=True)
     
-    print(f"全局配置目录: [cyan]{app_dir}[/cyan]")
+    
     
     # 检查当前目录是否有.env文件
     if current_env_path.exists():
-        print(f"✅ 发现当前目录的 .env 文件: [cyan]{current_env_path.absolute()}[/cyan]")
+        
         
         # 显示当前.env文件内容（隐藏敏感信息）
         try:
             with open(current_env_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            print("\n📄 当前配置文件内容预览:")
+            
             for line in content.split('\n'):
                 if line.strip() and not line.strip().startswith('#'):
                     if 'API_KEY' in line:
@@ -558,11 +499,10 @@ def init():
             print(f"⚠️  读取配置文件失败: {e}")
         
         # 询问是否复制
-        print("\n是否将此配置复制到全局配置? (y/N): ", end="", flush=True)
+        
         
         # 使用标准输入读取用户选择
-        import sys
-        response = sys.stdin.readline().strip().lower()
+        response = typer.prompt("是否将此配置复制到全局配置? (y/N)", default="n", show_default=False).lower()
         
         if response in ['y', 'yes', '是', '确定']:
             try:
@@ -577,21 +517,14 @@ def init():
             print("⏭️  跳过复制，配置未更改")
     
     else:
-        print("📝 当前目录没有 .env 文件，开始交互式配置...")
+        
         
         # 交互式输入配置
-        print("\n请输入以下配置信息:")
-        import sys
         
-        # API基础URL
-        print("🌐 API基础URL [默认: https://api.openai.com/v1]: ", end="", flush=True)
-        base_url = sys.stdin.readline().strip()
-        if not base_url:
-            base_url = "https://api.openai.com/v1"
+        base_url = typer.prompt("🌐 API基础URL", default="https://api.openai.com/v1")
         
         # API密钥
-        print("🔑 API密钥: ", end="", flush=True)
-        api_key = sys.stdin.readline().strip()
+        api_key = typer.prompt("🔑 API密钥")
         
         if not api_key.strip():
             print("[bold red]❌ API密钥不能为空[/bold red]")
@@ -604,14 +537,9 @@ def init():
             "google/gemini-2.5-flash-lite-preview-06-17"
         ]
         
-        print(f"\n🤖 可选的LLM模型:")
-        for i, model in enumerate(model_options, 1):
-            print(f"   {i}. {model}")
         
-        print("请选择LLM模型 (输入序号或直接输入模型名) [默认: gpt-4o-mini]: ", end="", flush=True)
-        llm_model = sys.stdin.readline().strip()
-        if not llm_model:
-            llm_model = "gpt-4o-mini"
+        
+        llm_model = typer.prompt("请选择LLM模型 (输入序号或直接输入模型名)", default="gpt-4o-mini")
         
         # 如果输入的是数字，转换为对应的模型
         if llm_model.isdigit():
@@ -623,13 +551,9 @@ def init():
                 llm_model = "gpt-4o-mini"
         
         # 可选配置
-        print("📊 日志级别 (DEBUG/INFO/WARNING/ERROR) [默认: INFO]: ", end="", flush=True)
-        log_level = sys.stdin.readline().strip().upper()
-        if not log_level:
-            log_level = "INFO"
+        log_level = typer.prompt("📊 日志级别 (DEBUG/INFO/WARNING/ERROR)", default="INFO").upper()
         
-        print("🐛 启用调试模式? (y/N) [默认: N]: ", end="", flush=True)
-        debug_response = sys.stdin.readline().strip().lower()
+        debug_response = typer.prompt("🐛 启用调试模式? (y/N)", default="n", show_default=False).lower()
         debug_mode = debug_response in ['y', 'yes', '是', '确定']
         
         # 生成配置文件内容
@@ -666,7 +590,7 @@ DEBUG={str(debug_mode).lower()}
             print(f"\n✅ 配置已保存到: [bold green]{global_env_path}[/bold green]")
             
             # 显示配置摘要
-            print("\n📋 配置摘要:")
+            
             print(f"   🌐 API URL: {base_url}")
             print(f"   🔑 API Key: {api_key[:10]}{'*' * (len(api_key) - 10)}")
             print(f"   🤖 LLM模型: {llm_model}")
@@ -680,7 +604,7 @@ DEBUG={str(debug_mode).lower()}
             raise typer.Exit(code=1)
     
     # 验证配置
-    print("\n🔍 验证配置...")
+    
     try:
         # 重新加载环境变量
         global _env_loaded
@@ -688,13 +612,13 @@ DEBUG={str(debug_mode).lower()}
         setup_environment()
         
         # 测试API连接
-        from .translation_core.utils.test_opanai import test_openai
+        from .translation_core.utils.test_openai import test_openai
         
         base_url = os.getenv('OPENAI_BASE_URL')
         api_key = os.getenv('OPENAI_API_KEY')
         model = os.getenv('LLM_MODEL')
         
-        print(f"正在测试API连接... ({model})")
+        
         success, message = test_openai(base_url, api_key, model)
         
         if success:

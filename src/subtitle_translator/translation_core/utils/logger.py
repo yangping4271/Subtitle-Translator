@@ -22,15 +22,16 @@ def is_debug_mode():
     return '-d' in sys.argv or '--debug' in sys.argv or os.environ.get('DEBUG', '').lower() in ('1', 'true', 'yes')
 
 # 日志配置
-LOG_LEVEL = logging.DEBUG if is_debug_mode() else logging.INFO
+# LOG_LEVEL = logging.DEBUG if is_debug_mode() else logging.INFO # 这一行将被移除
 
 class QueueListenerHandler(logging.handlers.QueueHandler):
     """
     将日志记录放入队列的处理器
     """
-    def __init__(self, queue):
+    def __init__(self, queue, level):
         super().__init__(queue)
         self._queue_listener = None
+        self.level = level # 添加level属性
         
     def start_listener(self):
         if self._queue_listener is None:
@@ -51,7 +52,7 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
         # 控制台处理器
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
-        console_handler.setLevel(LOG_LEVEL)
+        console_handler.setLevel(self.level) # 使用实例的level
         
         # 文件处理器
         Path(LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
@@ -61,12 +62,12 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
             encoding='utf-8'
         )
         file_handler.setFormatter(formatter)
-        file_handler.setLevel(LOG_LEVEL)
+        file_handler.setLevel(self.level) # 使用实例的level
         
         return [console_handler, file_handler]
 
 def setup_logger(name: str, 
-                level: Optional[int] = None,
+                debug_mode: bool = False,
                 log_fmt: str = '%(asctime)s [%(name)s] %(levelname)s: %(message)s',
                 datefmt: str = '%Y-%m-%d %H:%M:%S') -> logging.Logger:
     """
@@ -74,15 +75,13 @@ def setup_logger(name: str,
 
     参数：
     - name: 日志记录器的名称
-    - level: 日志级别，如果为None则使用LOG_LEVEL
+    - debug_mode: 是否启用调试模式
     - log_fmt: 日志格式字符串
     - datefmt: 时间格式字符串
     """
     global queue_handler
     
-    # 如果未指定级别，则使用全局设置
-    if level is None:
-        level = LOG_LEVEL
+    level = logging.DEBUG if debug_mode else logging.INFO
     
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -93,7 +92,7 @@ def setup_logger(name: str,
     
     # 创建队列处理器（如果还没有创建）
     if queue_handler is None:
-        queue_handler = QueueListenerHandler(log_queue)
+        queue_handler = QueueListenerHandler(log_queue, level) # 传入level
         queue_handler.start_listener()
     
     logger.addHandler(queue_handler)
