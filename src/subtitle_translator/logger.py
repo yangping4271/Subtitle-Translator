@@ -76,11 +76,13 @@ class ColoredFormatter(logging.Formatter):
         """简化模块名显示"""
         name_mapping = {
             '__main__': '主程序',
-            'subtitle_spliter': '断句处理',
+            'split_by_llm': '智能断句',
+            'subtitle_merger': '断句合并',
             'subtitle_summarizer': '内容总结',
             'subtitle_optimizer': '翻译优化',
             'subtitle_aligner': '字幕对齐',
-            'subtitle_data': '数据处理'
+            'subtitle_data': '数据处理',
+            'json_repair': 'JSON修复'
         }
         return name_mapping.get(name, name)
 
@@ -147,13 +149,7 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
             self._queue_listener.start()
             
     def _create_handlers(self):
-        # 控制台处理器（带颜色和emoji）
-        console_handler = logging.StreamHandler()
-        console_formatter = ColoredFormatter(use_color=True, use_emoji=True)
-        console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(self.level)
-        
-        # 文件处理器（不带颜色但有emoji）
+        # 只创建文件处理器，不创建控制台处理器以避免与print重复输出
         Path(LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(
             LOG_FILE,
@@ -164,7 +160,7 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
         file_handler.setFormatter(file_formatter)
         file_handler.setLevel(self.level)
         
-        return [console_handler, file_handler]
+        return [file_handler]
 
 def setup_logger(name: str, 
                 debug_mode: bool = False,
@@ -186,9 +182,12 @@ def setup_logger(name: str,
     logger = logging.getLogger(name)
     logger.setLevel(level)
     
-    # 清除现有处理器
+    # 防止logger传播到根logger，避免重复输出
+    logger.propagate = False
+    
+    # 检查是否已经有处理器，如果有则直接返回，避免重复配置
     if logger.handlers:
-        logger.handlers.clear()
+        return logger
     
     # 创建队列处理器（如果还没有创建）
     if queue_handler is None:

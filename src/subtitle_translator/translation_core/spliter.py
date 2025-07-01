@@ -7,7 +7,7 @@ from .data import SubtitleData, SubtitleSegment, save_split_results
 from .config import get_default_config
 from ..logger import setup_logger
 
-logger = setup_logger("subtitle_spliter")
+logger = setup_logger("subtitle_merger")
 
 FIXED_NUM_THREADS = 1  # 固定的线程数量
 SPLIT_RANGE = 30  # 在分割点前后寻找最大时间间隔的范围

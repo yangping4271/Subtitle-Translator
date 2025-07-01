@@ -8,7 +8,7 @@ from .prompts import SPLIT_SYSTEM_PROMPT
 from .config import SubtitleConfig, get_default_config
 from ..logger import setup_logger
 
-logger = setup_logger("subtitle_spliter")
+logger = setup_logger("split_by_llm")
 
 def count_words(text: str) -> int:
     """

@@ -163,12 +163,21 @@ class SubtitleTranslatorService:
         
         # 使用翻译模型进行连接测试
         logger.info("🔌 正在测试API连接...")
+        print("🔌 [bold yellow]测试API连接...[/bold yellow]")
         success, error_msg = test_openai(self.config.openai_base_url, self.config.openai_api_key, self.config.translation_model)
         if not success:
             logger.error(f"❌ API连接测试失败: {error_msg}")
+            print(f"[bold red]❌ API连接失败: {error_msg}[/bold red]")
             raise OpenAIAPIError(error_msg)
         
         logger.info("✅ API连接测试成功")
+        print("✅ [bold green]API连接成功[/bold green]")
+        
+        # 显示模型配置
+        print(f"🤖 [bold blue]模型配置:[/bold blue]")
+        print(f"   断句: [cyan]{self.config.split_model}[/cyan]")
+        print(f"   总结: [cyan]{self.config.summary_model}[/cyan]")
+        print(f"   翻译: [cyan]{self.config.translation_model}[/cyan]")
         
         elapsed_time = time.time() - start_time
         log_section_end(logger, "翻译环境初始化", elapsed_time, "✅")
@@ -180,8 +189,13 @@ class SubtitleTranslatorService:
             task_start_time = time.time()
             log_section_start(logger, "字幕翻译任务", "🎬")
             
+            # 用于收集各阶段耗时的字典
+            stage_times = {}
+            
             # 初始化翻译环境
+            init_start_time = time.time()
             self._init_translation_env(llm_model)
+            stage_times["🔧 环境初始化"] = time.time() - init_start_time
             
             # 加载字幕文件
             logger.info("📂 正在加载字幕文件...")
@@ -189,10 +203,14 @@ class SubtitleTranslatorService:
             logger.info(f"📊 字幕统计: 共 {len(asr_data.segments)} 条字幕")
             logger.debug(f"字幕内容预览: {asr_data.to_txt()[:100]}...")  
             
+            print(f"📊 [bold blue]加载完成[/bold blue] (共 [cyan]{len(asr_data.segments)}[/cyan] 条字幕)")
+            
             # 检查是否需要重新断句
+            split_time = 0
             if asr_data.is_word_timestamp():
                 section_start_time = time.time()
                 log_section_start(logger, "字幕断句处理", "✂️")
+                print(f"✂️ [bold yellow]智能断句处理中...[/bold yellow]")
                 
                 model = self.config.split_model
                 logger.info(f"🤖 使用模型: {model}")
@@ -202,14 +220,25 @@ class SubtitleTranslatorService:
                                        num_threads=self.config.thread_num, 
                                        save_split=None)
                 
-                section_elapsed = time.time() - section_start_time
-                log_section_end(logger, "字幕断句处理", section_elapsed, "✅")
+                split_time = time.time() - section_start_time
+                log_section_end(logger, "字幕断句处理", split_time, "✅")
+                print(f"✅ [bold green]断句完成[/bold green] (优化为 [cyan]{len(asr_data.segments)}[/cyan] 句)")
+            
+            if split_time > 0:
+                stage_times["✂️ 智能断句"] = split_time
             
             # 获取字幕摘要
+            summary_start_time = time.time()
             summarize_result = self._get_subtitle_summary(asr_data, str(input_srt_path))
+            summary_time = time.time() - summary_start_time
+            stage_times["🔍 内容分析"] = summary_time
             
             # 翻译字幕
+            translate_start_time = time.time()
             translate_result = self._translate_subtitles(asr_data, summarize_result, reflect)
+            translate_time = time.time() - translate_start_time
+            mode_name = "🤔 反思翻译" if reflect else "🌍 常规翻译"
+            stage_times[mode_name] = translate_time
             
             # 保存字幕
             logger.info("💾 正在保存翻译结果...")
@@ -224,6 +253,10 @@ class SubtitleTranslatorService:
             )
             
             total_elapsed = time.time() - task_start_time
+            
+            # 显示时间统计
+            print()
+            self._format_time_stats(stage_times, total_elapsed)
             
             # 任务完成统计
             final_stats = {
@@ -251,6 +284,7 @@ class SubtitleTranslatorService:
         """获取字幕内容摘要"""
         section_start_time = time.time()
         log_section_start(logger, "字幕内容分析", "🔍")
+        print(f"🔍 [bold cyan]内容分析中...[/bold cyan]")
         
         logger.info(f"🤖 使用模型: {self.config.summary_model}")
         summarize_result = self.summarizer.summarize(asr_data.to_txt(), input_file)
@@ -258,6 +292,7 @@ class SubtitleTranslatorService:
         
         section_elapsed = time.time() - section_start_time
         log_section_end(logger, "字幕内容分析", section_elapsed, "✅")
+        print(f"✅ [bold green]内容分析完成[/bold green]")
         
         return summarize_result
 
@@ -266,6 +301,8 @@ class SubtitleTranslatorService:
         section_start_time = time.time()
         mode_name = "反思翻译" if reflect else "常规翻译"
         log_section_start(logger, f"字幕{mode_name}", "🌍")
+        
+        print(f"🌍 [bold magenta]{mode_name}中...[/bold magenta] ({len(asr_data.segments)} 句)")
         
         logger.info(f"🤖 使用模型: {self.config.translation_model}")
         logger.info(f"⚡ 线程数: {self.config.thread_num}")
@@ -277,13 +314,109 @@ class SubtitleTranslatorService:
             )
             translate_result = translator.translate(asr_data, summarize_result)
             
+            # 获取优化统计
+            stats = self._get_optimization_stats(translator.batch_logs, reflect)
+            
             section_elapsed = time.time() - section_start_time
             log_section_end(logger, f"字幕{mode_name}", section_elapsed, "🎉")
+            print(f"✅ [bold green]{mode_name}完成[/bold green]")
+            
+            # 显示优化统计
+            if stats['total_changes'] > 0:
+                print(f"📊 [bold blue]优化统计:[/bold blue]")
+                if stats['format_changes'] > 0:
+                    print(f"   格式优化: [cyan]{stats['format_changes']}[/cyan] 项")
+                if stats['content_changes'] > 0:
+                    print(f"   内容修改: [cyan]{stats['content_changes']}[/cyan] 项")
+                if stats['reflect_changes'] > 0:
+                    print(f"   反思优化: [cyan]{stats['reflect_changes']}[/cyan] 项")
+                if stats['wrong_changes'] > 0:
+                    print(f"   [yellow]可疑替换: {stats['wrong_changes']} 项[/yellow]")
+                print(f"   总计: [cyan]{stats['total_changes']}[/cyan] 项优化")
+            else:
+                print("📊 [dim]无需优化调整[/dim]")
             
             return translate_result
         except Exception as e:
             logger.error(f"❌ 翻译失败: {str(e)}")
+            print(f"[bold red]❌ 翻译失败: {str(e)}[/bold red]")
             raise
+
+    def _get_optimization_stats(self, batch_logs: list, reflect: bool) -> dict:
+        """从batch_logs中获取优化统计信息"""
+        import string
+        
+        def is_format_change_only(original, optimized):
+            """判断是否只有格式变化（大小写和标点符号）"""
+            # 忽略大小写和标点符号后比较
+            original_normalized = original.lower().translate(str.maketrans('', '', string.punctuation))
+            optimized_normalized = optimized.lower().translate(str.maketrans('', '', string.punctuation))
+            return original_normalized == optimized_normalized
+
+        def is_wrong_replacement(original, optimized):
+            """检测是否存在错误的替换（替换了不相关的词）"""
+            import re
+            # 提取所有单词
+            original_words = set(re.findall(r'\b\w+\b', original.lower()))
+            optimized_words = set(re.findall(r'\b\w+\b', optimized.lower()))
+            # 找出被替换的词
+            removed_words = original_words - optimized_words
+            added_words = optimized_words - original_words
+            # 如果替换前后的词没有相似性，可能是错误替换
+            if removed_words and added_words:
+                for removed in removed_words:
+                    for added in added_words:
+                        # 如果原词和新词完全不同（编辑距离过大），判定为错误替换
+                        if len(removed) > 3 and len(added) > 3 and not any(c in removed for c in added):
+                            return True
+            return False
+
+        # 统计变更类型
+        format_changes = 0
+        content_changes = 0
+        wrong_changes = 0
+        reflect_changes = 0
+
+        # 遍历所有日志
+        for log in batch_logs:
+            if log["type"] == "content_optimization":
+                original = log["original"]
+                optimized = log["optimized"]
+                
+                # 分类统计
+                if is_format_change_only(original, optimized):
+                    format_changes += 1
+                elif is_wrong_replacement(original, optimized):
+                    wrong_changes += 1
+                else:
+                    content_changes += 1
+            
+            elif log["type"] == "reflect_translation":
+                reflect_changes += 1
+
+        total_changes = format_changes + content_changes + wrong_changes + reflect_changes
+        
+        return {
+            'format_changes': format_changes,
+            'content_changes': content_changes,
+            'wrong_changes': wrong_changes,
+            'reflect_changes': reflect_changes,
+            'total_changes': total_changes
+        }
+
+    def _format_time_stats(self, stages: dict, total_time: float) -> None:
+        """格式化显示时间统计"""
+        print(f"⏱️  [bold blue]耗时统计:[/bold blue]")
+        
+        # 按时间排序显示各阶段
+        sorted_stages = sorted(stages.items(), key=lambda x: x[1], reverse=True)
+        
+        for stage_name, elapsed_time in sorted_stages:
+            if elapsed_time > 0:
+                percentage = (elapsed_time / total_time) * 100
+                print(f"   {stage_name}: [cyan]{elapsed_time:.1f}s[/cyan] ([dim]{percentage:.0f}%[/dim])")
+        
+        print(f"   [bold]总计: [cyan]{total_time:.1f}s[/cyan][/bold]")
 
 app = typer.Typer(
     help="一个集成了语音转录、字幕翻译和格式转换的命令行工具",
@@ -414,38 +547,28 @@ def main(
         
         print()  # 添加空行分隔
     
-    # 显示处理结果
+    # 显示处理结果 - 简化输出
     print()
     logger.info("🎉 批量处理完成！")
     logger.info(f"总计处理文件数: {count}")
-    print(f"[bold green]🎉 批量处理完成！[/bold green]")
-    print(f"总计处理文件数: [bold cyan]{count}[/bold cyan]")
+    print(f"🎉 [bold green]批量处理完成！[/bold green] (处理 [cyan]{count}[/cyan] 个文件)")
     
+    # 只显示生成的ASS文件统计，不显示详细列表
     if count > 0:
-        logger.info("生成的文件：")
-        print("\n生成的文件：")
         ass_files = list(output_dir.glob("*.ass"))
         if ass_files:
+            logger.info("生成的文件：")
             for f in ass_files:
                 logger.info(f"  {f.name}")
-                print(f"  {f.name}")
-        else:
-            logger.info("  没有生成ASS文件")
-            print("  没有生成ASS文件")
+            print(f"📺 [bold green]已生成 {len(ass_files)} 个双语ASS文件[/bold green]")
         
-        logger.info("原始字幕文件：")
-        print("\n原始字幕文件：")
         srt_files = [f for f in output_dir.glob("*.srt") if not ("_zh" in f.name or "_en" in f.name)]
         if srt_files:
+            logger.info("原始字幕文件：")
             for f in srt_files:
                 logger.info(f"  {f.name}")
-                print(f"  {f.name}")
-        else:
-            logger.info("  没有保留的SRT文件")
-            print("  没有保留的SRT文件")
     
     logger.info("处理完毕！")
-    print("处理完毕！")
 
 
 def _process_single_file(
@@ -482,8 +605,11 @@ def _process_single_file(
             srt_content = to_srt(result, timestamps=True)
             with open(temp_srt_path, "w", encoding="utf-8") as f:
                 f.write(srt_content)
+            
+            # 统计字幕数量
+            subtitle_count = len(srt_content.strip().split('\n\n'))
             logger.info(f"转录完成，SRT文件保存至: {temp_srt_path}")
-            print(f"[bold green]转录完成，SRT文件保存至:[/bold green] {temp_srt_path}")
+            print(f"✅ [bold green]转录完成[/bold green] (共 [cyan]{subtitle_count}[/cyan] 条字幕)")
 
         except Exception as e:
             print(f"[bold red]转录失败:[/bold red] {e}")
@@ -513,19 +639,16 @@ def _process_single_file(
 
         logger.info(f"翻译完成，中文翻译文件保存至: {final_translated_zh_path}")
         logger.info(f"英文翻译文件保存至: {final_translated_en_path}")
-        print(f"[bold green]翻译完成，中文翻译文件保存至:[/bold green] {final_translated_zh_path}")
-        print(f"[bold green]英文翻译文件保存至:[/bold green] {final_translated_en_path}")
 
         # --- 转换为 ASS ---
+        print(">>> [bold green]生成双语ASS文件...[/bold green]")
         logger.info(">>> 正在转换为 ASS 格式...")
-        print("[bold green]>>> 正在转换为 ASS 格式...[/bold green]")
 
         # 提取 srt2ass.py 的核心逻辑
         from .translation_core.utils.ass_converter import convert_srt_to_ass
 
         final_ass_path = convert_srt_to_ass(final_translated_zh_path, final_translated_en_path, output_dir)
         logger.info(f"ASS 文件生成成功: {final_ass_path}")
-        print(f"[bold green]ASS 文件生成成功:[/bold green] {final_ass_path}")
 
     except Exception as e:
         print(f"[bold red]翻译或 ASS 转换失败:[/bold red] {e}")
@@ -533,23 +656,24 @@ def _process_single_file(
     finally:
         # --- 清理中间翻译文件，保留原始转录文件 ---
         logger.info(">>> 正在清理中间翻译文件...")
-        print("[bold green]>>> 正在清理中间翻译文件...[/bold green]")
+        cleaned_files = 0
         if final_translated_zh_path and final_translated_zh_path.exists():
             os.remove(final_translated_zh_path)
             logger.info(f"已删除中间文件: {final_translated_zh_path}")
-            print(f"已删除中间文件: {final_translated_zh_path}")
+            cleaned_files += 1
         if final_translated_en_path and final_translated_en_path.exists():
             os.remove(final_translated_en_path)
             logger.info(f"已删除中间文件: {final_translated_en_path}")
-            print(f"已删除中间文件: {final_translated_en_path}")
+            cleaned_files += 1
+        
+        if cleaned_files > 0:
+            print(f"🧹 已清理 {cleaned_files} 个中间文件")
         
         # 处理原始SRT文件
         if temp_srt_path and temp_srt_path.exists():
-            if input_file.suffix.lower() == '.srt':
-                print(f"[bold green]输入文件为SRT，保持原文件不变:[/bold green] {temp_srt_path}")
-            else:
+            if input_file.suffix.lower() != '.srt':
                 logger.info(f"保留原始转录文件: {temp_srt_path}")
-                print(f"[bold green]保留原始转录文件:[/bold green] {temp_srt_path}")
+                print(f"💾 [bold green]保留转录文件:[/bold green] [cyan]{temp_srt_path.name}[/cyan]")
 
 @app.command("init")
 def init():
