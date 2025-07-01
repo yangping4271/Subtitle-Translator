@@ -1,25 +1,24 @@
 # 字幕翻译工具 (Subtitle Translator)
 
-一个集成了视频转录、字幕翻译和格式转换的强大命令行工具。支持将视频文件转录为字幕，并将字幕翻译成多种语言，最终生成双语ASS字幕文件。
+一个集成了英文视频转录、字幕翻译和格式转换的命令行工具。将英文音频/视频转录为字幕，并翻译成多种语言，生成双语ASS字幕文件。
+
+> ⚠️ **重要说明**：转录功能仅支持英文音频/视频。如果您的视频是其他语言，请先准备好英文SRT字幕文件。
 
 ## ✨ 核心特性
 
-- 🎬 **视频转录**: 使用先进的 Parakeet MLX 模型将视频转录为高质量 SRT 字幕
-- 🌐 **智能翻译**: 支持多种 LLM 模型（GPT、Claude、Gemini等）进行字幕翻译
-- 📝 **格式转换**: 自动生成双语 ASS 字幕文件，支持中英文对照显示
-- ⚡ **并行处理**: 多线程处理，大幅提升翻译效率
-- 🎯 **批量处理**: 支持单文件和批量处理模式
+- 🎬 **英文视频转录**: 使用 Parakeet MLX 模型将英文音频/视频转录为SRT字幕
+- 🌐 **智能翻译**: 支持多种LLM模型进行字幕翻译（中文、日文等）
+- 📝 **双语字幕**: 自动生成双语ASS字幕文件
+- ⚡ **批量处理**: 支持批量处理多个文件
 
 ## 🚀 快速开始
 
 ### 安装
 
-确保你的系统已安装 Python 3.8+ 和 [uv](https://github.com/astral-sh/uv)。
-
 ```bash
 # 克隆仓库
 git clone <your-repo-url>
-cd subtitle_translator
+cd Subtitle-Translator
 
 # 使用 uv 安装
 uv tool install .
@@ -27,34 +26,47 @@ uv tool install .
 
 ### 配置
 
-推荐使用 `init` 命令进行初始化配置。
-
 ```bash
+# 一键配置API密钥
 subtitle-translate init
 ```
-
-更多详细信息，请参阅 [配置](#-配置) 部分。
 
 ### 基本使用
 
 ```bash
-# 处理单个视频文件
-subtitle-translate -i video.mp4 -t zh
+# 🎯 最简单：批量处理当前目录所有文件（默认翻译成中文）
+subtitle-translate
 
-# 批量处理当前目录的所有视频
-subtitle-translate -t zh
+# 处理单个文件
+subtitle-translate -i video.mp4
 
-# 指定输出目录
-subtitle-translate -i video.mp4 -t zh -o ./output
+# 翻译成其他语言（如日语）
+subtitle-translate -i video.mp4 -t ja
+
+# 限制处理文件数量
+subtitle-translate -n 3
 
 # 启用反思翻译模式（提高质量）
-subtitle-translate -i video.mp4 -t zh -r
-
-# 调试模式
-subtitle-translate -i video.mp4 -t zh -d
+subtitle-translate -i video.mp4 -r
 ```
 
-## 📖 详细使用说明
+**批量处理说明**：
+- 自动扫描当前目录的 `.srt`, `.mp3`, `.mp4` 文件  
+- 文件优先级：SRT > MP3 > MP4（避免重复处理）
+- 跳过已存在 `.ass` 文件的项目
+
+## 📖 详细说明
+
+### 支持的输入格式
+
+- **英文音频**: MP3（转录为字幕）
+- **英文视频**: MP4, MOV, MKV等（转录为字幕）  
+- **英文字幕**: SRT文件（直接翻译）
+
+### 输出文件
+
+- `文件名.srt` - 原始英文字幕
+- `文件名.ass` - 双语ASS字幕文件
 
 ### 命令行参数
 
@@ -62,149 +74,42 @@ subtitle-translate -i video.mp4 -t zh -d
 Usage: subtitle-translate [OPTIONS]
 
 Options:
-  -i, --input-file FILE         要处理的单个文件路径
-  -n, --count INTEGER          最大处理文件数量，-1表示处理所有文件 [default: -1]
-  -t, --target_lang TEXT       目标翻译语言 [default: zh]
-  -o, --output_dir PATH        输出文件的目录 [default: 当前目录]
-  --model TEXT                 用于转录的 Parakeet MLX 模型
-  -m, --llm-model TEXT         用于翻译的LLM模型
-  -r, --reflect                启用反思翻译模式
-  -d, --debug                  启用调试日志级别
-  --help                       显示此帮助信息
+  -i, --input-file FILE    单个文件路径，不指定则批量处理当前目录
+  -n, --count INTEGER      最大处理文件数量 [default: -1]
+  -t, --target_lang TEXT   目标语言 [default: zh]
+  -o, --output_dir PATH    输出目录 [default: 当前目录]
+  -m, --llm-model TEXT     LLM模型
+  -r, --reflect           启用反思翻译模式
+  -d, --debug             调试模式
+  --help                  显示帮助信息
 ```
-
-### 支持的输入格式
-
-- **视频格式**: MP4, AVI, MOV, MKV 等（通过 Parakeet MLX 转录）
-- **字幕格式**: SRT 文件（直接翻译）
-
-### 输出文件
-
-- `原文件名.srt` - 原始转录字幕（如果是视频输入）
-- `原文件名.zh.srt` - 中文翻译字幕
-- `原文件名.en.srt` - 英文优化字幕
-- `原文件名.ass` - 双语ASS字幕文件（最终输出）
 
 ## ⚙️ 配置
 
-本工具提供多种灵活的配置方式。
-
-### 推荐方式：`init` 命令
-
-`subtitle-translate init` 是最简单快捷的配置方式。运行此命令，工具会：
-- **智能检测**：检查当前目录是否存在 `.env` 文件。
-- **自动复制**：如果存在，会询问你是否将其复制到全局配置目录 (`~/.config/subtitle_translator/.env`)。
-- **交互式设置**：如果不存在，将引导你输入API密钥等必要信息，并自动创建全局配置文件。
-
-只需一次设置，即可在系统任意位置运行 `subtitle-translate`。
+### 快速配置
+```bash
+subtitle-translate init
+```
 
 ### 手动配置
+创建 `.env` 文件：
+```bash
+# OpenAI API 配置（必需）
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your-api-key-here
+LLM_MODEL=gpt-4o-mini
+```
 
-你也可以手动创建配置文件。工具会按以下优先级和顺序加载配置：
-
-1.  **项目配置** (最高优先级): 当前工作目录下的 `.env` 文件。
-2.  **全局配置**: `~/.config/subtitle_translator/.env` 文件。
-3.  **系统环境变量**。
-
-### 必需配置
-
-你的 `.env` 文件中必须包含以下内容：
+## 🛠️ 开发
 
 ```bash
-# OpenAI API 配置
-OPENAI_BASE_URL=https://api.openai.com/v1  # API 端点
-OPENAI_API_KEY=your-api-key-here           # API 密钥
-LLM_MODEL=gpt-4o-mini                      # 默认模型
-```
-
-### 可选配置
-
-```bash
-# 日志级别
-LOG_LEVEL=INFO
-
-# 调试模式
-DEBUG=false
-```
-
-### 支持的 LLM 模型
-
-- **OpenAI**: `gpt-4o`, `gpt-4o-mini`, `gpt-3.5-turbo`
-- **Anthropic**: `claude-3-sonnet`, `claude-3-haiku`
-- **Google**: `google/gemini-2.5-flash-lite-preview-06-17`
-- 更多模型请参考你的 API 提供商文档
-
-## 🏗️ 技术架构
-
-### 核心模块
-
-```
-subtitle_translator/
-├── cli.py                    # 命令行接口
-├── transcription_core/       # 转录核心
-│   ├── parakeet.py          # Parakeet MLX 集成
-│   ├── audio.py             # 音频处理
-│   └── ...
-└── translation_core/        # 翻译核心
-    ├── optimizer.py         # 字幕翻译优化
-    ├── summarizer.py        # 内容摘要
-    ├── spliter.py           # 智能断句
-    └── utils/
-        ├── srt2ass.py       # SRT 到 ASS 转换
-        └── ...
-```
-
-### 处理流程
-
-1. **音频提取** - 从视频文件提取音频
-2. **语音转录** - 使用 Parakeet MLX 模型转录为文本
-3. **智能断句** - 使用 LLM 进行语义断句
-4. **内容摘要** - 生成字幕内容摘要作为翻译上下文
-5. **并行翻译** - 多线程并行翻译字幕片段
-6. **质量优化** - 可选的反思翻译模式
-7. **格式转换** - 生成双语 ASS 字幕文件
-
-### 性能优化
-
-- **多线程处理**: 默认 18 个线程并行翻译
-- **批量请求**: 支持批量 API 调用
-- **智能缓存**: 避免重复处理
-- **内存管理**: 自动清理临时文件
-
-## 🛠️ 开发指南
-
-### 本地开发
-
-```bash
-# 克隆仓库
-git clone <your-repo-url>
-cd subtitle_translator
-
 # 安装开发依赖
 uv sync --dev
 
-# 运行测试
+# 运行
 uv run python -m subtitle_translator.cli --help
 ```
 
-### 依赖管理
-
-项目使用 `uv` 进行依赖管理：
-
-- `pyproject.toml` - 项目配置和依赖声明
-- `uv.lock` - 锁定的依赖版本
-
 ## 📄 许可证
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
-
-## 🙏 致谢
-
-- [Parakeet MLX](https://github.com/senstella/parakeet-mlx) - Nvidia Parakeet 模型在 Apple Silicon 上使用 MLX 的实现
-- [VideoCaptioner](https://github.com/WEIFENG2333/VideoCaptioner) - 智能字幕助手项目
-- [uv](https://github.com/astral-sh/uv) - 现代化的 Python 包管理工具
-- [Typer](https://github.com/tiangolo/typer) - 出色的命令行接口框架
-
----
-
-**📧 联系方式**: 如有问题或建议，请通过 Issues 或 Pull Requests 联系我们。 
+MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。 
