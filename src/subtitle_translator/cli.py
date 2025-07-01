@@ -197,7 +197,6 @@ class SubtitleTranslatorService:
             try:
                 self.config.set_target_language(target_lang)
                 logger.info(f"✅ 目标语言已设置为: {self.config.target_language}")
-                print(f"🌍 [bold green]目标语言:[/bold green] [cyan]{self.config.target_language}[/cyan]")
             except ValueError as e:
                 # 记录详细的错误信息到日志
                 logger.error(f"❌ 语言设置失败: {str(e)}")

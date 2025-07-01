@@ -83,7 +83,39 @@ def convert_srt_to_ass(target_lang_srt_path: Path, english_srt_path: Path, outpu
     Returns:
         Path: 生成的ASS文件路径
     """
-    head_str = '''[Script Info]
+    # 语言到字体的映射
+    LANGUAGE_FONTS = {
+        'zh': '宋体-简 黑体,11',            # 中文简体
+        'zh-cn': '宋体-简 黑体,11',         # 中文简体
+        'zh-tw': 'Noto Sans CJK TC,12',    # 中文繁体
+        'ja': 'Noto Sans CJK JP,13',       # 日文  
+        'ko': 'Noto Sans CJK KR,12',       # 韩文
+        'fr': 'Noto Sans,14',              # 法文
+        'de': 'Noto Sans,14',              # 德文
+        'es': 'Noto Sans,14',              # 西班牙文
+        'pt': 'Noto Sans,14',              # 葡萄牙文
+        'ru': 'Noto Sans,13',              # 俄文
+        'it': 'Noto Sans,14',              # 意大利文
+        'ar': 'Noto Sans Arabic,13',       # 阿拉伯文
+        'th': 'Noto Sans Thai,13',         # 泰文
+        'vi': 'Noto Sans,13',              # 越南文
+        'default': 'Noto Sans,13'          # 默认
+    }
+    
+    # 从文件名检测语言
+    def detect_language_from_filename(filepath):
+        filename = Path(filepath).stem.lower()
+        language_suffixes = ['zh-cn', 'zh-tw', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru', 'it', 'ar', 'th', 'vi', 'en']
+        for suffix in language_suffixes:
+            if filename.endswith('.' + suffix):
+                return suffix
+        return 'default'
+    
+    # 检测目标语言并获取对应字体
+    target_lang = detect_language_from_filename(target_lang_srt_path)
+    target_font = LANGUAGE_FONTS.get(target_lang, LANGUAGE_FONTS['default'])
+    
+    head_str = f'''[Script Info]
 ; This is an Advanced Sub Station Alpha v4+ script.
 Title:
 ScriptType: v4.00+
@@ -93,7 +125,7 @@ PlayDepth: 0
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,Noto Serif,18,&H0000FFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,1,1,7,1
-Style: Secondary,宋体-简 黑体,11,&H0000FF00,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,1,1,7,1
+Style: Secondary,{target_font},&H0000FF00,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,1,1,7,1
 
 [Events]
 Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text'''
