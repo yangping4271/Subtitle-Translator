@@ -257,13 +257,13 @@ class SubtitleTranslatorService:
             # 保存字幕
             logger.info("💾 正在保存翻译结果...")
             base_name = input_srt_path.stem
-            zh_output_path = output_dir / f"{base_name}.{target_lang}.srt"
-            en_output_path = output_dir / f"{base_name}.en.srt"
+            target_lang_output_path = output_dir / f"{base_name}.{target_lang}.srt"
+            english_output_path = output_dir / f"{base_name}.en.srt"
 
             asr_data.save_translations_to_files(
                 translate_result,
-                str(en_output_path),
-                str(zh_output_path)
+                str(english_output_path),
+                str(target_lang_output_path)
             )
             
             total_elapsed = time.time() - task_start_time
@@ -283,7 +283,7 @@ class SubtitleTranslatorService:
             log_stats(logger, final_stats, "任务完成统计")
             log_section_end(logger, "字幕翻译任务", total_elapsed, "🎉")
             
-            return zh_output_path
+            return target_lang_output_path
                 
         except OpenAIAPIError as e:
             logger.error(f"🚨 API错误: {str(e)}")
@@ -508,9 +508,12 @@ def main(
         # 提取基础文件名并去重排序
         base_names = set()
         for file in media_files:
-            # 移除扩展名和语言后缀
+            # 移除扩展名
             base_name = re.sub(r'\.(srt|mp3|mp4)$', '', file)
-            base_name = re.sub(r'_(en|zh)$', '', base_name)
+            # 移除各种语言后缀
+            language_suffixes = [r'\.zh$', r'\.zh-cn$', r'\.zh-tw$', r'\.ja$', r'\.en$', r'\.ko$', r'\.fr$', r'\.de$', r'\.es$', r'\.pt$', r'\.ru$', r'\.it$', r'\.ar$', r'\.th$', r'\.vi$']
+            for suffix_pattern in language_suffixes:
+                base_name = re.sub(suffix_pattern, '', base_name)
             base_names.add(base_name)
         
         base_names = sorted(base_names)
@@ -552,6 +555,8 @@ def main(
 
     # 处理文件
     count = 0
+    generated_ass_files = []  # 记录本次生成的ASS文件
+    
     for i, current_input_file in enumerate(files_to_process):
         print()
         logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
@@ -569,6 +574,7 @@ def main(
             # 检查是否生成了ASS文件
             ass_file = output_dir / f"{current_input_file.stem}.ass"
             if ass_file.exists():
+                generated_ass_files.append(ass_file)
                 logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
                 print(f"📺 双语ASS文件已生成: [cyan]{ass_file.name}[/cyan]")
         
@@ -583,16 +589,17 @@ def main(
     logger.info(f"总计处理文件数: {count}")
     print(f"🎉 [bold green]批量处理完成！[/bold green] (处理 [cyan]{count}[/cyan] 个文件)")
     
-    # 只显示生成的ASS文件统计，不显示详细列表
+    # 只显示本次生成的ASS文件统计
     if count > 0:
-        ass_files = list(output_dir.glob("*.ass"))
-        if ass_files:
-            logger.info("生成的文件：")
-            for f in ass_files:
+        if generated_ass_files:
+            logger.info("本次生成的ASS文件：")
+            for f in generated_ass_files:
                 logger.info(f"  {f.name}")
-            print(f"📺 [bold green]已生成 {len(ass_files)} 个双语ASS文件[/bold green]")
+            print(f"📺 [bold green]已生成 {len(generated_ass_files)} 个双语ASS文件[/bold green]")
         
-        srt_files = [f for f in output_dir.glob("*.srt") if not ("_zh" in f.name or "_en" in f.name)]
+        # 过滤掉语言特定的SRT文件（如 .zh.srt, .ja.srt, .en.srt 等）
+        language_patterns = ['.zh.', '.zh-cn.', '.zh-tw.', '.ja.', '.en.', '.ko.', '.fr.', '.de.', '.es.', '.pt.', '.ru.', '.it.', '.ar.', '.th.', '.vi.']
+        srt_files = [f for f in output_dir.glob("*.srt") if not any(pattern in f.name for pattern in language_patterns)]
         if srt_files:
             logger.info("原始字幕文件：")
             for f in srt_files:
@@ -645,8 +652,8 @@ def _process_single_file(
             print(f"[bold red]转录失败:[/bold red] {e}")
             raise typer.Exit(code=1)
 
-    final_translated_zh_path = None
-    final_translated_en_path = None
+    final_target_lang_path = None
+    final_english_path = None
 
     # --- 翻译阶段 ---
     logger.info(">>> 开始翻译...")
@@ -657,7 +664,7 @@ def _process_single_file(
         print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
         raise
     try:
-        final_translated_zh_path = translator_service.translate_srt(
+        final_target_lang_path = translator_service.translate_srt(
             input_srt_path=temp_srt_path,
             target_lang=target_lang,
             output_dir=output_dir,
@@ -665,10 +672,10 @@ def _process_single_file(
             reflect=reflect
         )
         # 确保这里正确赋值
-        final_translated_en_path = output_dir / f"{temp_srt_path.stem}.en.srt"
+        final_english_path = output_dir / f"{temp_srt_path.stem}.en.srt"
 
-        logger.info(f"翻译完成，中文翻译文件保存至: {final_translated_zh_path}")
-        logger.info(f"英文翻译文件保存至: {final_translated_en_path}")
+        logger.info(f"翻译完成，目标语言翻译文件保存至: {final_target_lang_path}")
+        logger.info(f"英文翻译文件保存至: {final_english_path}")
 
         # --- 转换为 ASS ---
         print(">>> [bold green]生成双语ASS文件...[/bold green]")
@@ -677,7 +684,7 @@ def _process_single_file(
         # 提取 srt2ass.py 的核心逻辑
         from .translation_core.utils.ass_converter import convert_srt_to_ass
 
-        final_ass_path = convert_srt_to_ass(final_translated_zh_path, final_translated_en_path, output_dir)
+        final_ass_path = convert_srt_to_ass(final_target_lang_path, final_english_path, output_dir)
         logger.info(f"ASS 文件生成成功: {final_ass_path}")
 
     except Exception as e:
@@ -687,13 +694,13 @@ def _process_single_file(
         # --- 清理中间翻译文件，保留原始转录文件 ---
         logger.info(">>> 正在清理中间翻译文件...")
         cleaned_files = 0
-        if final_translated_zh_path and final_translated_zh_path.exists():
-            os.remove(final_translated_zh_path)
-            logger.info(f"已删除中间文件: {final_translated_zh_path}")
+        if final_target_lang_path and final_target_lang_path.exists():
+            os.remove(final_target_lang_path)
+            logger.info(f"已删除中间文件: {final_target_lang_path}")
             cleaned_files += 1
-        if final_translated_en_path and final_translated_en_path.exists():
-            os.remove(final_translated_en_path)
-            logger.info(f"已删除中间文件: {final_translated_en_path}")
+        if final_english_path and final_english_path.exists():
+            os.remove(final_english_path)
+            logger.info(f"已删除中间文件: {final_english_path}")
             cleaned_files += 1
         
         if cleaned_files > 0:

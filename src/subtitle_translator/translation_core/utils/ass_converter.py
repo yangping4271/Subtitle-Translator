@@ -71,7 +71,18 @@ def srt2ass_converter_func(input_file, pos):
     subLines = re.sub(r'</font>', "", subLines)
     return subLines
 
-def convert_srt_to_ass(zh_srt_path: Path, en_srt_path: Path, output_dir: Path):
+def convert_srt_to_ass(target_lang_srt_path: Path, english_srt_path: Path, output_dir: Path):
+    """
+    将目标语言字幕文件和英文字幕文件合并为双语ASS文件
+    
+    Args:
+        target_lang_srt_path: 目标语言字幕文件路径（如日文、韩文、中文等）
+        english_srt_path: 英文字幕文件路径
+        output_dir: 输出目录
+        
+    Returns:
+        Path: 生成的ASS文件路径
+    """
     head_str = '''[Script Info]
 ; This is an Advanced Sub Station Alpha v4+ script.
 Title:
@@ -87,10 +98,13 @@ Style: Secondary,宋体-简 黑体,11,&H0000FF00,&H000000FF,&H00000000,&H0000000
 [Events]
 Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text'''
 
-    subLines1 = srt2ass_converter_func(str(zh_srt_path), 'Secondary')
-    subLines2 = srt2ass_converter_func(str(en_srt_path), 'Default')
+    # 目标语言字幕使用 Secondary 样式（显示在下方，绿色）
+    target_lang_lines = srt2ass_converter_func(str(target_lang_srt_path), 'Secondary')
+    # 英文字幕使用 Default 样式（显示在上方，青色）
+    english_lines = srt2ass_converter_func(str(english_srt_path), 'Default')
     
-    src = fileopen(str(zh_srt_path))
+    # 使用目标语言文件来获取编码信息和生成输出文件名
+    src = fileopen(str(target_lang_srt_path))
     tmp = src[0]
     encoding = src[1]
 
@@ -101,7 +115,7 @@ Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
     lines = [x.strip() for x in tmp.split("\n") if x.strip()]
     
     # 移除语言后缀，支持多种语言代码格式
-    base_name = zh_srt_path.stem
+    base_name = target_lang_srt_path.stem
     # 移除常见的语言后缀模式，如 .zh, .ja, .en, .ko, .fr 等
     language_suffixes = ['.zh', '.zh-cn', '.zh-tw', '.ja', '.en', '.ko', '.fr', '.de', '.es', '.pt', '.ru', '.it', '.ar', '.th', '.vi']
     for suffix in language_suffixes:
@@ -110,7 +124,8 @@ Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
             break
     output_file = output_dir / f"{base_name}.ass"
     
-    output_str = head_str + '\n' + subLines1 + subLines2
+    # 合并目标语言字幕和英文字幕
+    output_str = head_str + '\n' + target_lang_lines + english_lines
     output_str = output_str.encode(encoding)
 
     with open(output_file, 'wb') as output:

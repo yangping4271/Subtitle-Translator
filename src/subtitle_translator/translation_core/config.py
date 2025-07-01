@@ -172,8 +172,6 @@ class SubtitleConfig:
 
 # 文件相关常量
 SRT_SUFFIX = ".srt"
-OUTPUT_SUFFIX = "_zh.srt"
-EN_OUTPUT_SUFFIX = "_en.srt"
 
 # 延迟创建默认配置实例
 def get_default_config() -> SubtitleConfig:

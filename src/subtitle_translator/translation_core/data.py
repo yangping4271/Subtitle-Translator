@@ -147,28 +147,34 @@ class SubtitleData:
         del self.segments[index + 1]
 
     def save_translations(self, base_path: Path, translate_result: List[Dict], 
-                        en_suffix: str = ".en.srt", zh_suffix: str = ".zh.srt") -> None:
+                        english_suffix: str = ".en.srt", target_lang_suffix: str = ".target.srt") -> None:
         """
-        保存翻译结果，包括优化后的英文字幕和翻译后的中文字幕
+        保存翻译结果，包括优化后的英文字幕和翻译后的目标语言字幕
+        
+        Args:
+            base_path: 基础文件路径
+            translate_result: 翻译结果列表
+            english_suffix: 英文字幕文件后缀
+            target_lang_suffix: 目标语言字幕文件后缀（默认为中文，但可以是任何语言）
         """
         # 构建输出文件路径
         base_name = base_path.stem
         output_dir = base_path.parent
-        en_path = output_dir / f"{base_name}{en_suffix}"
-        zh_path = output_dir / f"{base_name}{zh_suffix}"
+        english_path = output_dir / f"{base_name}{english_suffix}"
+        target_lang_path = output_dir / f"{base_name}{target_lang_suffix}"
 
         logger.info("开始保存...")
 
         # 保存优化后的英文字幕
         optimized_subtitles = {item["id"]: item["optimized"] for item in translate_result}
-        self.save_translation(str(en_path), optimized_subtitles, "优化")
+        self.save_translation(str(english_path), optimized_subtitles, "优化")
 
-        # 保存翻译后的中文字幕
+        # 保存翻译后的目标语言字幕
         translated_subtitles = {
             item["id"]: item.get("revised_translation", item["translation"])
             for item in translate_result
         }
-        self.save_translation(str(zh_path), translated_subtitles, "翻译")
+        self.save_translation(str(target_lang_path), translated_subtitles, "翻译")
 
         # 只在最后统一打印总体统计
         total = len(self.segments)
@@ -235,27 +241,27 @@ class SubtitleData:
         logger.info(f"{operation}后的字幕已保存至: {output_path}")
 
     def save_translations_to_files(self, translate_result: List[Dict], 
-                                en_output: str, zh_output: str) -> None:
+                                english_output: str, target_lang_output: str) -> None:
         """
         保存翻译结果到指定的文件路径
         
         Args:
             translate_result: 翻译结果列表
-            en_output: 英文字幕输出路径
-            zh_output: 中文字幕输出路径
+            english_output: 英文字幕输出路径
+            target_lang_output: 目标语言字幕输出路径（可以是中文、日文、韩文等任何语言）
         """
         logger.info("开始保存...")
 
         # 保存优化后的英文字幕
         optimized_subtitles = {item["id"]: item["optimized"] for item in translate_result}
-        self.save_translation(en_output, optimized_subtitles, "优化")
+        self.save_translation(english_output, optimized_subtitles, "优化")
 
-        # 保存翻译后的中文字幕
+        # 保存翻译后的目标语言字幕
         translated_subtitles = {
             item["id"]: item.get("revised_translation", item["translation"])
             for item in translate_result
         }
-        self.save_translation(zh_output, translated_subtitles, "翻译")
+        self.save_translation(target_lang_output, translated_subtitles, "翻译")
 
         # 只在最后统一打印总体统计
         total = len(self.segments)
