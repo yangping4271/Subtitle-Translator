@@ -100,7 +100,14 @@ Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
     tmp = tmp.replace("", "")
     lines = [x.strip() for x in tmp.split("\n") if x.strip()]
     
-    base_name = zh_srt_path.stem.replace('.zh', '')
+    # 移除语言后缀，支持多种语言代码格式
+    base_name = zh_srt_path.stem
+    # 移除常见的语言后缀模式，如 .zh, .ja, .en, .ko, .fr 等
+    language_suffixes = ['.zh', '.zh-cn', '.zh-tw', '.ja', '.en', '.ko', '.fr', '.de', '.es', '.pt', '.ru', '.it', '.ar', '.th', '.vi']
+    for suffix in language_suffixes:
+        if base_name.endswith(suffix):
+            base_name = base_name[:-len(suffix)]
+            break
     output_file = output_dir / f"{base_name}.ass"
     
     output_str = head_str + '\n' + subLines1 + subLines2

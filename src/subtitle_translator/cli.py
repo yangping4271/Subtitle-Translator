@@ -192,6 +192,20 @@ class SubtitleTranslatorService:
             # 用于收集各阶段耗时的字典
             stage_times = {}
             
+            # 设置目标语言（带友好错误处理）
+            logger.info(f"🌍 设置目标语言: {target_lang}")
+            try:
+                self.config.set_target_language(target_lang)
+                logger.info(f"✅ 目标语言已设置为: {self.config.target_language}")
+                print(f"🌍 [bold green]目标语言:[/bold green] [cyan]{self.config.target_language}[/cyan]")
+            except ValueError as e:
+                # 记录详细的错误信息到日志
+                logger.error(f"❌ 语言设置失败: {str(e)}")
+                # 为用户显示友好的错误信息
+                print(f"[bold red]❌ 语言设置失败![/bold red]")
+                print(str(e))
+                raise typer.Exit(code=1)
+            
             # 初始化翻译环境
             init_start_time = time.time()
             self._init_translation_env(llm_model)
@@ -428,7 +442,7 @@ def main(
     ctx: typer.Context,
     input_file: Optional[Path] = typer.Option(None, "--input-file", "-i", help="要处理的单个文件路径，如不指定则批量处理当前目录。", exists=True, file_okay=True, dir_okay=False, readable=True),
     max_count: int = typer.Option(-1, "--count", "-n", help="最大处理文件数量，-1表示处理所有文件。"),
-    target_lang: str = typer.Option("zh", "--target_lang", "-t", help="目标翻译语言，例如 'zh' (中文), 'en' (英文)。"),
+    target_lang: str = typer.Option("zh", "--target_lang", "-t", help="目标翻译语言。支持的语言：zh(简体中文), zh-tw(繁体中文), ja(日文), ko(韩文), en(英文), fr(法文), de(德文), es(西班牙文), pt(葡萄牙文), ru(俄文), it(意大利文), ar(阿拉伯文), th(泰文), vi(越南文)等。"),
     output_dir: Optional[Path] = typer.Option(None, "--output_dir", "-o", help="输出文件的目录，默认为当前目录。"),
     model: str = typer.Option("mlx-community/parakeet-tdt-0.6b-v2", "--model", help="用于转录的 Parakeet MLX 模型。"),
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
@@ -441,6 +455,22 @@ def main(
     # 如果调用了子命令，就不执行主逻辑
     if ctx.invoked_subcommand is not None:
         return
+    
+    # 早期验证目标语言代码，提供友好错误信息
+    from .translation_core.config import get_target_language
+    try:
+        target_language_name = get_target_language(target_lang)
+        logger.info(f"✅ 目标语言验证通过: {target_lang} -> {target_language_name}")
+        print(f"🎯 [bold green]目标语言:[/bold green] [cyan]{target_language_name}[/cyan] ([dim]{target_lang}[/dim])")
+    except ValueError as e:
+        logger.error(f"❌ 命令行参数错误 - 目标语言: {str(e)}")
+        print(f"[bold red]❌ 目标语言参数错误![/bold red]")
+        print(str(e))
+        print(f"\n💡 [bold blue]使用示例:[/bold blue]")
+        print(f"   subtitle-translate -t ja  # 翻译成日文")
+        print(f"   subtitle-translate -t ko  # 翻译成韩文")
+        print(f"   subtitle-translate -t fr  # 翻译成法文")
+        raise typer.Exit(code=1)
 
 
         
