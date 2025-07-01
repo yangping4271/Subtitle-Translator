@@ -122,7 +122,7 @@ from .transcription_core.cli import to_srt
 from .translation_core.optimizer import SubtitleOptimizer
 from .translation_core.summarizer import SubtitleSummarizer
 from .translation_core.spliter import merge_segments
-from .translation_core.config import get_default_config, SubtitleConfig
+from .translation_core.config import get_default_config, SubtitleConfig, get_target_language, LANGUAGE_MAPPING
 from .translation_core.data import load_subtitle, SubtitleData
 from .translation_core.utils.test_openai import test_openai
 from .logger import setup_logger, log_section_start, log_section_end, log_stats, create_progress_logger
@@ -142,10 +142,18 @@ class SubtitleTranslatorService:
         self.config = SubtitleConfig()
         self.summarizer = SubtitleSummarizer(self.config)
 
-    def _init_translation_env(self, llm_model: str) -> None:
+    def _init_translation_env(self, target_lang: str = "zh", llm_model: Optional[str] = None) -> None:
         """初始化翻译环境并测试连接"""
         start_time = time.time()
         log_section_start(logger, "翻译环境初始化", "⚙️")
+        
+        # 设置目标语言
+        try:
+            self.config.set_target_language(target_lang)
+            logger.info(f"🌐 目标语言: {self.config.target_language}")
+        except ValueError as e:
+            logger.error(f"语言设置错误: {e}")
+            raise
         
         if llm_model:
             self.config.split_model = llm_model
@@ -194,7 +202,7 @@ class SubtitleTranslatorService:
             
             # 初始化翻译环境
             init_start_time = time.time()
-            self._init_translation_env(llm_model)
+            self._init_translation_env(target_lang, llm_model)
             stage_times["🔧 环境初始化"] = time.time() - init_start_time
             
             # 加载字幕文件
@@ -428,7 +436,7 @@ def main(
     ctx: typer.Context,
     input_file: Optional[Path] = typer.Option(None, "--input-file", "-i", help="要处理的单个文件路径，如不指定则批量处理当前目录。", exists=True, file_okay=True, dir_okay=False, readable=True),
     max_count: int = typer.Option(-1, "--count", "-n", help="最大处理文件数量，-1表示处理所有文件。"),
-    target_lang: str = typer.Option("zh", "--target_lang", "-t", help="目标翻译语言，例如 'zh' (中文), 'en' (英文)。"),
+    target_lang: str = typer.Option("zh", "--target_lang", "-t", help="目标翻译语言。支持的语言: zh(简体中文), zh-tw(繁体中文), ja(日文), en(英文), ko(韩文), fr(法文), de(德文), es(西班牙文), pt(葡萄牙文), ru(俄文), it(意大利文), ar(阿拉伯文), th(泰文), vi(越南文)。"),
     output_dir: Optional[Path] = typer.Option(None, "--output_dir", "-o", help="输出文件的目录，默认为当前目录。"),
     model: str = typer.Option("mlx-community/parakeet-tdt-0.6b-v2", "--model", help="用于转录的 Parakeet MLX 模型。"),
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
@@ -441,6 +449,17 @@ def main(
     # 如果调用了子命令，就不执行主逻辑
     if ctx.invoked_subcommand is not None:
         return
+    
+    # 验证目标语言参数
+    try:
+        target_language = get_target_language(target_lang)
+        logger.info(f"✅ 目标语言: {target_language}")
+    except ValueError as e:
+        logger.error(f"❌ {e}")
+        print(f"[bold red]❌ {e}[/bold red]")
+        supported_langs = ", ".join(sorted(set(LANGUAGE_MAPPING.keys())))
+        print(f"[yellow]💡 支持的语言代码: {supported_langs}[/yellow]")
+        raise typer.Exit(code=1)
 
 
         
