@@ -159,11 +159,23 @@ def split_by_llm(text: str,
                 if max_word_count_english < word_count < threshold:
                     long_sentence_count += 1
                     logger.debug(f"⚠️ 长句: {word_count}字 - {segment[:30]}...")
+                    new_sentences.append(segment)
                 elif word_count > threshold:
-                    super_long_count += 1
-                    logger.info(f"🔄 超长句分割: {word_count}字 - {segment[:30]}...")
+                    logger.info(f"🔄 处理超长句: {word_count}字 - {segment[:30]}...")
+                    
+                    # 记录分割前的原始内容用于检查
+                    original_segment = segment
+                    
                     # 尝试切分句子
                     split_results = split_by_common_words(segment)
+                    
+                    # 检查是否实际分割成功
+                    if len(split_results) > 1:
+                        super_long_count += 1
+                        logger.info(f"✅ 超长句分割成功: {len(split_results)} 个片段")
+                    else:
+                        logger.warning(f"⚠️ 超长句分割失败，保持原样")
+                    
                     new_sentences.extend(split_results)
                 else:
                     new_sentences.append(segment)
@@ -172,9 +184,9 @@ def split_by_llm(text: str,
 
         # 记录统计信息
         if long_sentence_count > 0:
-            logger.info(f"📊 发现 {long_sentence_count} 个长句")
+            logger.info(f"📊 发现 {long_sentence_count} 个长句 (15-19字)")
         if super_long_count > 0:
-            logger.info(f"✂️ 自动分割 {super_long_count} 个超长句")
+            logger.info(f"✂️ 成功分割 {super_long_count} 个超长句 (>19字)")
 
         # 验证结果
         word_count = count_words(text)
@@ -204,7 +216,7 @@ def split_by_common_words(text: str) -> List[str]:
     Args:
         text: 需要分割的句子
     Returns:
-        分割后的句子列表，如果无法分割则返回包含原句子的列表
+        分割后的句子列表，如果智能分割失败则使用强制分割
     """
     # 定义在词语前面分割的常见词
     prefix_split_words = {
@@ -266,56 +278,86 @@ def split_by_common_words(text: str) -> List[str]:
             if word_lower in suffix_split_words:
                 split_positions.append(i + 1)  # 在后缀词之后分割
     
-    # 如果没找到合适的分割点，返回原句子
-    if not split_positions:
-        return [text]
-    
-    # 排序并去重分割点
-    split_positions = sorted(list(set(split_positions)))
-    
-    # 执行分割
+    # 尝试智能分割
     result = []
-    start = 0
-    for pos in split_positions:
-        if pos - start >= 3:  # 确保每个分段至少有3个词
-            segment = " ".join(words[start:pos])
-            if segment:
-                result.append(segment)
-            start = pos
-    
-    # 添加最后一个分段
-    if start < len(words):
-        last_segment = " ".join(words[start:])
-        if last_segment:
-            result.append(last_segment)
-    
-    # 如果分割结果不理想（没有分段或只有一个分段），返回原句子
-    if len(result) <= 1:
-        return [text]
-
-    # 如果有多于两个分段，尝试合并最短的相邻分段
-    while len(result) > 2:
-        # 找出最短的相邻分段对
-        min_length = float('inf')
-        merge_index = 0
+    if split_positions:
+        # 排序并去重分割点
+        split_positions = sorted(list(set(split_positions)))
         
-        for i in range(len(result) - 1):
-            current_len = count_words(result[i]) + count_words(result[i + 1])
-            if current_len < min_length:
-                min_length = current_len
-                merge_index = i
+        # 执行分割
+        start = 0
+        for pos in split_positions:
+            if pos - start >= 3:  # 确保每个分段至少有3个词
+                segment = " ".join(words[start:pos])
+                if segment:
+                    result.append(segment)
+                start = pos
         
-        # 合并找到的最短相邻分段
-        merged_segment = result[merge_index] + " " + result[merge_index + 1]
-        result = result[:merge_index] + [merged_segment] + result[merge_index + 2:]
+        # 添加最后一个分段
+        if start < len(words):
+            last_segment = " ".join(words[start:])
+            if last_segment:
+                result.append(last_segment)
+        
+        # 检查智能分割结果
+        if len(result) > 1:
+            # 如果有多于两个分段，尝试合并最短的相邻分段
+            while len(result) > 2:
+                # 找出最短的相邻分段对
+                min_length = float('inf')
+                merge_index = 0
+                
+                for i in range(len(result) - 1):
+                    current_len = count_words(result[i]) + count_words(result[i + 1])
+                    if current_len < min_length:
+                        min_length = current_len
+                        merge_index = i
+                
+                # 合并找到的最短相邻分段
+                merged_segment = result[merge_index] + " " + result[merge_index + 1]
+                result = result[:merge_index] + [merged_segment] + result[merge_index + 2:]
 
-    # 最终检查两个分段是否合理
-    if any(count_words(segment) < 3 for segment in result):
-        return [text]
+            # 最终检查智能分割结果是否合理
+            if (len(result) > 1 and 
+                all(count_words(segment) >= 3 for segment in result)):
+                
+                # 检查分段是否平衡（差距不要太大）
+                lengths = [count_words(segment) for segment in result]
+                if max(lengths) <= min(lengths) * 3:  # 长度比例合理
+                    logger.debug(f"智能分割: {' -- '.join(result)}")
+                    return result
+
+    # 智能分割失败，启用备用强制分割策略
+    logger.warning(f"⚠️ 智能分割失败，启用备用强制分割策略: {text[:50]}...")
     
-    # 检查分段是否平衡（差距不要太大）
-    lengths = [count_words(segment) for segment in result]
-    if max(lengths) > min(lengths) * 3:  # 如果最长的分段超过最短的3倍
-        return [text]
-    logger.info(f"分割优化: {' -- '.join(result)}")
+    # 备用策略1: 尝试在中间位置寻找较好的分割点
+    mid_point = len(words) // 2
+    best_split = mid_point
+    
+    # 在中间位置前后5个词的范围内寻找较好的分割点
+    search_range = 5
+    start_search = max(3, mid_point - search_range)
+    end_search = min(len(words) - 3, mid_point + search_range)
+    
+    # 优先选择标点符号后的位置
+    for i in range(start_search, end_search + 1):
+        if i < len(words) and words[i-1].rstrip().endswith(('.', ',', ';', ':', '!', '?')):
+            best_split = i
+            break
+    
+    # 如果没找到标点符号，选择连接词前的位置
+    if best_split == mid_point:
+        for i in range(start_search, end_search + 1):
+            if i < len(words):
+                word = words[i].lower().strip(",.!?")
+                if word in {"and", "or", "but", "so", "then", "however", "therefore"}:
+                    best_split = i
+                    break
+    
+    # 执行备用分割
+    first_part = " ".join(words[:best_split])
+    second_part = " ".join(words[best_split:])
+    
+    result = [first_part, second_part]
+    logger.warning(f"🔧 强制分割完成: {' -- '.join(result)}")
     return result
