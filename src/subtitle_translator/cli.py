@@ -175,7 +175,12 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
                 print(f"📺 双语ASS文件已生成: [cyan]{ass_file.name}[/cyan]")
         
         except Exception as e:
-            print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
+            from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError
+            if isinstance(e, (SmartSplitError, TranslationError, SummaryError)):
+                # 这些异常已经在processor.py中显示过了，这里不重复显示
+                pass
+            else:
+                print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
         
         print()  # 添加空行分隔
     

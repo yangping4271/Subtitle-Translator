@@ -168,8 +168,13 @@ class SubtitleTranslatorService:
         except OpenAIAPIError as e:
             logger.error(f"🚨 API错误: {str(e)}")
             raise
-            
+        
         except Exception as e:
+            # 检查是否是智能断句、翻译或总结异常，如果是则直接传播
+            from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError
+            if isinstance(e, (SmartSplitError, TranslationError, SummaryError)):
+                raise e
+            
             logger.error(f"💥 处理过程中发生错误: {str(e)}")
             logger.exception("详细错误信息:")
             raise
@@ -234,8 +239,8 @@ class SubtitleTranslatorService:
             
             return translate_result
         except Exception as e:
-            logger.error(f"❌ 翻译失败: {str(e)}")
-            print(f"[bold red]❌ 翻译失败: {str(e)}[/bold red]")
+            # 不在这里记录错误信息，避免重复显示  
+            # 错误信息已经在processor.py中处理过了
             raise
 
     def _get_optimization_stats(self, batch_logs: list, reflect: bool) -> dict:

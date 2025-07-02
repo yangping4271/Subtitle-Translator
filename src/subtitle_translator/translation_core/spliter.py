@@ -17,6 +17,36 @@ class SubtitleProcessError(Exception):
     """字幕处理相关的异常"""
     pass
 
+class SmartSplitError(Exception):
+    """智能断句异常"""
+    def __init__(self, message: str, suggestion: str = ""):
+        self.message = message
+        self.suggestion = suggestion
+        super().__init__(message)
+    
+    def __str__(self):
+        return self.message
+
+class TranslationError(Exception):
+    """翻译异常"""
+    def __init__(self, message: str, suggestion: str = ""):
+        self.message = message
+        self.suggestion = suggestion
+        super().__init__(message)
+    
+    def __str__(self):
+        return self.message
+
+class SummaryError(Exception):
+    """内容分析异常"""
+    def __init__(self, message: str, suggestion: str = ""):
+        self.message = message
+        self.suggestion = suggestion
+        super().__init__(message)
+    
+    def __str__(self):
+        return self.message
+
 def is_pure_punctuation(s: str) -> bool:
     """
     检查字符串是否仅由标点符号组成
@@ -461,9 +491,12 @@ def merge_segments(asr_data: SubtitleData,
             index, asr_data_part = args
             try:
                 return process_by_llm(asr_data_part.segments, model=model, batch_index=index+1)
+            except SmartSplitError as e:
+                # 智能断句异常，直接抛出不重复包装
+                raise e
             except Exception as e:
                 logger.error(f"❌ 批次 {index+1} 处理失败: {str(e)}")
-                raise Exception(f"批次 {index+1} LLM处理失败: {str(e)}")
+                raise Exception(f"批次 {index+1} 处理失败: {str(e)}")
 
         # 并行处理所有分段，添加批次编号
         try:

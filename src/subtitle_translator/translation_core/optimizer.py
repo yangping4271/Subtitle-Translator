@@ -114,6 +114,25 @@ class SubtitleOptimizer:
                         result["optimized_subtitles"][str(k)] = retry_result["optimized_subtitles"][k]
                         result["translated_subtitles"][str(k)] = v
 
+            # 检查翻译结果质量
+            failed_count = 0
+            for k, v in result["translated_subtitles"].items():
+                if isinstance(v, str) and v.startswith("[翻译失败]"):
+                    failed_count += 1
+                elif isinstance(v, dict) and v.get("translation", "").startswith("[翻译失败]"):
+                    failed_count += 1
+            
+            # 如果所有翻译都失败，抛出异常
+            if failed_count == len(result["translated_subtitles"]):
+                from .spliter import TranslationError
+                suggestion = "💡 建议：请检查翻译模型名称是否正确，或更换其他可用模型"
+                raise TranslationError("所有字幕翻译均失败", suggestion)
+            
+            # 如果部分翻译失败，记录警告
+            if failed_count > 0:
+                total_count = len(result["translated_subtitles"])
+                logger.warning(f"⚠️ {failed_count}/{total_count} 条字幕翻译失败")
+            
             # 转换结果格式
             translated_subtitle = []
             for k, v in result["optimized_subtitles"].items():

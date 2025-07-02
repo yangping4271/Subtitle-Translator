@@ -64,7 +64,13 @@ class SubtitleSummarizer:
             }
             
         except Exception as e:
-            logger.error(f"总结字幕失败: {e}")
-            return {
-                "summary": ""
-            }
+            from .spliter import SummaryError
+            from .split_by_llm import _extract_error_message, _get_error_suggestions
+            
+            error_msg = _extract_error_message(str(e))
+            logger.error(f"❌ 内容分析失败: {error_msg}")
+            
+            # 根据错误类型给出针对性建议
+            suggestions = _get_error_suggestions(str(e), self.config.summary_model)
+            
+            raise SummaryError(error_msg, suggestions)

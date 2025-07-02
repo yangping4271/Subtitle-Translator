@@ -10,6 +10,61 @@ from ..logger import setup_logger
 
 logger = setup_logger("split_by_llm")
 
+def _extract_error_message(error_str: str) -> str:
+    """提取错误信息中的核心内容"""
+    # 提取 API 错误信息
+    if "Error code:" in error_str and "message" in error_str:
+        try:
+            # 尝试提取 JSON 中的 message 字段
+            import json
+            import re
+            
+            # 查找 JSON 部分
+            json_match = re.search(r'\{.*\}', error_str)
+            if json_match:
+                try:
+                    error_data = json.loads(json_match.group())
+                    if "error" in error_data and "message" in error_data["error"]:
+                        return error_data["error"]["message"]
+                except:
+                    pass
+        except:
+            pass
+    
+    # 如果无法解析 JSON，返回简化的错误信息
+    if "is not a valid model ID" in error_str:
+        return "模型不存在或不可用"
+    elif "401" in error_str or "Unauthorized" in error_str:
+        return "API密钥无效或已过期"
+    elif "403" in error_str or "Forbidden" in error_str:
+        return "API访问被拒绝"
+    elif "429" in error_str or "rate limit" in error_str.lower():
+        return "API调用频率限制"
+    elif "timeout" in error_str.lower():
+        return "请求超时"
+    elif "connection" in error_str.lower():
+        return "网络连接失败"
+    else:
+        # 返回前50个字符作为简化错误信息
+        return error_str[:50] + ("..." if len(error_str) > 50 else "")
+
+def _get_error_suggestions(error_str: str, model: str) -> str:
+    """根据错误类型返回针对性建议"""
+    if "is not a valid model ID" in error_str:
+        return f"💡 建议：检查模型名称 '{model}' 是否正确，或更换其他可用模型"
+    elif "401" in error_str or "Unauthorized" in error_str:
+        return "💡 建议：检查 API 密钥是否正确设置"
+    elif "403" in error_str:
+        return "💡 建议：检查 API 密钥权限或账户状态"
+    elif "429" in error_str or "rate limit" in error_str.lower():
+        return "💡 建议：稍后重试，或检查 API 调用频率限制"
+    elif "timeout" in error_str.lower():
+        return "💡 建议：检查网络连接，或尝试使用更快的模型"
+    elif "connection" in error_str.lower():
+        return "💡 建议：检查网络连接和 API 端点设置"
+    else:
+        return "💡 建议：检查网络连接、API 密钥和模型配置"
+
 def count_words(text: str) -> int:
     """
     统计文本中英文单词数
@@ -202,12 +257,18 @@ def split_by_llm(text: str,
         
     except Exception as e:
         if max_retries > 0:
-            logger.warning(f"API调用失败: {str(e)}，剩余重试次数: {max_retries-1}")
+            logger.warning(f"API调用失败，第{4-max_retries}次重试: {_extract_error_message(str(e))}")
             return split_by_llm(text, model, max_word_count_english, max_retries-1, batch_index)
         else:
-            logger.error(f"API调用失败, 无法拆分句子: {str(e)}")
-            # 如果API调用失败，使用简单的句子拆分
-            return text.split(". ")
+            error_msg = _extract_error_message(str(e))
+            logger.error(f"❌ 智能断句失败: {error_msg}")
+            
+            # 根据错误类型给出针对性建议
+            suggestions = _get_error_suggestions(str(e), model)
+            
+            # 创建一个携带建议的自定义异常类型
+            from .spliter import SmartSplitError
+            raise SmartSplitError(error_msg, suggestions)
         
 def split_by_common_words(text: str) -> List[str]:
     """
