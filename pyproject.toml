@@ -19,7 +19,8 @@ dependencies = [
 ]
 
 [project.scripts]
-subtitle-translate = "subtitle_translator.cli:app"
+translate = "subtitle_translator.cli:app"
+transcribe = "subtitle_translator.transcription_core.cli:app"
 
 [build-system]
 requires = ["setuptools>=61.0"]
