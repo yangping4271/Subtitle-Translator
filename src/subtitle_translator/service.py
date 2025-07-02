@@ -35,7 +35,7 @@ class SubtitleTranslatorService:
         return self.logger
 
     def _init_translation_env(self, llm_model: str) -> None:
-        """初始化翻译环境并测试连接"""
+        """初始化翻译环境配置"""
         logger = self._get_logger()
         start_time = time.time()
         log_section_start(logger, "翻译环境初始化", "⚙️")
@@ -53,18 +53,6 @@ class SubtitleTranslatorService:
             "翻译模型": self.config.translation_model
         }
         log_stats(logger, model_config, "模型配置")
-        
-        # 使用翻译模型进行连接测试
-        logger.info("🔌 正在测试API连接...")
-        print("🔌 [bold yellow]测试API连接...[/bold yellow]")
-        success, error_msg = test_openai(self.config.openai_base_url, self.config.openai_api_key, self.config.translation_model)
-        if not success:
-            logger.error(f"❌ API连接测试失败: {error_msg}")
-            print(f"[bold red]❌ API连接失败: {error_msg}[/bold red]")
-            raise OpenAIAPIError(error_msg)
-        
-        logger.info("✅ API连接测试成功")
-        print("✅ [bold green]API连接成功[/bold green]")
         
         # 显示模型配置
         print(f"🤖 [bold blue]模型配置:[/bold blue]")
@@ -100,9 +88,7 @@ class SubtitleTranslatorService:
                 raise ValueError(str(e))
             
             # 初始化翻译环境
-            init_start_time = time.time()
             self._init_translation_env(llm_model)
-            stage_times["🔧 环境初始化"] = time.time() - init_start_time
             
             # 加载字幕文件
             from .translation_core.data import load_subtitle
@@ -133,7 +119,7 @@ class SubtitleTranslatorService:
                 print(f"✅ [bold green]断句完成[/bold green] (优化为 [cyan]{len(asr_data.segments)}[/cyan] 句)")
             
             if split_time > 0:
-                stage_times["✂️ 智能断句"] = split_time
+                stage_times["✂️  智能断句"] = split_time
             
             # 获取字幕摘要
             summary_start_time = time.time()
@@ -317,10 +303,8 @@ class SubtitleTranslatorService:
         """格式化显示时间统计"""
         print(f"⏱️  [bold blue]耗时统计:[/bold blue]")
         
-        # 按时间排序显示各阶段
-        sorted_stages = sorted(stages.items(), key=lambda x: x[1], reverse=True)
-        
-        for stage_name, elapsed_time in sorted_stages:
+        # 按执行顺序显示各阶段（保持字典插入顺序）
+        for stage_name, elapsed_time in stages.items():
             if elapsed_time > 0:
                 percentage = (elapsed_time / total_time) * 100
                 print(f"   {stage_name}: [cyan]{elapsed_time:.1f}s[/cyan] ([dim]{percentage:.0f}%[/dim])")
