@@ -411,6 +411,15 @@ class SubtitleOptimizer:
                     )
                 message.pop()
                 
+                # 添加类型检查
+                if isinstance(response, str):
+                    logger.error(f"❌ API调用返回错误: {response}")
+                    raise Exception(f"API调用失败: {response}")
+                
+                if not hasattr(response, 'choices') or not response.choices:
+                    logger.error("❌ API响应格式异常：缺少choices属性")
+                    raise Exception("API响应格式异常")
+                
                 translate = response.choices[0].message.content.strip()
                 translated_subtitle[key] = translate
                 logger.info(f"单条翻译原文: {value}")
@@ -556,6 +565,15 @@ class SubtitleOptimizer:
                     temperature=0.7,
                     timeout=80
                 )
+                # 添加类型检查
+                if isinstance(response, str):
+                    logger.error(f"❌ API调用返回错误: {response}")
+                    raise Exception(f"API调用失败: {response}")
+                
+                if not hasattr(response, 'choices') or not response.choices:
+                    logger.error("❌ API响应格式异常：缺少choices属性")
+                    raise Exception("API响应格式异常")
+                
                 response_content = parse_llm_response(response.choices[0].message.content)
                 
                 logger.debug(f"反思翻译API返回结果: {json.dumps(response_content, indent=4, ensure_ascii=False)}")
@@ -680,6 +698,15 @@ class SubtitleOptimizer:
                     temperature=0.7,
                     timeout=80
                 )
+                # 添加类型检查
+                if isinstance(response, str):
+                    logger.error(f"❌ API调用返回错误: {response}")
+                    raise Exception(f"API调用失败: {response}")
+                
+                if not hasattr(response, 'choices') or not response.choices:
+                    logger.error("❌ API响应格式异常：缺少choices属性")
+                    raise Exception("API响应格式异常")
+                
                 response_content = parse_llm_response(response.choices[0].message.content)
 
                 logger.debug(f"API返回结果: \n{json.dumps(response_content, indent=4, ensure_ascii=False)}\n")

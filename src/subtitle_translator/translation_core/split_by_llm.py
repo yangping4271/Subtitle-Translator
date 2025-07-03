@@ -182,7 +182,16 @@ def split_by_llm(text: str,
             timeout=80
         )
         
-        # 处理响应
+        # 处理响应 - 添加类型检查
+        if isinstance(response, str):
+            logger.error(f"❌ API调用返回错误: {response}")
+            raise Exception(f"API调用失败: {response}")
+        
+        # 检查response是否有choices属性
+        if not hasattr(response, 'choices') or not response.choices:
+            logger.error("❌ API响应格式异常：缺少choices属性")
+            raise Exception("API响应格式异常")
+        
         result = response.choices[0].message.content
         if not result:
             raise Exception("API返回为空")

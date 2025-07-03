@@ -58,6 +58,17 @@ class SubtitleSummarizer:
                 timeout=80
             )
             
+            # 添加类型检查和错误处理
+            if isinstance(response, str):
+                # 如果response是字符串，说明API调用出错
+                logger.error(f"❌ API调用返回错误: {response}")
+                raise Exception(f"API调用失败: {response}")
+            
+            # 检查response是否有choices属性
+            if not hasattr(response, 'choices') or not response.choices:
+                logger.error("❌ API响应格式异常：缺少choices属性")
+                raise Exception("API响应格式异常")
+            
             summary = response.choices[0].message.content
             return {
                 "summary": summary
