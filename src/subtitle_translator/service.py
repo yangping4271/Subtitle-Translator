@@ -54,6 +54,17 @@ class SubtitleTranslatorService:
         }
         log_stats(logger, model_config, "模型配置")
         
+        # 显示 API 配置
+        print(f"🌐 [bold blue]API 配置:[/bold blue]")
+        print(f"   端点: [cyan]{self.config.openai_base_url}[/cyan]")
+        # 对 API 密钥进行脱敏处理
+        api_key = self.config.openai_api_key
+        if api_key:
+            masked_key = api_key[:10] + '*' * (len(api_key) - 10) if len(api_key) > 10 else '*' * len(api_key)
+            print(f"   密钥: [cyan]{masked_key}[/cyan]")
+        else:
+            print(f"   密钥: [red]未设置[/red]")
+        
         # 显示模型配置
         print(f"🤖 [bold blue]模型配置:[/bold blue]")
         print(f"   断句: [cyan]{self.config.split_model}[/cyan]")
