@@ -178,8 +178,10 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
             from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError
             if isinstance(e, (SmartSplitError, TranslationError, SummaryError)):
                 # 这些异常已经在processor.py中显示过了，这里不重复显示
-                pass
+                # 但需要记录到日志中用于统计
+                logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
             else:
+                logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
                 print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
         
         print()  # 添加空行分隔

@@ -99,21 +99,32 @@ def process_single_file(
         # 检查是否是智能断句异常
         from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError
         if isinstance(e, SmartSplitError):
+            logger.error(f"❌ 智能断句失败: {e.message}")
+            if e.suggestion:
+                logger.error(f"{e.suggestion}")
             print(f"[bold red]❌ 智能断句失败:[/bold red] {e.message}")
             if e.suggestion:
                 print(f"[bold yellow]{e.suggestion}[/bold yellow]")
             raise SmartSplitError(e.message, e.suggestion)
         elif isinstance(e, TranslationError):
+            logger.error(f"❌ 翻译失败: {e.message}")
+            if e.suggestion:
+                logger.error(f"{e.suggestion}")
             print(f"[bold red]❌ 翻译失败:[/bold red] {e.message}")
             if e.suggestion:
                 print(f"[bold yellow]{e.suggestion}[/bold yellow]")
             raise TranslationError(e.message, e.suggestion)
         elif isinstance(e, SummaryError):
+            logger.error(f"❌ 内容分析失败: {e.message}")
+            if e.suggestion:
+                logger.error(f"{e.suggestion}")
             print(f"[bold red]❌ 内容分析失败:[/bold red] {e.message}")
             if e.suggestion:
                 print(f"[bold yellow]{e.suggestion}[/bold yellow]")
             raise SummaryError(e.message, e.suggestion)
         else:
+            logger.error(f"❌ 处理失败: {e}")
+            logger.exception("详细错误信息:")
             print(f"[bold red]❌ 处理失败:[/bold red] {e}")
             raise RuntimeError(f"处理失败: {e}")
     finally:
