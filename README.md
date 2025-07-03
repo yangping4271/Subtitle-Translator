@@ -2,7 +2,7 @@
 
 [English](./README.md) | [中文](./README_zh.md)
 
-A command-line tool that integrates English video transcription, subtitle translation, and format conversion. It transcribes English audio/video into subtitles, translates them into multiple languages, and generates bilingual ASS subtitle files.
+A command-line tool that integrates English video transcription, subtitle translation. It transcribes English audio/video into subtitles, translates them into multiple languages, and generates bilingual ASS subtitle files.
 
 > ⚠️ **Important**: The transcription function only supports English audio/video. If your video is in another language, please prepare an English SRT subtitle file first.
 
