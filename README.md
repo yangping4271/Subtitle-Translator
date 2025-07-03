@@ -1,191 +1,193 @@
-# 字幕翻译工具 (Subtitle Translator)
+# Subtitle Translator
 
-集成了英文视频转录、字幕翻译和格式转换的命令行工具。将英文音频/视频转录为字幕，并翻译成多种语言，生成双语ASS字幕文件。
+[English](./README.md) | [中文](./README_zh.md)
 
-> ⚠️ **重要**：转录功能仅支持英文音频/视频。如果您的视频是其他语言，请先准备好英文SRT字幕文件。
+A command-line tool that integrates English video transcription, subtitle translation, and format conversion. It transcribes English audio/video into subtitles, translates them into multiple languages, and generates bilingual ASS subtitle files.
 
-## 功能特性
+> ⚠️ **Important**: The transcription function only supports English audio/video. If your video is in another language, please prepare an English SRT subtitle file first.
 
-- **英文视频转录**: 使用 Parakeet MLX 模型将英文音频/视频转录为SRT字幕
-- **智能翻译**: 支持多种LLM模型，支持多种语言翻译
-- **双语字幕**: 自动生成双语ASS字幕文件
-- **批量处理**: 支持批量处理多个文件
-- **模块化配置**: 支持为断句、翻译、总结分别配置不同模型
+## Features
 
-## 快速开始
+- **English Video Transcription**: Transcribes English audio/video to SRT subtitles using the Parakeet MLX model.
+- **AI-Powered Translation**: Supports various LLM models for translation into multiple languages.
+- **Bilingual Subtitles**: Automatically generates bilingual ASS subtitle files.
+- **Batch Processing**: Supports processing multiple files at once.
+- **Modular Configuration**: Allows configuring different models for sentence splitting, translation, and summarization.
 
-### 安装
+## Quick Start
+
+### Installation
 ```bash
 git clone <your-repo-url>
 cd Subtitle-Translator
 uv tool install .
 ```
 
-### 配置
+### Configuration
 ```bash
-translate init  # 一键配置API密钥
+translate init  # One-click API key configuration
 ```
 
-### 基本使用
+### Basic Usage
 ```bash
-# 批量处理当前目录所有文件（默认翻译成中文）
+# Batch process all files in the current directory (translates to Chinese by default)
 translate
 
-# 处理单个文件
+# Process a single file
 translate -i video.mp4
 
-# 翻译成其他语言
+# Translate to other languages
 translate -i video.mp4 -t ja
 
-# 启用反思翻译模式（提高质量）
+# Enable reflection mode for higher quality translation
 translate -i video.mp4 -r
 
-# 仅转录音频/视频（不翻译）
+# Transcribe audio/video only (no translation)
 transcribe video.mp4
 
-# 转录多个文件
+# Transcribe multiple files
 transcribe audio1.mp3 audio2.wav video.mp4
 
-# 生成词级别时间戳
+# Generate word-level timestamps
 transcribe video.mp4 --timestamps
 
-# 输出多种格式
+# Output in multiple formats
 transcribe video.mp4 --output-format all
 ```
 
-## 工作流程
+## Workflow
 
-### 完整流程 (translate 命令)
+### Full Workflow (translate command)
 ```
-音频/视频 → 转录 → 英文SRT → 翻译 → 双语ASS字幕
-```
-
-### 仅翻译流程 (已有英文字幕)
-```
-英文SRT → 翻译 → 双语ASS字幕
+Audio/Video → Transcribe → English SRT → Translate → Bilingual ASS Subtitles
 ```
 
-### 仅转录流程 (transcribe 命令)
+### Translation-Only Workflow (with existing English subtitles)
 ```
-音频/视频 → 转录 → 多种格式输出
+English SRT → Translate → Bilingual ASS Subtitles
 ```
 
-## 支持的格式
+### Transcription-Only Workflow (transcribe command)
+```
+Audio/Video → Transcribe → Multiple Output Formats
+```
 
-### 输入格式
-- **音频**: MP3, WAV, FLAC, M4A, AAC 等
-- **视频**: MP4, MOV, MKV, AVI, WebM 等
-- **字幕**: SRT 格式
+## Supported Formats
 
-### 输出格式
-- **translate**: 生成 `.srt` (英文) 和 `.ass` (双语) 文件
-- **transcribe**: 支持 TXT、SRT、VTT、JSON 等多种格式
+### Input Formats
+- **Audio**: MP3, WAV, FLAC, M4A, AAC, etc.
+- **Video**: MP4, MOV, MKV, AVI, WebM, etc.
+- **Subtitles**: SRT format
 
-## 转录功能特性
+### Output Formats
+- **translate**: Generates `.srt` (English) and `.ass` (bilingual) files.
+- **transcribe**: Supports various formats like TXT, SRT, VTT, JSON, etc.
 
-基于 Parakeet MLX 模型的专业转录工具：
+## Transcription Features
 
-- **高性能**: 基于 Apple MLX 框架，在 Apple Silicon 上性能卓越
-- **智能分块**: 自动处理长音频文件，避免内存溢出
-- **精确时间戳**: 支持词级别时间戳，精确到毫秒
-- **批量处理**: 一次转录多个音频文件
+A professional transcription tool based on the Parakeet MLX model:
 
-### 高级用法
+- **High Performance**: Excellent performance on Apple Silicon, powered by the Apple MLX framework.
+- **Smart Chunking**: Automatically handles long audio files to prevent memory overflow.
+- **Precise Timestamps**: Supports word-level timestamps with millisecond accuracy.
+- **Batch Processing**: Transcribe multiple audio files at once.
+
+### Advanced Usage
 ```bash
-# 处理长音频（自动分块）
+# Process long audio (automatic chunking)
 transcribe long_podcast.mp3 --chunk-duration 120 --overlap-duration 15
 
-# 自定义输出目录和文件名
+# Custom output directory and filename
 transcribe interview.mp3 --output-dir ./transcripts --output-template "interview_{filename}"
 
-# 高精度模式
+# High-precision mode
 transcribe audio.mp3 --fp32
 ```
 
-## 命令行参考
+## Command-Line Reference
 
-### translate 命令
+### translate Command
 ```bash
 translate [OPTIONS] [COMMAND]
 
 Options:
-  -i, --input-file FILE    单个文件路径，不指定则批量处理当前目录
-  -n, --count INTEGER      最大处理文件数量 [default: -1]
-  -t, --target_lang TEXT   目标语言 [default: zh]
-  -o, --output_dir PATH    输出目录 [default: 当前目录]
-  --model TEXT             转录模型
-  -m, --llm-model TEXT     LLM模型
-  -r, --reflect            启用反思翻译模式
-  -d, --debug              调试模式
+  -i, --input-file FILE    Path to a single file. If not specified, batch processes the current directory.
+  -n, --count INTEGER      Maximum number of files to process [default: -1]
+  -t, --target_lang TEXT   Target language [default: zh]
+  -o, --output_dir PATH    Output directory [default: Current directory]
+  --model TEXT             Transcription model
+  -m, --llm-model TEXT     LLM model
+  -r, --reflect            Enable reflection translation mode
+  -d, --debug              Debug mode
   
 Commands:
-  init                     初始化配置
+  init                     Initialize configuration
 ```
 
-### transcribe 命令
+### transcribe Command
 ```bash
 transcribe [OPTIONS] AUDIOS...
 
 Options:
-  --model TEXT                    转录模型 [default: mlx-community/parakeet-tdt-0.6b-v2]
-  --output-dir PATH               输出目录 [default: .]
-  --output-format [txt|srt|vtt|json|all]  输出格式 [default: srt]
-  --output-template TEXT          文件名模板 [default: {filename}]
-  --timestamps/--no-timestamps    输出词级别时间戳 [default: False]
-  --chunk-duration FLOAT          分块时长（秒）[default: 120.0]
-  --overlap-duration FLOAT        重叠时长（秒）[default: 15.0]
-  -v, --verbose                   显示详细信息
-  --fp32/--bf16                   使用FP32精度 [default: bf16]
+  --model TEXT                    Transcription model [default: mlx-community/parakeet-tdt-0.6b-v2]
+  --output-dir PATH               Output directory [default: .]
+  --output-format [txt|srt|vtt|json|all]  Output format [default: srt]
+  --output-template TEXT          Filename template [default: {filename}]
+  --timestamps/--no-timestamps    Output word-level timestamps [default: False]
+  --chunk-duration FLOAT          Chunk duration in seconds [default: 120.0]
+  --overlap-duration FLOAT        Overlap duration in seconds [default: 15.0]
+  -v, --verbose                   Show detailed information
+  --fp32/--bf16                   Use FP32 precision [default: bf16]
 ```
 
-### 支持的翻译语言
-支持多种语言翻译，常用语言代码：`zh`（中文）、`ja`（日文）、`ko`（韩文）、`en`（英文）、`fr`（法文）等。
+### Supported Translation Languages
+Supports translation into multiple languages. Common language codes: `zh` (Chinese), `ja` (Japanese), `ko` (Korean), `en` (English), `fr` (French), etc.
 
-## 配置
+## Configuration
 
-### 快速配置
+### Quick Configuration
 ```bash
 translate init
 ```
 
-### 手动配置
-创建 `.env` 文件：
+### Manual Configuration
+Create a `.env` file:
 ```bash
-# OpenAI API 配置（必需）
+# OpenAI API Configuration (required)
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
 
-# 模型配置
-SPLIT_MODEL=gpt-4o-mini      # 断句模型
-TRANSLATION_MODEL=gpt-4o     # 翻译模型
-SUMMARY_MODEL=gpt-4o-mini    # 总结模型
-LLM_MODEL=gpt-4o-mini        # 默认模型
+# Model Configuration
+SPLIT_MODEL=gpt-4o-mini      # Sentence splitting model
+TRANSLATION_MODEL=gpt-4o     # Translation model
+SUMMARY_MODEL=gpt-4o-mini    # Summarization model
+LLM_MODEL=gpt-4o-mini        # Default model
 ```
 
-## 开发
+## Development
 
 ```bash
-# 安装开发依赖
+# Install development dependencies
 uv sync --dev
 
-# 运行主程序
+# Run the main program
 uv run python -m subtitle_translator.cli --help
 
-# 运行转录功能
+# Run the transcription feature
 uv run python -m subtitle_translator.transcription_core.cli --help
 ```
 
-## 许可证
+## License
 
-MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+MIT License - See the [LICENSE](LICENSE) file for details.
 
-## 🙏 致谢
+## 🙏 Acknowledgements
 
-- [Parakeet MLX](https://github.com/senstella/parakeet-mlx) - Nvidia Parakeet 模型在 Apple Silicon 上使用 MLX 的实现
-- [Video Captioner](https://github.com/WEIFENG2333/VideoCaptioner) - 智能字幕助手项目
-- [uv](https://github.com/astral-sh/uv) - 现代化的 Python 包管理工具
-- [Typer](https://github.com/tiangolo/typer) - 出色的命令行接口框架
+- [Parakeet MLX](https://github.com/senstella/parakeet-mlx) - An implementation of the Nvidia Parakeet model using MLX on Apple Silicon.
+- [Video Captioner](https://github.com/WEIFENG2333/VideoCaptioner) - An intelligent subtitle assistant project.
+- [uv](https://github.com/astral-sh/uv) - A modern Python package management tool.
+- [Typer](https://github.com/tiangolo/typer) - An excellent command-line interface framework.
 
 ---
 
-**📧 联系方式**: 如有问题或建议，请通过 Issues 或 Pull Requests 联系我们。 
+**📧 Contact**: For questions or suggestions, please contact us via Issues or Pull Requests. 
