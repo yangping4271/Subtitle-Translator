@@ -21,7 +21,7 @@ logger = setup_logger(__name__)
 
 app = typer.Typer(
     help="一个集成了语音转录、字幕翻译和格式转换的命令行工具",
-    epilog="💡 首次使用请运行: subtitle-translate init 来配置API密钥"
+    epilog="💡 首次使用请运行: translate init 来配置API密钥"
 )
 
 
@@ -52,9 +52,9 @@ def main(
         print(f"[bold red]❌ 目标语言参数错误![/bold red]")
         print(str(e))
         print(f"\n💡 [bold blue]使用示例:[/bold blue]")
-        print(f"   subtitle-translate -t ja  # 翻译成日文")
-        print(f"   subtitle-translate -t ko  # 翻译成韩文")
-        print(f"   subtitle-translate -t fr  # 翻译成法文")
+        print(f"   translate -t ja  # 翻译成日文")
+        print(f"   translate -t ko  # 翻译成韩文")
+        print(f"   translate -t fr  # 翻译成法文")
         raise typer.Exit(code=1)
 
     # 设置输出目录

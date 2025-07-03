@@ -81,7 +81,7 @@ def setup_environment():
             logger.info(f"✅ 首次运行检测到项目配置文件，已自动复制到全局配置:")
             logger.info(f"   源文件: {project_env_path}")
             logger.info(f"   目标文件: {user_env_path}")
-            logger.info(f"   现在你可以在任意目录下运行 subtitle-translate 命令！")
+            logger.info(f"   现在你可以在任意目录下运行 translate 命令！")
         elif not env_loaded:
             logger.warning(
                 f"未找到任何 .env 文件。程序将依赖于系统环境变量。\n"
@@ -98,7 +98,7 @@ def setup_environment():
             
             if missing_vars:
                 logger.error(f"缺少必需的环境变量: {', '.join(missing_vars)}")
-                logger.error("请运行 'subtitle-translate init' 来配置API密钥，或设置相应的环境变量。")
+                logger.error("请运行 'translate init' 来配置API密钥，或设置相应的环境变量。")
                 sys.exit(1)
 
 

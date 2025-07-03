@@ -195,7 +195,7 @@ def init_config():
                 import shutil
                 shutil.copy2(current_env_path, global_env_path)
                 print(f"\n✅ [bold green]配置已保存到:[/bold green] [cyan]{global_env_path}[/cyan]")
-                print("\n🎉 [bold green]配置完成！现在你可以在任意目录下运行 subtitle-translate 命令！[/bold green]")
+                print("\n🎉 [bold green]配置完成！现在你可以在任意目录下运行 translate 命令！[/bold green]")
                 
             except Exception as e:
                 print(f"[bold red]❌ 复制失败: {e}[/bold red]")
@@ -323,7 +323,7 @@ def _interactive_config_input(global_env_path: Path):
     
     # API验证通过后，生成配置文件内容
     config_content = f"""# Subtitle Translator 配置文件
-# 由 subtitle-translate init 命令自动生成
+# 由 translate init 命令自动生成
 
 # ======== API 配置 ========
 # API 基础URL
@@ -346,8 +346,8 @@ SUMMARY_MODEL={summary_model}
 LLM_MODEL={llm_model}
 
 # ======== 使用说明 ========
-# 1. 你现在可以在任意目录下运行 subtitle-translate 命令
-# 2. 如需修改配置，可以编辑此文件或重新运行 subtitle-translate init
+# 1. 你现在可以在任意目录下运行 translate 命令
+# 2. 如需修改配置，可以编辑此文件或重新运行 translate init
 # 3. 分别配置的模型会优先使用，如未设置则回退到 LLM_MODEL
 """
     
@@ -370,7 +370,7 @@ LLM_MODEL={llm_model}
         else:
             print(f"   🤖 统一模型: [cyan]{llm_model}[/cyan]")
         
-        print("\n🎉 [bold green]配置完成！现在你可以在任意目录下运行 subtitle-translate 命令！[/bold green]")
+        print("\n🎉 [bold green]配置完成！现在你可以在任意目录下运行 translate 命令！[/bold green]")
         
     except Exception as e:
         print(f"[bold red]❌ 保存配置失败: {e}[/bold red]")
