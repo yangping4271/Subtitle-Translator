@@ -21,6 +21,10 @@
 git clone <your-repo-url>
 cd Subtitle-Translator
 uv tool install .
+
+# 更新 PATH 以使用已安装的工具
+uv tool update-shell
+# 然后重启终端或运行: source ~/.zshenv
 ```
 
 ### 配置

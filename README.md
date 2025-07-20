@@ -21,6 +21,10 @@ A command-line tool that integrates English video transcription, subtitle transl
 git clone <your-repo-url>
 cd Subtitle-Translator
 uv tool install .
+
+# Update PATH to use the installed tools
+uv tool update-shell
+# Then restart your shell or run: source ~/.zshenv
 ```
 
 ### Configuration
