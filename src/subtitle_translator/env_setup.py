@@ -14,7 +14,7 @@ _env_loaded = False
 logger = None
 
 
-def setup_environment():
+def setup_environment(allow_missing_config=False):
     """
     智能加载 .env 文件，解决在不同目录下运行命令的环境变量问题。
     加载顺序 (后者覆盖前者):
@@ -24,6 +24,9 @@ def setup_environment():
     特殊功能：
     - 如果全局配置不存在，但找到项目配置，会自动复制项目配置作为全局配置
     - 使用标准的 .config 目录存储全局配置
+    
+    Args:
+        allow_missing_config: 是否允许缺少配置（用于init命令）
     """
     global _env_loaded, logger
     
@@ -97,9 +100,13 @@ def setup_environment():
                     missing_vars.append(var)
             
             if missing_vars:
-                logger.error(f"缺少必需的环境变量: {', '.join(missing_vars)}")
-                logger.error("请运行 'translate init' 来配置API密钥，或设置相应的环境变量。")
-                sys.exit(1)
+                if allow_missing_config:
+                    logger.warning(f"缺少必需的环境变量: {', '.join(missing_vars)}")
+                    logger.warning("程序将在配置模式下运行。")
+                else:
+                    logger.error(f"缺少必需的环境变量: {', '.join(missing_vars)}")
+                    logger.error("请运行 'translate init' 来配置API密钥，或设置相应的环境变量。")
+                    sys.exit(1)
 
 
 def get_app_config_dir() -> Path:

@@ -38,11 +38,11 @@ def main(
     debug: bool = typer.Option(False, "--debug", "-d", help="启用调试日志级别，显示更详细的处理信息。"),
 ):
     """字幕翻译工具主命令"""
-    setup_environment()
-    
     # 如果调用了子命令，就不执行主逻辑
     if ctx.invoked_subcommand is not None:
         return
+        
+    setup_environment()
     
     # 早期验证目标语言代码，提供友好错误信息
     try:
@@ -219,7 +219,19 @@ def _show_batch_results(count: int, generated_ass_files: list, output_dir: Path)
 @app.command("init")
 def init():
     """初始化全局配置 - 检查当前目录.env文件或交互式输入配置"""
-    init_config()
+    import traceback
+    print("🚀 开始初始化配置...")
+    try:
+        # 设置环境时允许缺少配置
+        setup_environment(allow_missing_config=True)
+        init_config()
+        print("✅ 配置初始化完成")
+    except Exception as e:
+        logger.error(f"配置初始化失败: {e}")
+        print(f"[bold red]❌ 配置初始化失败: {e}[/bold red]")
+        print(f"[bold red]详细错误信息:[/bold red]")
+        traceback.print_exc()
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

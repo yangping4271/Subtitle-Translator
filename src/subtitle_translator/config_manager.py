@@ -214,7 +214,21 @@ def init_config():
 
 def _interactive_config_input(global_env_path: Path):
     """交互式输入配置"""
-    base_url = typer.prompt("🌐 API基础URL", default="https://api.openai.com/v1")
+    import sys
+    
+    # 检查是否在交互式终端中
+    if not sys.stdin.isatty():
+        print("[bold red]❌ 当前不在交互式终端中，无法进行配置输入[/bold red]")
+        print("请在支持交互输入的终端中运行此命令，或手动创建配置文件：")
+        print(f"   配置文件路径: [cyan]{global_env_path}[/cyan]")
+        print("   可参考项目根目录的 env.example 文件")
+        raise typer.Exit(code=1)
+    
+    try:
+        base_url = typer.prompt("🌐 API基础URL")
+    except (KeyboardInterrupt, typer.Abort):
+        print("\n❌ 配置已取消")
+        raise typer.Exit(code=1)
     
     # API密钥
     api_key = typer.prompt("🔑 API密钥")
