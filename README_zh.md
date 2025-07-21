@@ -154,6 +154,11 @@ Options:
 translate init
 ```
 
+交互式配置包括：
+- LLM 服务的 API 密钥设置
+- 不同任务的模型配置
+- **Hugging Face 镜像站配置**（提高模型下载速度）
+
 ### 手动配置
 创建 `.env` 文件：
 ```bash
@@ -161,12 +166,47 @@ translate init
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
 
+# Hugging Face 镜像站配置（可选，提高下载速度）
+# 推荐国内用户或与 huggingface.co 连接较慢的用户使用
+HF_ENDPOINT=https://hf-mirror.com
+
 # 模型配置
 SPLIT_MODEL=gpt-4o-mini      # 断句模型
 TRANSLATION_MODEL=gpt-4o     # 翻译模型
 SUMMARY_MODEL=gpt-4o-mini    # 总结模型
 LLM_MODEL=gpt-4o-mini        # 默认模型
 ```
+
+### Hugging Face 镜像站配置
+
+为了提高模型下载的可靠性和速度，特别是对国内用户，可以配置 Hugging Face 镜像站：
+
+#### 方式一：交互式配置
+```bash
+translate init
+# 在提示是否使用 Hugging Face 镜像站时选择 "是"
+```
+
+#### 方式二：环境变量
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+```
+
+#### 方式三：添加到 .env 文件
+```bash
+# 在你的 .env 文件中添加这一行
+HF_ENDPOINT=https://hf-mirror.com
+```
+
+#### 支持的镜像站
+- **hf-mirror.com**（推荐国内用户使用）
+- **huggingface.co**（官方地址，默认）
+- 自定义镜像站地址
+
+系统会自动检测网络连通性并选择最佳下载方式：
+1. **huggingface-cli** + 配置的镜像站（如可用）
+2. **hf_hub_download** + 配置的镜像站
+3. **自动故障转移**：主镜像站失败时自动切换到备用镜像站
 
 ## 开发
 

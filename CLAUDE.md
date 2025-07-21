@@ -90,6 +90,10 @@ The application requires API configuration via `.env` file or interactive setup:
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
 
+# Hugging Face Download Configuration (optional)
+# Improves model download reliability and speed, especially for users in China
+HF_ENDPOINT=https://hf-mirror.com
+
 # Model Configuration
 SPLIT_MODEL=gpt-4o-mini      # Sentence splitting
 TRANSLATION_MODEL=gpt-4o     # Main translation
@@ -117,3 +121,98 @@ The codebase includes comprehensive error handling with specific exception types
 - `SummaryError`: Summarization failures
 
 Errors are logged and displayed with user-friendly messages while maintaining detailed logs for debugging.
+
+## Hugging Face Download Optimization
+
+The application includes an intelligent download system for Hugging Face models, designed to improve reliability and speed, especially for users in regions with poor connectivity to the official Hugging Face Hub.
+
+### Download Strategy
+
+The system employs a 4-tier download strategy with automatic fallback:
+
+1. **huggingface-cli + configured mirror** (if huggingface-cli is available)
+2. **hf_hub_download + configured mirror**
+3. **Mirror site polling with huggingface-cli** (tries all available mirrors)
+4. **Mirror site polling with hf_hub_download** (tries all available mirrors)
+
+### Configuration
+
+#### Environment Variables
+- `HF_ENDPOINT`: Sets the preferred Hugging Face endpoint
+- Supported values:
+  - `https://huggingface.co` (official, default)
+  - `https://hf-mirror.com` (recommended for China users)
+  - `https://huggingface.com.cn` (alternative mirror)
+  - Custom mirror URLs
+
+#### Interactive Configuration
+The `translate init` command includes HF mirror configuration:
+- Prompts user whether to use a mirror site
+- Provides options for popular mirrors
+- Allows custom mirror URL input
+- Automatically adds HF_ENDPOINT to generated .env file
+
+### Implementation Details
+
+#### Key Components (`transcription_core/utils.py`)
+
+**Network Detection**:
+- `_check_endpoint_connectivity()`: Tests individual mirror connectivity
+- `_find_best_hf_endpoint()`: Automatically selects the best available endpoint
+- `_check_network_connectivity()`: General network connectivity check
+
+**Download Methods**:
+- `_download_with_huggingface_cli()`: Uses official CLI tool with mirror support
+- `_download_with_hf_hub()`: Uses huggingface_hub library with custom endpoint
+- `_download_with_retry()`: Main intelligent download orchestrator
+
+**Mirror Management**:
+```python
+HF_MIRROR_SITES = [
+    "https://huggingface.co",      # Official
+    "https://hf-mirror.com",       # Primary mirror
+    "https://huggingface.com.cn",  # Secondary mirror
+]
+```
+
+#### Download Flow
+1. Check if huggingface-cli is available
+2. Test configured endpoint connectivity
+3. Try primary download methods with configured endpoint
+4. If failed, iterate through all mirror sites
+5. Provide detailed error reporting with suggestions
+
+### Testing and Development
+
+#### Testing Download Functionality
+```bash
+# Test basic HF functionality
+uv run python -c "from src.subtitle_translator.transcription_core.utils import _get_hf_endpoint, _is_huggingface_cli_available, _check_network_connectivity; print(f'HF Endpoint: {_get_hf_endpoint()}'); print(f'CLI Available: {_is_huggingface_cli_available()}'); print(f'Network OK: {_check_network_connectivity()}')"
+
+# Test mirror connectivity
+uv run python -c "from src.subtitle_translator.transcription_core.utils import _check_endpoint_connectivity, HF_MIRROR_SITES; [print(f'{site}: {_check_endpoint_connectivity(site)}') for site in HF_MIRROR_SITES]"
+
+# Test download with specific mirror
+HF_ENDPOINT=https://hf-mirror.com uv run python -c "from src.subtitle_translator.transcription_core.utils import _download_with_retry; _download_with_retry('distilbert-base-uncased', 'config.json')"
+```
+
+#### Configuration Testing
+```bash
+# Test config manager mirror functionality
+uv run python -c "from src.subtitle_translator.config_manager import _interactive_config_input; print('Config manager loads successfully')"
+```
+
+### Error Handling
+
+The system provides enhanced error messages for download failures:
+- Network connectivity suggestions
+- Mirror configuration recommendations
+- Specific troubleshooting steps for different error types
+- Links to manual model access for verification
+
+### Performance Benefits
+
+- **Reduced Download Failures**: Automatic fallback to working mirrors
+- **Improved Speed**: Uses fastest available endpoint based on real-time testing
+- **Better User Experience**: Clear progress reporting and helpful error messages
+- **Zero Configuration**: Works out of the box with intelligent defaults

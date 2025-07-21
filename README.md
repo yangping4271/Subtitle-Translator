@@ -154,6 +154,11 @@ Supports translation into multiple languages. Common language codes: `zh` (Chine
 translate init
 ```
 
+The interactive configuration includes:
+- API key setup for LLM services
+- Model configuration for different tasks
+- **Hugging Face mirror configuration** (for improved model download speeds)
+
 ### Manual Configuration
 Create a `.env` file:
 ```bash
@@ -161,12 +166,47 @@ Create a `.env` file:
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
 
+# Hugging Face Mirror Configuration (optional, improves download speed)
+# Recommended for users in China or with slow connections to huggingface.co
+HF_ENDPOINT=https://hf-mirror.com
+
 # Model Configuration
 SPLIT_MODEL=gpt-4o-mini      # Sentence splitting model
 TRANSLATION_MODEL=gpt-4o     # Translation model
 SUMMARY_MODEL=gpt-4o-mini    # Summarization model
 LLM_MODEL=gpt-4o-mini        # Default model
 ```
+
+### Hugging Face Mirror Configuration
+
+For improved model download reliability and speed, especially for users in China, you can configure a Hugging Face mirror:
+
+#### Option 1: Interactive Configuration
+```bash
+translate init
+# Choose "yes" when prompted about Hugging Face mirror configuration
+```
+
+#### Option 2: Environment Variable
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+```
+
+#### Option 3: Add to .env file
+```bash
+# Add this line to your .env file
+HF_ENDPOINT=https://hf-mirror.com
+```
+
+#### Supported Mirrors
+- **hf-mirror.com** (Recommended for China users)
+- **huggingface.co** (Official, default)
+- Custom mirror endpoints
+
+The system automatically detects network connectivity and chooses the best download method:
+1. **huggingface-cli** + configured mirror (if available)
+2. **hf_hub_download** + configured mirror
+3. **Automatic fallback** to alternative mirrors if the primary fails
 
 ## Development
 

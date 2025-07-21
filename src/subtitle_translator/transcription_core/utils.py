@@ -5,7 +5,9 @@ import time
 import os
 import requests
 import urllib.parse
-from typing import Optional
+import subprocess
+import shutil
+from typing import Optional, List
 
 import mlx.core as mx
 from dacite import from_dict
@@ -47,6 +49,68 @@ from .parakeet import (
 logger = logging.getLogger(__name__)
 console = Console()
 
+# Hugging Face 镜像站列表（按优先级排序）
+HF_MIRROR_SITES = [
+    "https://huggingface.co",  # 官方地址
+    "https://hf-mirror.com",   # 推荐镜像站
+    "https://huggingface.com.cn",  # 备用镜像站
+]
+
+def _get_hf_endpoint() -> str:
+    """获取 Hugging Face 端点地址，支持环境变量配置"""
+    # 1. 优先使用环境变量 HF_ENDPOINT
+    hf_endpoint = os.getenv("HF_ENDPOINT")
+    if hf_endpoint and hf_endpoint.strip():
+        return hf_endpoint.strip()
+    
+    # 2. 使用默认官方地址
+    return "https://huggingface.co"
+
+def _is_huggingface_cli_available() -> bool:
+    """检查是否安装了 huggingface-cli"""
+    try:
+        result = subprocess.run(
+            ["huggingface-cli", "--version"], 
+            capture_output=True, 
+            text=True, 
+            timeout=5
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+def _check_endpoint_connectivity(endpoint: str) -> bool:
+    """检查指定端点的网络连接状态"""
+    try:
+        # 构建测试URL
+        test_url = f"{endpoint.rstrip('/')}"
+        response = requests.get(test_url, timeout=10)
+        return response.status_code == 200
+    except Exception as e:
+        logger.debug(f"端点 {endpoint} 连接测试失败: {e}")
+        return False
+
+def _find_best_hf_endpoint() -> str:
+    """自动寻找最佳的 Hugging Face 端点"""
+    # 首先检查用户配置的端点
+    configured_endpoint = _get_hf_endpoint()
+    if configured_endpoint != "https://huggingface.co":
+        if _check_endpoint_connectivity(configured_endpoint):
+            logger.info(f"使用配置的 HF 端点: {configured_endpoint}")
+            return configured_endpoint
+        else:
+            logger.warning(f"配置的 HF 端点不可用: {configured_endpoint}，将尝试其他镜像站")
+    
+    # 测试所有镜像站，找到第一个可用的
+    for endpoint in HF_MIRROR_SITES:
+        if _check_endpoint_connectivity(endpoint):
+            logger.info(f"找到可用的 HF 端点: {endpoint}")
+            return endpoint
+    
+    # 如果都不可用，返回官方地址作为最后尝试
+    logger.warning("所有 HF 镜像站都不可用，将使用官方地址")
+    return "https://huggingface.co"
+
 def from_config(config: dict) -> BaseParakeet:
     """Loads model from config (randomized weight)"""
     if (
@@ -85,12 +149,19 @@ def from_config(config: dict) -> BaseParakeet:
 
 
 def _check_network_connectivity() -> bool:
-    """检查网络连接状态"""
-    try:
-        response = requests.get("https://huggingface.co", timeout=5)
-        return response.status_code == 200
-    except Exception:
-        return False
+    """检查网络连接状态，优先检查配置的镜像站"""
+    configured_endpoint = _get_hf_endpoint()
+    
+    # 先检查配置的端点
+    if _check_endpoint_connectivity(configured_endpoint):
+        return True
+    
+    # 如果配置的端点不可用，检查其他镜像站
+    for endpoint in HF_MIRROR_SITES:
+        if endpoint != configured_endpoint and _check_endpoint_connectivity(endpoint):
+            return True
+    
+    return False
 
 
 def _get_file_size(hf_id_or_path: str, filename: str) -> Optional[int]:
@@ -107,17 +178,122 @@ def _get_file_size(hf_id_or_path: str, filename: str) -> Optional[int]:
     return None
 
 
-@retry.retry(
-    exceptions=(HfHubHTTPError, ConnectionError, TimeoutError, OSError),
-    tries=3,
-    delay=2,
-    backoff=2,
-    max_delay=10,
-    logger=logger
-)
+def _download_with_huggingface_cli(hf_id_or_path: str, filename: str, endpoint: str, show_progress: bool = True) -> Optional[str]:
+    """
+    使用 huggingface-cli 下载文件
+    
+    Args:
+        hf_id_or_path: Hugging Face 模型ID
+        filename: 要下载的文件名
+        endpoint: HF 端点地址
+        show_progress: 是否显示进度
+        
+    Returns:
+        下载文件的本地路径，失败时返回 None
+    """
+    try:
+        # 设置环境变量
+        env = os.environ.copy()
+        if endpoint != "https://huggingface.co":
+            env["HF_ENDPOINT"] = endpoint
+        
+        # 构建命令
+        cmd = [
+            "huggingface-cli", 
+            "download", 
+            hf_id_or_path, 
+            filename,
+            "--quiet" if not show_progress else ""
+        ]
+        cmd = [arg for arg in cmd if arg]  # 过滤空字符串
+        
+        if show_progress:
+            console.print(f"🚀 [bold blue]使用 huggingface-cli 下载:[/bold blue] {filename}")
+            console.print(f"   📍 端点: [cyan]{endpoint}[/cyan]")
+        
+        # 执行下载
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=300  # 5分钟超时
+        )
+        
+        if result.returncode == 0:
+            # 解析输出获取文件路径
+            output_lines = result.stdout.strip().split('\n')
+            if output_lines and output_lines[-1]:
+                file_path = output_lines[-1].strip()
+                if Path(file_path).exists():
+                    if show_progress:
+                        console.print(f"✅ [bold green]huggingface-cli 下载成功:[/bold green] {filename}")
+                    return file_path
+        
+        if show_progress:
+            console.print(f"❌ [yellow]huggingface-cli 下载失败:[/yellow] {result.stderr or 'Unknown error'}")
+        
+        return None
+        
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, Exception) as e:
+        if show_progress:
+            console.print(f"❌ [yellow]huggingface-cli 执行失败:[/yellow] {str(e)}")
+        return None
+
+def _download_with_hf_hub(hf_id_or_path: str, filename: str, endpoint: str, show_progress: bool = True) -> Optional[str]:
+    """
+    使用 hf_hub_download 下载文件（支持镜像站）
+    
+    Args:
+        hf_id_or_path: Hugging Face 模型ID
+        filename: 要下载的文件名
+        endpoint: HF 端点地址
+        show_progress: 是否显示进度
+        
+    Returns:
+        下载文件的本地路径，失败时返回 None
+    """
+    try:
+        from huggingface_hub import HfApi
+        
+        if show_progress:
+            console.print(f"📦 [bold blue]使用 hf_hub_download 下载:[/bold blue] {filename}")
+            console.print(f"   📍 端点: [cyan]{endpoint}[/cyan]")
+        
+        # 创建自定义的 HfApi 实例
+        if endpoint != "https://huggingface.co":
+            api = HfApi(endpoint=endpoint)
+            if show_progress:
+                console.print(f"   🔧 使用自定义端点: [cyan]{api.endpoint}[/cyan]")
+        else:
+            api = HfApi()
+        
+        # 使用自定义 API 实例下载
+        file_path = hf_hub_download(
+            hf_id_or_path, 
+            filename,
+            endpoint=endpoint if endpoint != "https://huggingface.co" else None
+        )
+        
+        if show_progress:
+            console.print(f"✅ [bold green]hf_hub_download 下载成功:[/bold green] {filename}")
+        
+        return file_path
+        
+    except Exception as e:
+        if show_progress:
+            console.print(f"❌ [yellow]hf_hub_download 下载失败:[/yellow] {str(e)}")
+        return None
+
 def _download_with_retry(hf_id_or_path: str, filename: str, show_progress: bool = True) -> str:
     """
-    带重试功能和进度显示的文件下载函数
+    智能下载函数：自动选择最佳下载方式和镜像站
+    
+    下载策略（按优先级）：
+    1. 使用 huggingface-cli + 配置的镜像站
+    2. 使用 hf_hub_download + 配置的镜像站
+    3. 遍历所有镜像站，尝试 huggingface-cli
+    4. 遍历所有镜像站，尝试 hf_hub_download
     
     Args:
         hf_id_or_path: Hugging Face 模型ID或路径
@@ -132,64 +308,111 @@ def _download_with_retry(hf_id_or_path: str, filename: str, show_progress: bool 
         LocalEntryNotFoundError: 文件不存在
         Exception: 其他下载错误
     """
-    # 检查网络连接
+    
+    if show_progress:
+        console.print(f"\n🔄 [bold cyan]开始智能下载:[/bold cyan] [bold]{filename}[/bold]")
+        console.print("📋 [dim]下载策略: huggingface-cli → hf_hub_download → 镜像站轮询[/dim]\n")
+    
+    # 检查基本网络连接
     if not _check_network_connectivity():
-        raise ConnectionError("无法连接到 Hugging Face Hub，请检查网络连接")
+        raise ConnectionError("无法连接到任何 Hugging Face 端点，请检查网络连接")
     
-    # 获取文件大小用于进度显示
-    file_size = _get_file_size(hf_id_or_path, filename) if show_progress else None
+    # 获取配置的端点
+    configured_endpoint = _get_hf_endpoint()
+    cli_available = _is_huggingface_cli_available()
     
-    if show_progress and file_size:
-        # 显示文件大小信息
-        size_mb = file_size / (1024 * 1024)
-        console.print(f"📦 开始下载 [bold blue]{filename}[/bold blue] (大小: {size_mb:.1f} MB)")
-        
-        # 使用 Rich 进度条显示下载进度
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]{task.description}"),
-            BarColumn(bar_width=40),
-            "[progress.percentage]{task.percentage:>3.1f}%",
-            DownloadColumn(),
-            TransferSpeedColumn(),
-            TimeRemainingColumn(),
-            console=console,
-            transient=False
-        ) as progress:
-            task = progress.add_task(f"下载 {filename}", total=file_size)
-            
-            def progress_callback(chunk_size: int):
-                progress.update(task, advance=chunk_size)
-            
-            try:
-                # 这里我们使用原有的 hf_hub_download，但在实际实现中
-                # 可能需要自定义下载逻辑来支持进度回调
-                file_path = hf_hub_download(hf_id_or_path, filename)
-                progress.update(task, completed=file_size)
-                console.print(f"✅ 下载完成: [bold green]{filename}[/bold green]")
-                return file_path
-            except (RepositoryNotFoundError, LocalEntryNotFoundError) as e:
-                progress.stop()
-                logger.error(f"文件不存在: {hf_id_or_path}/{filename}")
-                raise e
-            except Exception as e:
-                progress.stop()
-                logger.warning(f"下载失败，将重试: {str(e)}")
-                raise e
-    else:
-        # 简单模式，不显示详细进度
-        console.print(f"📦 正在下载 [bold blue]{filename}[/bold blue]...")
+    download_attempts = []
+    
+    # 策略1: 使用 huggingface-cli + 配置的镜像站
+    if cli_available:
+        if show_progress:
+            console.print(f"🚀 [bold blue]策略1: huggingface-cli + 配置端点[/bold blue] ({configured_endpoint})")
         
         try:
-            file_path = hf_hub_download(hf_id_or_path, filename)
-            console.print(f"✅ 下载完成: [bold green]{filename}[/bold green]")
-            return file_path
-        except (RepositoryNotFoundError, LocalEntryNotFoundError) as e:
-            logger.error(f"文件不存在: {hf_id_or_path}/{filename}")
-            raise e
+            result = _download_with_huggingface_cli(hf_id_or_path, filename, configured_endpoint, show_progress)
+            if result:
+                if show_progress:
+                    console.print("✅ [bold green]策略1 成功![/bold green]")
+                return result
         except Exception as e:
-            logger.warning(f"下载失败，将重试: {str(e)}")
-            raise e
+            download_attempts.append(f"策略1 (huggingface-cli + {configured_endpoint}): {str(e)}")
+    
+    # 策略2: 使用 hf_hub_download + 配置的镜像站
+    if show_progress:
+        console.print(f"📦 [bold blue]策略2: hf_hub_download + 配置端点[/bold blue] ({configured_endpoint})")
+    
+    try:
+        result = _download_with_hf_hub(hf_id_or_path, filename, configured_endpoint, show_progress)
+        if result:
+            if show_progress:
+                console.print("✅ [bold green]策略2 成功![/bold green]")
+            return result
+    except Exception as e:
+        download_attempts.append(f"策略2 (hf_hub_download + {configured_endpoint}): {str(e)}")
+    
+    # 策略3&4: 遍历所有镜像站
+    if show_progress:
+        console.print("🔄 [bold yellow]配置的端点不可用，开始尝试其他镜像站...[/bold yellow]")
+    
+    for i, endpoint in enumerate(HF_MIRROR_SITES):
+        if endpoint == configured_endpoint:
+            continue  # 跳过已经尝试过的端点
+        
+        if show_progress:
+            console.print(f"\n🌐 [bold blue]尝试镜像站 {i+1}:[/bold blue] [cyan]{endpoint}[/cyan]")
+        
+        # 先检查镜像站连通性
+        if not _check_endpoint_connectivity(endpoint):
+            if show_progress:
+                console.print(f"❌ [yellow]镜像站不可达，跳过[/yellow]")
+            download_attempts.append(f"镜像站 {endpoint}: 网络不可达")
+            continue
+        
+        # 策略3: huggingface-cli + 当前镜像站
+        if cli_available:
+            try:
+                result = _download_with_huggingface_cli(hf_id_or_path, filename, endpoint, show_progress)
+                if result:
+                    if show_progress:
+                        console.print(f"✅ [bold green]使用 {endpoint} + huggingface-cli 下载成功![/bold green]")
+                    return result
+            except Exception as e:
+                download_attempts.append(f"huggingface-cli + {endpoint}: {str(e)}")
+        
+        # 策略4: hf_hub_download + 当前镜像站
+        try:
+            result = _download_with_hf_hub(hf_id_or_path, filename, endpoint, show_progress)
+            if result:
+                if show_progress:
+                    console.print(f"✅ [bold green]使用 {endpoint} + hf_hub_download 下载成功![/bold green]")
+                return result
+        except Exception as e:
+            download_attempts.append(f"hf_hub_download + {endpoint}: {str(e)}")
+    
+    # 所有策略都失败了
+    error_summary = "\n".join([f"   • {attempt}" for attempt in download_attempts])
+    error_msg = f"""❌ [bold red]所有下载策略均失败[/bold red]
+
+📋 [bold]尝试的下载方式:[/bold]
+{error_summary}
+
+💡 [bold yellow]解决建议:[/bold yellow]
+   • 检查网络连接是否稳定
+   • 确认模型ID是否正确: [cyan]{hf_id_or_path}[/cyan]
+   • 尝试手动访问: [link]https://huggingface.co/{hf_id_or_path}[/link]
+   • 考虑配置不同的镜像站: translate init"""
+    
+    if show_progress:
+        console.print(error_msg)
+    
+    # 尝试判断具体的错误类型
+    for attempt in download_attempts:
+        if "404" in attempt or "Repository not found" in attempt:
+            raise RepositoryNotFoundError(f"模型仓库不存在: {hf_id_or_path}")
+        elif "File not found" in attempt or f"{filename}" in attempt:
+            raise LocalEntryNotFoundError(f"文件不存在: {hf_id_or_path}/{filename}")
+    
+    raise Exception(f"无法下载文件 {filename} 从 {hf_id_or_path}")
 
 
 def _find_cached_model(hf_id_or_path: str) -> tuple[str, str]:
@@ -397,7 +620,10 @@ def from_pretrained(
             error_msg = f"❌ 网络连接失败: {str(e)}"
             if show_progress:
                 console.print(f"[bold red]{error_msg}[/bold red]")
-                console.print("💡 [dim]请检查网络连接或稍后重试[/dim]")
+                console.print("💡 [dim]建议：[/dim]")
+                console.print("   • 检查网络连接")
+                console.print("   • 运行 'translate init' 配置镜像站")
+                console.print("   • 尝试设置环境变量: HF_ENDPOINT=https://hf-mirror.com")
             logger.error(error_msg)
             
         except Exception as e:
@@ -419,6 +645,7 @@ def from_pretrained(
    • 检查网络连接是否正常
    • 确认模型ID是否正确: [cyan]{hf_id_or_path}[/cyan]
    • 如果是本地路径，确保模型文件存在
+   • 运行 'translate init' 配置镜像站
    • 尝试手动访问: [link]https://huggingface.co/{hf_id_or_path}[/link]"""
         
         if show_progress:
