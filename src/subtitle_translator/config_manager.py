@@ -165,7 +165,10 @@ def init_config():
             other_configs = []
             for key, value in config_info.items():
                 if key not in ['OPENAI_BASE_URL', 'OPENAI_API_KEY', 'SPLIT_MODEL', 'TRANSLATION_MODEL', 'SUMMARY_MODEL', 'LLM_MODEL']:
-                    other_configs.append(f"{key}: {value}")
+                    if key == 'HF_ENDPOINT' and value:
+                        other_configs.append(f"🏗️  HF 镜像站: {value}")
+                    else:
+                        other_configs.append(f"{key}: {value}")
             
             if other_configs:
                 print("   ⚙️  其他配置:")
@@ -236,6 +239,35 @@ def _interactive_config_input(global_env_path: Path):
     if not api_key.strip():
         print("[bold red]❌ API密钥不能为空[/bold red]")
         raise typer.Exit(code=1)
+
+    # Hugging Face 镜像站配置
+    print("\n🏗️  [bold blue]Hugging Face 下载配置[/bold blue]")
+    print("为了提高模型下载成功率，可以配置镜像站：")
+    print("• 官方地址：https://huggingface.co (默认)")
+    print("• 镜像站：https://hf-mirror.com (推荐国内用户)")
+    
+    hf_endpoint_response = typer.prompt("🌐 是否使用 Hugging Face 镜像站? (y/N)", default="n", show_default=False).lower()
+    use_hf_mirror = hf_endpoint_response in ['y', 'yes', '是', '确定']
+    
+    if use_hf_mirror:
+        # 提供几个镜像站选择
+        print("\n📋 可选镜像站：")
+        print("1. https://hf-mirror.com (推荐)")
+        print("2. https://huggingface.co (官方，默认)")
+        print("3. 手动输入其他镜像站")
+        
+        mirror_choice = typer.prompt("请选择镜像站 (1-3)", default="1", show_default=False)
+        
+        if mirror_choice == "1":
+            hf_endpoint = "https://hf-mirror.com"
+        elif mirror_choice == "2":
+            hf_endpoint = "https://huggingface.co"
+        elif mirror_choice == "3":
+            hf_endpoint = typer.prompt("请输入镜像站地址")
+        else:
+            hf_endpoint = "https://hf-mirror.com"  # 默认使用推荐镜像站
+    else:
+        hf_endpoint = None
 
     print("\n🤖 [bold blue]模型配置[/bold blue]")
     print("字幕翻译工具支持为不同功能使用不同的模型：")
@@ -336,6 +368,8 @@ def _interactive_config_input(global_env_path: Path):
             raise typer.Exit(code=1)
     
     # API验证通过后，生成配置文件内容
+    hf_endpoint_config = f"\n# Hugging Face 镜像站地址 (用于模型下载)\n# 留空使用默认官方地址，设置后可提高国内下载成功率\nHF_ENDPOINT={hf_endpoint or ''}\n" if hf_endpoint else "\n# Hugging Face 镜像站地址 (用于模型下载)\n# 取消注释并设置镜像站可提高国内下载成功率\n# HF_ENDPOINT=https://hf-mirror.com\n"
+    
     config_content = f"""# Subtitle Translator 配置文件
 # 由 translate init 命令自动生成
 
@@ -345,7 +379,7 @@ OPENAI_BASE_URL={base_url}
 
 # API 密钥
 OPENAI_API_KEY={api_key}
-
+{hf_endpoint_config}
 # ======== 模型配置 ========
 # 断句模型 - 负责将长句分割成适合字幕显示的短句
 SPLIT_MODEL={split_model}
@@ -363,6 +397,7 @@ LLM_MODEL={llm_model}
 # 1. 你现在可以在任意目录下运行 translate 命令
 # 2. 如需修改配置，可以编辑此文件或重新运行 translate init
 # 3. 分别配置的模型会优先使用，如未设置则回退到 LLM_MODEL
+# 4. HF_ENDPOINT 用于设置 Hugging Face 镜像站，可提高模型下载成功率
 """
     
     # 保存到全局配置
@@ -376,6 +411,10 @@ LLM_MODEL={llm_model}
         print("\n📋 [bold green]配置摘要:[/bold green]")
         print(f"   🌐 API URL: {base_url}")
         print(f"   🔑 API Key: {api_key[:10]}{'*' * (len(api_key) - 10)}")
+        if hf_endpoint:
+            print(f"   🏗️  HF 镜像站: [cyan]{hf_endpoint}[/cyan]")
+        else:
+            print(f"   🏗️  HF 镜像站: [dim]默认官方地址[/dim]")
         if use_separate_models:
             print(f"   🔤 断句模型: [cyan]{split_model}[/cyan]")
             print(f"   🌍 翻译模型: [cyan]{translation_model}[/cyan]")
