@@ -14,6 +14,8 @@ from .env_setup import setup_environment
 from .processor import process_single_file
 from .config_manager import init_config
 from .logger import setup_logger
+from .transcription_core.utils import _find_cached_model, _check_network_connectivity, from_pretrained
+from .transcription_core import utils as transcription_utils
 
 # 初始化logger
 logger = setup_logger(__name__)
@@ -214,6 +216,172 @@ def _show_batch_results(count: int, generated_ass_files: list, output_dir: Path)
                 logger.info(f"  {f.name}")
     
     logger.info("处理完毕！")
+
+
+@app.command("model")
+def model_cmd(
+    ctx: typer.Context,
+    action: str = typer.Argument(..., help="要执行的操作: list(列出已缓存模型), info(显示模型信息), download(预下载模型), clean(清理缓存)"),
+    model_id: Optional[str] = typer.Argument(None, help="模型ID，仅在download和info操作时需要")
+):
+    """模型管理命令"""
+    from rich.console import Console
+    from rich.table import Table
+    from pathlib import Path
+    import os
+    import shutil
+    
+    console = Console()
+    
+    if action == "list":
+        """列出已缓存的模型"""
+        try:
+            # 获取缓存目录
+            cache_dir = os.environ.get("HF_HOME") or os.environ.get("HUGGINGFACE_HUB_CACHE") or Path.home() / ".cache" / "huggingface"
+            cache_dir = Path(cache_dir) / "hub"
+            
+            if not cache_dir.exists():
+                console.print("[yellow]📂 还没有缓存任何模型[/yellow]")
+                return
+            
+            # 查找模型缓存目录
+            model_dirs = [d for d in cache_dir.iterdir() if d.is_dir() and d.name.startswith("models--")]
+            
+            if not model_dirs:
+                console.print("[yellow]📂 还没有缓存任何模型[/yellow]")
+                return
+            
+            # 创建表格显示模型信息
+            table = Table(title="🤖 已缓存的模型列表")
+            table.add_column("模型ID", style="cyan")
+            table.add_column("缓存大小", style="green")
+            table.add_column("最后修改时间", style="dim")
+            
+            for model_dir in sorted(model_dirs):
+                # 解析模型ID
+                model_id = model_dir.name.replace("models--", "").replace("--", "/")
+                
+                # 计算目录大小
+                total_size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
+                size_mb = total_size / (1024 * 1024)
+                
+                # 获取最后修改时间
+                import datetime
+                mtime = datetime.datetime.fromtimestamp(model_dir.stat().st_mtime)
+                
+                table.add_row(
+                    model_id,
+                    f"{size_mb:.1f} MB",
+                    mtime.strftime("%Y-%m-%d %H:%M")
+                )
+            
+            console.print(table)
+            console.print(f"\n📍 缓存位置: [dim]{cache_dir}[/dim]")
+            
+        except Exception as e:
+            console.print(f"[red]❌ 获取模型列表失败: {str(e)}[/red]")
+    
+    elif action == "info":
+        """显示指定模型的详细信息"""
+        if not model_id:
+            console.print("[red]❌ 请指定模型ID[/red]")
+            console.print("💡 使用示例: translate model info mlx-community/parakeet-tdt-0.6b-v2")
+            raise typer.Exit(code=1)
+        
+        try:
+            # 尝试查找本地缓存
+            try:
+                config_path, weight_path = _find_cached_model(model_id)
+                console.print(f"✅ [green]模型已缓存[/green]: [bold]{model_id}[/bold]")
+                console.print(f"📄 配置文件: [dim]{config_path}[/dim]")
+                console.print(f"⚖️  权重文件: [dim]{weight_path}[/dim]")
+                
+                # 显示文件大小
+                config_size = Path(config_path).stat().st_size / 1024
+                weight_size = Path(weight_path).stat().st_size / (1024 * 1024)
+                console.print(f"📊 大小: 配置 {config_size:.1f} KB, 权重 {weight_size:.1f} MB")
+                
+            except FileNotFoundError:
+                console.print(f"[yellow]⚠️  模型未缓存[/yellow]: [bold]{model_id}[/bold]")
+                console.print("💡 你可以使用 'translate model download' 命令预下载模型")
+                
+                # 检查网络连接
+                if _check_network_connectivity():
+                    console.print("🌐 网络连接正常，模型将在首次使用时自动下载")
+                else:
+                    console.print("[red]🌐 网络连接异常，无法下载模型[/red]")
+                    
+        except Exception as e:
+            console.print(f"[red]❌ 获取模型信息失败: {str(e)}[/red]")
+    
+    elif action == "download":
+        """预下载指定模型"""
+        if not model_id:
+            console.print("[red]❌ 请指定模型ID[/red]")
+            console.print("💡 使用示例: translate model download mlx-community/parakeet-tdt-0.6b-v2")
+            raise typer.Exit(code=1)
+        
+        try:
+            console.print(f"🚀 开始预下载模型: [bold]{model_id}[/bold]")
+            
+            # 检查是否已经缓存
+            try:
+                _find_cached_model(model_id)
+                console.print(f"✅ [green]模型已存在于本地缓存[/green]")
+                return
+            except FileNotFoundError:
+                pass
+            
+            # 下载模型
+            model = from_pretrained(model_id, show_progress=True)
+            console.print(f"\n🎉 [bold green]模型预下载完成![/bold green]")
+            console.print(f"📍 模型已保存到本地缓存，后续使用时将直接加载")
+            
+        except Exception as e:
+            console.print(f"[red]❌ 模型下载失败: {str(e)}[/red]")
+    
+    elif action == "clean":
+        """清理模型缓存"""
+        try:
+            # 获取缓存目录
+            cache_dir = os.environ.get("HF_HOME") or os.environ.get("HUGGINGFACE_HUB_CACHE") or Path.home() / ".cache" / "huggingface"
+            cache_dir = Path(cache_dir) / "hub"
+            
+            if not cache_dir.exists():
+                console.print("[yellow]📂 缓存目录不存在，无需清理[/yellow]")
+                return
+            
+            # 计算缓存大小
+            total_size = sum(f.stat().st_size for f in cache_dir.rglob('*') if f.is_file())
+            size_mb = total_size / (1024 * 1024)
+            
+            # 询问确认
+            if size_mb > 0:
+                console.print(f"⚠️  [yellow]即将清理 {size_mb:.1f} MB 的模型缓存[/yellow]")
+                console.print(f"📍 缓存位置: [dim]{cache_dir}[/dim]")
+                
+                confirm = typer.confirm("确定要清理所有模型缓存吗？")
+                if not confirm:
+                    console.print("❌ 取消清理操作")
+                    return
+                
+                # 清理缓存
+                shutil.rmtree(cache_dir)
+                console.print("✅ [green]模型缓存清理完成[/green]")
+            else:
+                console.print("[yellow]📂 缓存目录为空，无需清理[/yellow]")
+                
+        except Exception as e:
+            console.print(f"[red]❌ 清理缓存失败: {str(e)}[/red]")
+    
+    else:
+        console.print(f"[red]❌ 未知操作: {action}[/red]")
+        console.print("💡 支持的操作: list, info, download, clean")
+        console.print("\n📖 使用示例:")
+        console.print("   translate model list                                    # 列出已缓存模型")
+        console.print("   translate model info mlx-community/parakeet-tdt-0.6b-v2  # 显示模型信息")
+        console.print("   translate model download mlx-community/parakeet-tdt-0.6b-v2  # 预下载模型")
+        console.print("   translate model clean                                   # 清理缓存")
 
 
 @app.command("init")
