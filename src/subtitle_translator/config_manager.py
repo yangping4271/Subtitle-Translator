@@ -393,6 +393,16 @@ def _interactive_config_input(global_env_path: Path):
             print("❌ 配置保存已取消")
             raise typer.Exit(code=1)
     
+    # 询问是否预下载默认转录模型
+    print("\n🤖 [bold blue]转录模型预下载[/bold blue]")
+    print("字幕翻译工具需要下载转录模型来处理音频文件：")
+    print("• 默认模型：mlx-community/parakeet-tdt-0.6b-v2")
+    print("• 模型大小：约 1.2GB")
+    print("• 首次使用时会自动下载，但可能影响处理速度")
+    
+    predownload_response = safe_prompt("\n📥 是否现在预下载默认转录模型? (y/N)", default="y", show_default=False).lower()
+    should_predownload = predownload_response in ['y', 'yes', '是', '确定']
+    
     # API验证通过后，生成配置文件内容
     hf_endpoint_config = f"\n# Hugging Face 镜像站地址 (用于模型下载)\n# 留空使用默认官方地址，设置后可提高国内下载成功率\nHF_ENDPOINT={hf_endpoint or ''}\n" if hf_endpoint else "\n# Hugging Face 镜像站地址 (用于模型下载)\n# 取消注释并设置镜像站可提高国内下载成功率\n# HF_ENDPOINT=https://hf-mirror.com\n"
     
@@ -432,6 +442,24 @@ LLM_MODEL={llm_model}
             f.write(config_content)
         
         print(f"\n✅ [bold green]配置已保存到:[/bold green] [cyan]{global_env_path}[/cyan]")
+        
+        # 执行预下载
+        if should_predownload:
+            print("\n📥 [bold blue]开始预下载默认转录模型...[/bold blue]")
+            try:
+                # 导入并调用模型预下载功能
+                from .transcription_core.utils import from_pretrained
+                default_model = "mlx-community/parakeet-tdt-0.6b-v2"
+                
+                # 尝试预下载模型
+                from_pretrained(default_model, show_progress=True)
+                print("✅ [bold green]默认转录模型预下载成功！[/bold green]")
+                
+            except Exception as e:
+                print(f"⚠️  [bold yellow]模型预下载失败: {e}[/bold yellow]")
+                print("💡 [dim]不用担心，首次使用时会自动下载[/dim]")
+        else:
+            print("\n⏭️  [dim]跳过模型预下载，首次使用时会自动下载[/dim]")
         
         # 显示配置摘要
         print("\n📋 [bold green]配置摘要:[/bold green]")
