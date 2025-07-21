@@ -53,7 +53,6 @@ console = Console()
 HF_MIRROR_SITES = [
     "https://huggingface.co",  # 官方地址
     "https://hf-mirror.com",   # 推荐镜像站
-    "https://huggingface.com.cn",  # 备用镜像站
 ]
 
 def _get_hf_endpoint() -> str:
@@ -352,14 +351,17 @@ def _download_with_retry(hf_id_or_path: str, filename: str, show_progress: bool 
     
     # 策略3&4: 遍历所有镜像站
     if show_progress:
-        console.print("🔄 [bold yellow]配置的端点不可用，开始尝试其他镜像站...[/bold yellow]")
+        console.print(f"🔄 [bold yellow]配置的端点 {configured_endpoint} 不可用，开始尝试其他镜像站...[/bold yellow]")
+        console.print(f"📋 [dim]将尝试 {len([s for s in HF_MIRROR_SITES if s != configured_endpoint])} 个备用镜像站[/dim]")
     
+    mirror_attempts = 0
     for i, endpoint in enumerate(HF_MIRROR_SITES):
         if endpoint == configured_endpoint:
             continue  # 跳过已经尝试过的端点
         
+        mirror_attempts += 1
         if show_progress:
-            console.print(f"\n🌐 [bold blue]尝试镜像站 {i+1}:[/bold blue] [cyan]{endpoint}[/cyan]")
+            console.print(f"\n🌐 [bold blue]尝试镜像站 {mirror_attempts}:[/bold blue] [cyan]{endpoint}[/cyan]")
         
         # 先检查镜像站连通性
         if not _check_endpoint_connectivity(endpoint):
@@ -390,6 +392,9 @@ def _download_with_retry(hf_id_or_path: str, filename: str, show_progress: bool 
             download_attempts.append(f"hf_hub_download + {endpoint}: {str(e)}")
     
     # 所有策略都失败了
+    if show_progress:
+        console.print(f"\n❌ [bold red]所有 {len(download_attempts)} 种下载策略均已尝试完毕[/bold red]")
+    
     error_summary = "\n".join([f"   • {attempt}" for attempt in download_attempts])
     error_msg = f"""❌ [bold red]所有下载策略均失败[/bold red]
 
@@ -436,54 +441,47 @@ def _find_cached_model(hf_id_or_path: str) -> tuple[str, str]:
     model_cache_name = hf_id_or_path.replace("/", "--")
     model_cache_dir = cache_dir / "hub" / f"models--{model_cache_name}"
     
-    logger.info(f"正在查找缓存模型: {model_cache_dir}")
+    logger.debug(f"正在查找缓存模型: {model_cache_dir}")
     
     if not model_cache_dir.exists():
-        raise FileNotFoundError(f"模型缓存目录不存在: {model_cache_dir}")
+        raise FileNotFoundError(f"模型缓存目录不存在")
     
     # 查找 snapshots 目录下的最新版本
     snapshots_dir = model_cache_dir / "snapshots"
     if not snapshots_dir.exists():
-        raise FileNotFoundError(f"模型快照目录不存在: {snapshots_dir}")
+        raise FileNotFoundError(f"模型快照目录不存在")
     
     # 获取最新的快照（按修改时间排序）
     snapshot_dirs = [d for d in snapshots_dir.iterdir() if d.is_dir()]
     if not snapshot_dirs:
-        raise FileNotFoundError(f"没有找到模型快照: {snapshots_dir}")
+        raise FileNotFoundError(f"没有找到模型快照")
     
     latest_snapshot = max(snapshot_dirs, key=lambda d: d.stat().st_mtime)
-    logger.info(f"找到最新快照: {latest_snapshot}")
+    logger.debug(f"找到最新快照: {latest_snapshot}")
     
     # 检查配置文件和权重文件
     config_path = latest_snapshot / "config.json"
     weight_path = latest_snapshot / "model.safetensors"
     
     if not config_path.exists():
-        raise FileNotFoundError(f"配置文件不存在: {config_path}")
+        raise FileNotFoundError(f"缓存的配置文件不存在")
     if not weight_path.exists():
-        raise FileNotFoundError(f"权重文件不存在: {weight_path}")
+        raise FileNotFoundError(f"缓存的权重文件不存在或未完整下载")
     
-    logger.info(f"找到缓存的配置文件: {config_path}")
-    logger.info(f"找到缓存的权重文件: {weight_path}")
+    logger.debug(f"找到缓存的配置文件: {config_path}")
+    logger.debug(f"找到缓存的权重文件: {weight_path}")
     
     return str(config_path), str(weight_path)
 
 
-@retry.retry(
-    exceptions=(FileNotFoundError, PermissionError, OSError, json.JSONDecodeError),
-    tries=3,
-    delay=1,
-    backoff=1.5,
-    max_delay=5,
-    logger=logger
-)
-def _load_model_files(config_path: str, weight_path: str) -> tuple[dict, str]:
+def _load_model_files(config_path: str, weight_path: str, silent: bool = False) -> tuple[dict, str]:
     """
-    带重试功能的模型文件加载函数
+    模型文件加载函数，具有用户友好的错误处理
     
     Args:
         config_path: 配置文件路径
         weight_path: 权重文件路径
+        silent: 是否禁用详细的错误输出
         
     Returns:
         tuple: (config_dict, weight_path)
@@ -493,24 +491,35 @@ def _load_model_files(config_path: str, weight_path: str) -> tuple[dict, str]:
         json.JSONDecodeError: JSON 解析错误
         Exception: 其他加载错误
     """
-    logger.info(f"正在加载配置文件: {config_path}")
+    
+    # 检查配置文件
+    if not Path(config_path).exists():
+        if not silent:
+            logger.info("配置文件不存在，将尝试在线下载")
+        raise FileNotFoundError(f"配置文件不存在: {Path(config_path).name}")
+    
+    # 检查权重文件
+    if not Path(weight_path).exists():
+        if not silent:
+            logger.info("模型权重文件不存在，将尝试在线下载")
+        raise FileNotFoundError(f"权重文件不存在: {Path(weight_path).name}")
     
     try:
+        logger.debug(f"正在加载配置文件: {config_path}")
+        
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
-        
-        # 检查权重文件是否存在
-        if not Path(weight_path).exists():
-            raise FileNotFoundError(f"权重文件不存在: {weight_path}")
             
-        logger.info("模型文件加载成功")
+        logger.debug("模型文件加载成功")
         return config, weight_path
         
     except json.JSONDecodeError as e:
-        logger.warning(f"JSON 解析失败，将重试: {str(e)}")
-        raise e
+        if not silent:
+            logger.warning("配置文件格式错误，可能已损坏")
+        raise json.JSONDecodeError("配置文件格式错误", config_path, 0) from e
     except Exception as e:
-        logger.warning(f"文件加载失败，将重试: {str(e)}")
+        if not silent:
+            logger.warning("模型文件访问失败")
         raise e
 
 
@@ -552,10 +561,10 @@ def from_pretrained(
             with console.status("[bold blue]🔍 策略1: 查找本地缓存的模型文件...[/bold blue]"):
                 time.sleep(0.5)  # 给用户一点时间看到状态
                 config_path, weight_path = _find_cached_model(hf_id_or_path)
-                config, weight = _load_model_files(config_path, weight_path)
+                config, weight = _load_model_files(config_path, weight_path, silent=not show_progress)
         else:
             config_path, weight_path = _find_cached_model(hf_id_or_path)
-            config, weight = _load_model_files(config_path, weight_path)
+            config, weight = _load_model_files(config_path, weight_path, silent=True)
         
         loading_method = "本地缓存"
         if show_progress:
@@ -563,7 +572,8 @@ def from_pretrained(
         
     except Exception as e:
         if show_progress:
-            console.print(f"❌ [yellow]本地缓存不可用:[/yellow] [dim]{str(e)}[/dim]")
+            console.print(f"🔍 [dim]本地缓存不可用，将尝试其他方式[/dim]")
+        logger.debug(f"本地缓存查找失败: {str(e)}")
     
     # 策略2: 尝试从指定的本地路径加载
     if config is None:
@@ -573,12 +583,12 @@ def from_pretrained(
                     local_path = Path(hf_id_or_path)
                     config_path = str(local_path / "config.json")
                     weight_path = str(local_path / "model.safetensors")
-                    config, weight = _load_model_files(config_path, weight_path)
+                    config, weight = _load_model_files(config_path, weight_path, silent=not show_progress)
             else:
                 local_path = Path(hf_id_or_path)
                 config_path = str(local_path / "config.json")
                 weight_path = str(local_path / "model.safetensors")
-                config, weight = _load_model_files(config_path, weight_path)
+                config, weight = _load_model_files(config_path, weight_path, silent=True)
             
             loading_method = "本地路径"
             if show_progress:
@@ -586,14 +596,19 @@ def from_pretrained(
             
         except Exception as e:
             if show_progress:
-                console.print(f"❌ [yellow]指定本地路径不可用:[/yellow] [dim]{str(e)}[/dim]")
+                console.print(f"🔍 [dim]指定本地路径不可用，将尝试在线下载[/dim]")
+            logger.debug(f"本地路径加载失败: {str(e)}")
     
     # 策略3: 最后才从 Hugging Face Hub 下载（需要网络连接）
     if config is None:
         try:
             if show_progress:
                 console.print("\n⚠️  [bold yellow]本地未找到模型文件，开始在线下载[/bold yellow]")
-                console.print("💡 [dim]提示: 首次下载可能需要较长时间，请耐心等待...[/dim]")
+                console.print(f"📦 [bold]模型信息:[/bold] [cyan]{hf_id_or_path}[/cyan]")
+                console.print("📏 [bold]预计大小:[/bold] ~1.2GB")
+                console.print("⏱️  [bold]预计时间:[/bold] 3-10分钟 (取决于网络速度)")
+                console.print("💡 [dim]提示: 首次下载较大，后续使用将直接从缓存加载[/dim]")
+                console.print("🔄 [dim]下载中断可以重新运行命令继续下载[/dim]")
                 
                 # 检查网络连接
                 with console.status("[bold blue]🌐 检查网络连接...[/bold blue]"):
@@ -605,16 +620,18 @@ def from_pretrained(
             config_path = _download_with_retry(hf_id_or_path, "config.json", show_progress)
             weight_path = _download_with_retry(hf_id_or_path, "model.safetensors", show_progress)
             
-            config, weight = _load_model_files(config_path, weight_path)
+            config, weight = _load_model_files(config_path, weight_path, silent=not show_progress)
             loading_method = "在线下载"
             if show_progress:
-                console.print("\n✅ [bold green]成功从 Hugging Face Hub 下载并加载模型文件[/bold green]")
+                console.print("\n✅ [bold green]模型下载并加载成功！[/bold green]")
+                console.print("🎉 [dim]模型已缓存到本地，后续使用将更快[/dim]")
             
         except (RepositoryNotFoundError, LocalEntryNotFoundError):
             error_msg = f"❌ Hugging Face Hub 中未找到指定模型: [bold red]{hf_id_or_path}[/bold red]"
             if show_progress:
                 console.print(error_msg)
             logger.error(error_msg)
+            # 继续执行后续逻辑，不要设置 config = None
             
         except ConnectionError as e:
             error_msg = f"❌ 网络连接失败: {str(e)}"
@@ -625,12 +642,14 @@ def from_pretrained(
                 console.print("   • 运行 'translate init' 配置镜像站")
                 console.print("   • 尝试设置环境变量: HF_ENDPOINT=https://hf-mirror.com")
             logger.error(error_msg)
+            # 继续执行后续逻辑，不要设置 config = None
             
         except Exception as e:
             error_msg = f"❌ 从 Hugging Face Hub 下载失败: {str(e)}"
             if show_progress:
                 console.print(f"[bold red]{error_msg}[/bold red]")
             logger.error(error_msg)
+            # 继续执行后续逻辑，不要设置 config = None
     
     # 如果所有策略都失败了
     if config is None:

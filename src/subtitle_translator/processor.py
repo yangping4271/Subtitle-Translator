@@ -16,6 +16,52 @@ from .logger import setup_logger
 logger = setup_logger(__name__)
 
 
+def precheck_model_availability(model: str, show_progress: bool = True) -> bool:
+    """
+    预检查模型可用性，确保在开始处理前模型已可用
+    
+    Args:
+        model: 模型ID或路径
+        show_progress: 是否显示进度信息
+        
+    Returns:
+        bool: 模型是否可用
+    """
+    try:
+        if show_progress:
+            print(f"\n🔍 [bold blue]检查转录模型可用性:[/bold blue] [cyan]{model}[/cyan]")
+        
+        # 尝试加载模型（但不实际使用，只是验证可用性）
+        from .transcription_core.utils import _find_cached_model, _check_network_connectivity
+        
+        # 首先检查本地是否有缓存
+        try:
+            _find_cached_model(model)
+            if show_progress:
+                print("✅ [green]模型已在本地缓存，可立即使用[/green]")
+            return True
+        except:
+            # 本地没有缓存，检查网络连接
+            if show_progress:
+                print("📥 [yellow]模型需要下载，检查网络连接...[/yellow]")
+            
+            if not _check_network_connectivity():
+                if show_progress:
+                    print("❌ [red]网络连接失败，无法下载模型[/red]")
+                    print("💡 [dim]建议：检查网络连接或配置 HF 镜像站[/dim]")
+                return False
+            
+            if show_progress:
+                print("✅ [green]网络连接正常，首次使用时会自动下载模型[/green]")
+            return True
+            
+    except Exception as e:
+        if show_progress:
+            print(f"⚠️  [yellow]模型可用性检查失败: {e}[/yellow]")
+            print("💡 [dim]将在处理时尝试下载模型[/dim]")
+        return True  # 即使检查失败也继续，让实际处理时处理错误
+
+
 def process_single_file(
     input_file: Path, target_lang: str, output_dir: Path, 
     model: str, llm_model: Optional[str], reflect: bool, debug: bool
@@ -27,6 +73,14 @@ def process_single_file(
         print("[bold yellow]>>> 检测到SRT文件，跳过转录步骤...[/bold yellow]")
         temp_srt_path = input_file
     else:
+        # 在开始转录前预检查模型可用性
+        print("[bold blue]>>> 预检查转录环境...[/bold blue]")
+        model_available = precheck_model_availability(model, show_progress=True)
+        
+        if not model_available:
+            print("[bold red]❌ 转录模型不可用，无法继续处理[/bold red]")
+            raise RuntimeError(f"转录模型 {model} 不可用")
+        
         # --- 转录阶段 ---
         logger.info(">>> 开始转录...")
         print("[bold green]>>> 开始转录...[/bold green]")
