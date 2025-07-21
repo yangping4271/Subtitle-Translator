@@ -3,12 +3,41 @@
 """
 import os
 from pathlib import Path
+from functools import wraps
 
 import typer
+import click
 from rich import print
 
 from .env_setup import setup_environment, get_app_config_dir, get_global_env_path
 from .translation_core.utils.test_openai import test_openai
+
+
+def handle_user_abort(exit_message="❌ 配置已取消"):
+    """装饰器：统一处理用户中断操作"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except (KeyboardInterrupt, typer.Abort, click.exceptions.Abort):
+                print(f"\n{exit_message}")
+                import sys
+                sys.exit(0)
+        return wrapper
+    return decorator
+
+
+@handle_user_abort()
+def safe_prompt(message, **kwargs):
+    """安全的 typer.prompt 包装函数，自动处理用户取消操作"""
+    return typer.prompt(message, **kwargs)
+
+
+@handle_user_abort("❌ 操作已取消")
+def safe_prompt_operation(message, **kwargs):
+    """安全的 typer.prompt 包装函数（用于操作类提示），自动处理用户取消操作"""
+    return typer.prompt(message, **kwargs)
 
 
 def validate_existing_config_and_return_result(env_path: Path = None):
@@ -179,7 +208,7 @@ def init_config():
             print(f"⚠️  读取配置文件失败: {e}")
         
         # 询问是否复制
-        response = typer.prompt("是否将此配置复制到全局配置? (y/N)", default="n", show_default=False).lower()
+        response = safe_prompt_operation("是否将此配置复制到全局配置? (y/N)", default="n", show_default=False).lower()
         
         if response in ['y', 'yes', '是', '确定']:
             # 先验证现有配置
@@ -188,7 +217,7 @@ def init_config():
             
             if not validation_success:
                 print("\n⚠️  [bold yellow]配置验证失败，请检查模型名称和网络连接[/bold yellow]")
-                continue_response = typer.prompt("是否仍然复制配置? (y/N)", default="n", show_default=False).lower()
+                continue_response = safe_prompt_operation("是否仍然复制配置? (y/N)", default="n", show_default=False).lower()
                 if continue_response not in ['y', 'yes', '是', '确定']:
                     print("❌ 配置复制已取消")
                     raise typer.Exit(code=1)
@@ -227,14 +256,10 @@ def _interactive_config_input(global_env_path: Path):
         print("   可参考项目根目录的 env.example 文件")
         raise typer.Exit(code=1)
     
-    try:
-        base_url = typer.prompt("🌐 API基础URL")
-    except (KeyboardInterrupt, typer.Abort):
-        print("\n❌ 配置已取消")
-        raise typer.Exit(code=1)
+    base_url = safe_prompt("🌐 API基础URL")
     
     # API密钥
-    api_key = typer.prompt("🔑 API密钥")
+    api_key = safe_prompt("🔑 API密钥")
     
     if not api_key.strip():
         print("[bold red]❌ API密钥不能为空[/bold red]")
@@ -246,7 +271,8 @@ def _interactive_config_input(global_env_path: Path):
     print("• 官方地址：https://huggingface.co (默认)")
     print("• 镜像站：https://hf-mirror.com (推荐国内用户)")
     
-    hf_endpoint_response = typer.prompt("🌐 是否使用 Hugging Face 镜像站? (y/N)", default="n", show_default=False).lower()
+    hf_endpoint_response = safe_prompt("🌐 是否使用 Hugging Face 镜像站? (y/N)", default="n", show_default=False).lower()
+        
     use_hf_mirror = hf_endpoint_response in ['y', 'yes', '是', '确定']
     
     if use_hf_mirror:
@@ -256,14 +282,14 @@ def _interactive_config_input(global_env_path: Path):
         print("2. https://huggingface.co (官方，默认)")
         print("3. 手动输入其他镜像站")
         
-        mirror_choice = typer.prompt("请选择镜像站 (1-3)", default="1", show_default=False)
+        mirror_choice = safe_prompt("请选择镜像站 (1-3)", default="1", show_default=False)
         
         if mirror_choice == "1":
             hf_endpoint = "https://hf-mirror.com"
         elif mirror_choice == "2":
             hf_endpoint = "https://huggingface.co"
         elif mirror_choice == "3":
-            hf_endpoint = typer.prompt("请输入镜像站地址")
+            hf_endpoint = safe_prompt("请输入镜像站地址")
         else:
             hf_endpoint = "https://hf-mirror.com"  # 默认使用推荐镜像站
     else:
@@ -276,37 +302,37 @@ def _interactive_config_input(global_env_path: Path):
     print("• 总结模型：分析字幕内容并生成摘要")
     
     # 询问是否要分别配置模型
-    separate_models_response = typer.prompt("\n🔧 是否为不同功能分别配置模型? (y/N)", default="y", show_default=False).lower()
+    separate_models_response = safe_prompt("\n🔧 是否为不同功能分别配置模型? (y/N)", default="y", show_default=False).lower()
     use_separate_models = separate_models_response in ['y', 'yes', '是', '确定']
     
     if use_separate_models:
         # 分别配置三个模型
         print("\n🔤 [bold yellow]断句模型配置[/bold yellow]")
-        split_model = typer.prompt("断句模型")
+        split_model = safe_prompt("断句模型")
         while not split_model.strip():
             print("❌ 断句模型不能为空")
-            split_model = typer.prompt("断句模型")
+            split_model = safe_prompt("断句模型")
         
         print("\n🌍 [bold yellow]翻译模型配置[/bold yellow]")
-        translation_model = typer.prompt("翻译模型")
+        translation_model = safe_prompt("翻译模型")
         while not translation_model.strip():
             print("❌ 翻译模型不能为空")
-            translation_model = typer.prompt("翻译模型")
+            translation_model = safe_prompt("翻译模型")
         
         print("\n📊 [bold yellow]总结模型配置[/bold yellow]")
-        summary_model = typer.prompt("总结模型")
+        summary_model = safe_prompt("总结模型")
         while not summary_model.strip():
             print("❌ 总结模型不能为空")
-            summary_model = typer.prompt("总结模型")
+            summary_model = safe_prompt("总结模型")
         
         # 兼容性默认模型
         llm_model = split_model
     else:
         print("\n🤖 [bold yellow]统一模型配置[/bold yellow]")
-        llm_model = typer.prompt("LLM模型")
+        llm_model = safe_prompt("LLM模型")
         while not llm_model.strip():
             print("❌ LLM模型不能为空")
-            llm_model = typer.prompt("LLM模型")
+            llm_model = safe_prompt("LLM模型")
         
         # 统一使用一个模型
         split_model = llm_model
@@ -362,7 +388,7 @@ def _interactive_config_input(global_env_path: Path):
     
     if not all_success:
         print("\n⚠️  [bold yellow]部分模型验证失败，请检查模型名称和网络连接[/bold yellow]")
-        continue_response = typer.prompt("是否继续保存配置? (y/N)", default="n", show_default=False).lower()
+        continue_response = safe_prompt("是否继续保存配置? (y/N)", default="n", show_default=False).lower()
         if continue_response not in ['y', 'yes', '是', '确定']:
             print("❌ 配置保存已取消")
             raise typer.Exit(code=1)
