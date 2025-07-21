@@ -20,6 +20,9 @@ from typing_extensions import Annotated
 from . import AlignedResult, AlignedSentence, AlignedToken, from_pretrained
 from .utils import _find_cached_model, _check_network_connectivity
 
+# 默认转录模型
+DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
+
 # 初始化控制台
 console = Console()
 
@@ -475,7 +478,7 @@ def main_callback(
 def model_cmd(
     ctx: typer.Context,
     action: str = typer.Argument(..., help="要执行的操作: list(列出已缓存模型), info(显示模型信息), download(预下载模型), clean(清理缓存)"),
-    model_id: Optional[str] = typer.Argument(None, help="模型ID，仅在download和info操作时需要")
+    model_id: Optional[str] = typer.Argument(None, help=f"模型ID (download和info操作默认: {DEFAULT_TRANSCRIPTION_MODEL})")
 ):
     """转录模型管理命令"""
     import os
@@ -531,10 +534,10 @@ def model_cmd(
     
     elif action == "info":
         """显示指定转录模型的详细信息"""
+        # 如果没有指定模型ID，使用默认模型
         if not model_id:
-            console.print("[red]❌ 请指定转录模型ID[/red]")
-            console.print("💡 使用示例: transcribe model info mlx-community/parakeet-tdt-0.6b-v2")
-            raise typer.Exit(code=1)
+            model_id = DEFAULT_TRANSCRIPTION_MODEL
+            console.print(f"[dim]使用默认转录模型: {model_id}[/dim]")
         
         try:
             # 尝试查找本地缓存
@@ -564,10 +567,10 @@ def model_cmd(
     
     elif action == "download":
         """预下载指定转录模型"""
+        # 如果没有指定模型ID，使用默认模型
         if not model_id:
-            console.print("[red]❌ 请指定转录模型ID[/red]")
-            console.print("💡 使用示例: transcribe model download mlx-community/parakeet-tdt-0.6b-v2")
-            raise typer.Exit(code=1)
+            model_id = DEFAULT_TRANSCRIPTION_MODEL
+            console.print(f"[dim]使用默认转录模型: {model_id}[/dim]")
         
         try:
             console.print(f"🚀 开始预下载转录模型: [bold]{model_id}[/bold]")
@@ -627,8 +630,10 @@ def model_cmd(
         console.print("💡 支持的操作: list, info, download, clean")
         console.print("\n📖 使用示例:")
         console.print("   transcribe model list                                    # 列出已缓存转录模型")
-        console.print("   transcribe model info mlx-community/parakeet-tdt-0.6b-v2  # 显示转录模型信息")
-        console.print("   transcribe model download mlx-community/parakeet-tdt-0.6b-v2  # 预下载转录模型")
+        console.print("   transcribe model info                                    # 显示默认转录模型信息")
+        console.print("   transcribe model info mlx-community/parakeet-tdt-0.6b-v2  # 显示指定转录模型信息")
+        console.print("   transcribe model download                                      # 预下载默认转录模型")
+        console.print("   transcribe model download mlx-community/parakeet-tdt-0.6b-v2  # 预下载指定转录模型")
         console.print("   transcribe model clean                                   # 清理缓存")
 
 
