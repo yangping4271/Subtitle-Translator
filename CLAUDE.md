@@ -62,6 +62,31 @@ source ~/.zshenv  # or restart shell
 uv sync --dev
 ```
 
+### Reinstallation (Clean Install)
+When you need to completely reinstall the project (e.g., after major changes):
+
+```bash
+# 1. Uninstall the existing tool
+uv tool uninstall subtitle-translator
+
+# 2. Clean all caches and build artifacts
+uv cache clean
+rm -rf build/ dist/ *.egg-info/ .eggs/ __pycache__/ .pytest_cache/ .coverage src/**/__pycache__/ **/*.pyc
+
+# 3. Reinstall
+uv tool install .
+
+# 4. Update PATH if needed (usually not required for reinstalls)
+uv tool update-shell
+source ~/.zshenv  # or restart shell
+```
+
+**Note**: This clean reinstallation process should be performed whenever:
+- You've made significant changes to the codebase
+- Dependencies have been updated
+- You encounter installation-related issues
+- You want to ensure a clean environment
+
 ### Running the Application
 ```bash
 # Using installed tool
@@ -70,16 +95,26 @@ translate               # Batch process current directory
 translate -i video.mp4  # Process single file
 transcribe audio.mp3    # Transcription only
 
-# Development mode
+#### Development Mode Usage
+When developing or debugging, prefer using development mode over installed tools:
+
+```bash
+# Use development mode for testing configuration issues
+uv run python -m subtitle_translator.cli init
+
+# Use development mode for main commands
 uv run python -m subtitle_translator.cli --help
 uv run python -m subtitle_translator.transcription_core.cli --help
+
+# Development mode with custom parameters
+uv run python -m subtitle_translator.cli -i test.mp4 -d  # debug mode
 ```
 
-### Testing
-```bash
-# API connectivity test
-uv run python -m subtitle_translator.translation_core.utils.test_openai
-```
+**Advantages of Development Mode:**
+- No need to reinstall after code changes
+- Better error reporting and stack traces
+- Easier debugging with IDE integration
+- Direct access to source code modifications
 
 ## Configuration
 
@@ -198,8 +233,48 @@ HF_ENDPOINT=https://hf-mirror.com uv run python -c "from src.subtitle_translator
 
 #### Configuration Testing
 ```bash
-# Test config manager mirror functionality
-uv run python -c "from src.subtitle_translator.config_manager import _interactive_config_input; print('Config manager loads successfully')"
+# Test optimized config manager functionality (after code refactoring)
+uv run python -c "from src.subtitle_translator.config_manager import safe_prompt, safe_prompt_operation; print('✅ 优化后的配置管理器可用')"
+
+# Test configuration validation
+uv run python -c "from src.subtitle_translator.config_manager import validate_existing_config_and_return_result; print('Config validation functions available')"
+
+# Test configuration initialization (development mode - recommended)
+uv run python -m subtitle_translator.cli init
+```
+
+#### Development Mode Recommendations
+For development and testing, **always prefer development mode** over installed tools:
+
+**Why Use Development Mode:**
+- ✅ No reinstallation needed after code changes
+- ✅ Real-time testing of modifications
+- ✅ Better error reporting and debugging
+- ✅ Immediate feedback on optimizations
+- ✅ Safer testing environment
+
+**Development Commands:**
+```bash
+# Configuration testing (preferred method)
+uv run python -m subtitle_translator.cli init
+
+# Main application testing
+uv run python -m subtitle_translator.cli --help
+uv run python -m subtitle_translator.cli -i test.mp4 -d
+
+# Transcription testing
+uv run python -m subtitle_translator.transcription_core.cli --help
+```
+
+#### Code Quality Verification
+After making changes like the recent configuration manager optimization:
+
+```bash
+# Verify imports and basic functionality
+uv run python -c "from src.subtitle_translator.config_manager import handle_user_abort, safe_prompt; print('✅ Decorator pattern implemented successfully')"
+
+# Test exception handling improvements
+uv run python -c "from src.subtitle_translator.config_manager import safe_prompt_operation; print('✅ Code redundancy eliminated')"
 ```
 
 ### Error Handling
