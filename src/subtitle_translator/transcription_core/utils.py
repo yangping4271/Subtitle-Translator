@@ -208,7 +208,7 @@ def _download_with_huggingface_cli(hf_id_or_path: str, filename: str, endpoint: 
         
         if show_progress:
             console.print(f"🚀 [bold blue]使用 huggingface-cli 下载:[/bold blue] {filename}")
-            console.print(f"   📍 端点: [cyan]{endpoint}[/cyan]")
+            # 端点信息已在策略级别显示，此处不重复显示
         
         # 执行下载
         result = subprocess.run(
@@ -257,7 +257,7 @@ def _download_with_hf_hub(hf_id_or_path: str, filename: str, endpoint: str, show
         
         if show_progress:
             console.print(f"📦 [bold blue]使用 hf_hub_download 下载:[/bold blue] {filename}")
-            console.print(f"   📍 端点: [cyan]{endpoint}[/cyan]")
+            # 端点信息已在策略级别显示，此处不重复显示
         
         # 创建自定义的 HfApi 实例
         if endpoint != "https://huggingface.co":
