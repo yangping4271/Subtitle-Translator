@@ -177,7 +177,6 @@ The system employs a 4-tier download strategy with automatic fallback:
 - Supported values:
   - `https://huggingface.co` (official, default)
   - `https://hf-mirror.com` (recommended for China users)
-  - `https://huggingface.com.cn` (alternative mirror)
   - Custom mirror URLs
 
 #### Interactive Configuration
@@ -204,9 +203,8 @@ The `translate init` command includes HF mirror configuration:
 **Mirror Management**:
 ```python
 HF_MIRROR_SITES = [
-    "https://huggingface.co",      # Official
-    "https://hf-mirror.com",       # Primary mirror
-    "https://huggingface.com.cn",  # Secondary mirror
+    "https://huggingface.co",  # Official
+    "https://hf-mirror.com",   # Primary mirror
 ]
 ```
 
