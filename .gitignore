@@ -73,3 +73,6 @@ dmypy.json
 *.srt
 *.ass
 *.txt
+
+# Claude Code configuration
+CLAUDE.md
