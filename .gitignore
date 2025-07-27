@@ -42,9 +42,12 @@ ENV/
 *.swo
 *~
 
-# Logs
+# 日志文件和目录
 *.log
 logs/
+cli/logs/
+macos-app/logs/
+shared/logs/
 
 # OS generated files
 Thumbs.db
@@ -69,10 +72,38 @@ coverage.xml
 .dmypy.json
 dmypy.json
 
+# Swift/Xcode
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+*.xcworkspace/*
+!*.xcworkspace/contents.xcworkspacedata
+!*.xcworkspace/xcshareddata/
+.build/
+*.swiftpm/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS App Bundle
+*.app/
+*.dmg
+*.pkg
+
+# 媒体文件 (测试用)
 *.mp4
+*.mp3
+*.wav
 *.srt
 *.ass
 *.txt
+
+# 构建产物
+build/
+dist/
 
 # Claude Code configuration
 CLAUDE.md

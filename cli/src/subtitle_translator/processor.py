@@ -64,7 +64,8 @@ def precheck_model_availability(model: str, show_progress: bool = True) -> bool:
 
 def process_single_file(
     input_file: Path, target_lang: str, output_dir: Path, 
-    model: str, llm_model: Optional[str], reflect: bool, debug: bool
+    model: str, llm_model: Optional[str], split_model: Optional[str], 
+    summary_model: Optional[str], reflect: bool, debug: bool
 ):
     """处理单个文件的核心逻辑"""
 
@@ -131,6 +132,8 @@ def process_single_file(
             target_lang=target_lang,
             output_dir=output_dir,
             llm_model=llm_model,
+            split_model=split_model,
+            summary_model=summary_model,
             reflect=reflect
         )
         # 确保这里正确赋值

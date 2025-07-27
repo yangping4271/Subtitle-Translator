@@ -39,6 +39,8 @@ def main(
     output_dir: Optional[Path] = typer.Option(None, "--output_dir", "-o", help="输出文件的目录，默认为当前目录。"),
     model: str = typer.Option("mlx-community/parakeet-tdt-0.6b-v2", "--model", help="用于转录的 Parakeet MLX 模型。"),
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
+    split_model: Optional[str] = typer.Option(None, "--split-model", help="用于智能断句的LLM模型，默认使用配置文件中的设置。"),
+    summary_model: Optional[str] = typer.Option(None, "--summary-model", help="用于内容分析的LLM模型，默认使用配置文件中的设置。"),
     reflect: bool = typer.Option(False, "--reflect", "-r", help="启用反思翻译模式，提高翻译质量但会增加处理时间。"),
     debug: bool = typer.Option(False, "--debug", "-d", help="启用调试日志级别，显示更详细的处理信息。"),
 ):
@@ -78,7 +80,7 @@ def main(
         files_to_process = _get_batch_files(max_count, llm_model)
 
     # 批量处理文件
-    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, reflect, debug)
+    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, split_model, summary_model, reflect, debug)
 
 
 def _validate_target_language(target_lang: str):
@@ -153,7 +155,8 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
 
 
 def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path, 
-                        model: str, llm_model: Optional[str], reflect: bool, debug: bool):
+                        model: str, llm_model: Optional[str], split_model: Optional[str], 
+                        summary_model: Optional[str], reflect: bool, debug: bool):
     """批量处理文件"""
     count = 0
     generated_ass_files = []
@@ -166,7 +169,7 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
         try:
             process_single_file(
                 current_input_file, target_lang, output_dir, model, 
-                llm_model, reflect, debug
+                llm_model, split_model, summary_model, reflect, debug
             )
             count += 1
             logger.info(f"✅ {current_input_file.stem} 处理完成！")

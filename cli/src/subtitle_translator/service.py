@@ -34,15 +34,26 @@ class SubtitleTranslatorService:
             self.logger = logger
         return self.logger
 
-    def _init_translation_env(self, llm_model: str) -> None:
+    def _init_translation_env(self, llm_model: Optional[str] = None, 
+                              split_model: Optional[str] = None, 
+                              summary_model: Optional[str] = None) -> None:
         """初始化翻译环境配置"""
         logger = self._get_logger()
         start_time = time.time()
         log_section_start(logger, "翻译环境初始化", "⚙️")
         
-        if llm_model:
+        # 更新模型配置 - 优先使用专门指定的模型，其次使用llm_model
+        if split_model:
+            self.config.split_model = split_model
+        elif llm_model:
             self.config.split_model = llm_model
+            
+        if summary_model:
+            self.config.summary_model = summary_model
+        elif llm_model:
             self.config.summary_model = llm_model
+            
+        if llm_model:
             self.config.translation_model = llm_model
 
         logger.info(f"🌐 API端点: {self.config.openai_base_url}")
@@ -75,7 +86,8 @@ class SubtitleTranslatorService:
         log_section_end(logger, "翻译环境初始化", elapsed_time, "✅")
 
     def translate_srt(self, input_srt_path: Path, target_lang: str, output_dir: Path, 
-                      llm_model: Optional[str] = None, reflect: bool = False) -> Path:
+                      llm_model: Optional[str] = None, split_model: Optional[str] = None,
+                      summary_model: Optional[str] = None, reflect: bool = False) -> Path:
         """翻译字幕文件"""
         logger = self._get_logger()
         try:
@@ -99,7 +111,7 @@ class SubtitleTranslatorService:
                 raise ValueError(str(e))
             
             # 初始化翻译环境
-            self._init_translation_env(llm_model)
+            self._init_translation_env(llm_model, split_model, summary_model)
             
             # 加载字幕文件
             from .translation_core.data import load_subtitle

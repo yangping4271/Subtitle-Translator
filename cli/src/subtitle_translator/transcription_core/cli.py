@@ -19,9 +19,13 @@ from typing_extensions import Annotated
 
 from . import AlignedResult, AlignedSentence, AlignedToken, from_pretrained
 from .utils import _find_cached_model, _check_network_connectivity
+from ..logger import setup_logger
 
 # 默认转录模型
 DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
+
+# 初始化日志记录器
+logger = setup_logger(__name__)
 
 # 初始化控制台
 console = Console()
@@ -246,25 +250,32 @@ def _transcribe_files(
     fp32: bool
 ):
     """执行音频转录的核心逻辑"""
+    logger.info(f"🎤 开始转录任务，模型: {model}，文件数: {len(audios)}")
+    
     if verbose:
         print(f"正在加载模型: [bold cyan]{model}[/bold cyan]...")
 
     try:
+        logger.info(f"⏳ 加载转录模型: {model}")
         # 使用增强的模型加载体验
         loaded_model = from_pretrained(
             model, 
             dtype=bfloat16 if not fp32 else float32,
             show_progress=verbose
         )
+        logger.info("✅ 转录模型加载成功")
         if verbose:
             print("[green]模型加载成功。[/green]")
     except Exception as e:
+        logger.error(f"❌ 加载转录模型失败: {e}")
         print(f"[bold red]加载模型 {model} 时出错:[/bold red] {e}")
         raise typer.Exit(code=1)
 
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"📁 输出目录已准备: {output_dir.resolve()}")
     except Exception as e:
+        logger.error(f"❌ 创建输出目录失败: {e}")
         print(f"[bold red]创建输出目录 {output_dir} 时出错:[/bold red] {e}")
         raise typer.Exit(code=1)
 
@@ -316,6 +327,8 @@ def _transcribe_files(
                     task, description=f"正在处理 [cyan]{audio_path.name}[/cyan]..."
                 )
 
+            logger.info(f"🎵 开始转录文件 ({i + 1}/{total_files}): {audio_path.name}")
+
             try:
                 result: AlignedResult = loaded_model.transcribe(
                     audio_path,
@@ -326,6 +339,8 @@ def _transcribe_files(
                         task, total=total_files * full, completed=full * i + current
                     ),
                 )
+
+                logger.info(f"✅ 转录完成: {audio_path.name}，句子数: {len(result.sentences)}")
 
                 if verbose:
                     for sentence in result.sentences:
@@ -351,20 +366,24 @@ def _transcribe_files(
                     try:
                         with open(output_filepath, "w", encoding="utf-8") as f:
                             f.write(output_content)
+                        logger.info(f"💾 已保存 {fmt.upper()} 文件: {output_filepath.name}")
                         if verbose:
                             print(
                                 f"[green]已保存 {fmt.upper()}:[/green] {output_filepath.absolute()}"
                             )
                     except Exception as e:
+                        logger.error(f"❌ 写入文件失败 {output_filepath.name}: {e}")
                         print(
                             f"[bold red]写入输出文件 {output_filepath} 时出错:[/bold red] {e}"
                         )
 
             except Exception as e:
+                logger.error(f"❌ 转录文件失败 {audio_path.name}: {e}")
                 print(f"[bold red]转录文件 {audio_path} 时出错:[/bold red] {e}")
 
             progress.update(task, total=total_files, completed=i + 1)
 
+    logger.info(f"🎉 转录任务完成！处理了 {total_files} 个文件")
     print(
         f"\n[bold green]转录完成。[/bold green] 输出已保存在 '{output_dir.resolve()}'"
     )
