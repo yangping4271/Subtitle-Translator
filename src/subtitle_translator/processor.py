@@ -10,6 +10,7 @@ from rich import print
 from .service import SubtitleTranslatorService
 from .transcription_core import from_pretrained
 from .transcription_core.cli import to_srt
+from .transcription_core.model_cache import model_context
 from .logger import setup_logger
 
 # 初始化logger
@@ -95,19 +96,24 @@ def process_single_file(
         print("[bold green]>>> 开始转录...[/bold green]")
         temp_srt_path = output_dir / f"{input_file.stem}.srt"
         try:
-            # 模拟 parakeet-mlx 的转录过程
-            # 实际这里需要调用 parakeet-mlx 的核心转录函数
-            # 由于 parakeet-mlx 的 cli.py 中的 main 函数直接处理文件并保存，
-            # 我们需要将其核心逻辑提取出来，或者直接调用其内部的 transcribe 方法。
-            # 这里暂时用一个占位符，后续需要将 parakeet-mlx 的转录逻辑封装成一个可调用的函数。
+            # 转录阶段 - 使用优化的缓存管理
+            logger.info("开始转录音频...")
+            print(f"🎤 [bold cyan]正在转录音频:[/bold cyan] [dim]{input_file}[/dim]")
             
-            # 假设 from_pretrained 返回一个模型实例，并且该实例有 transcribe 方法
-            # 并且 transcribe 方法返回 AlignedResult
-            loaded_model = from_pretrained(model)
+            # 使用单文件模式（处理完后立即释放缓存）
+            with model_context(batch_mode=False):
+                # 懒加载模型，只在需要时加载
+                loaded_model = from_pretrained(
+                    model, 
+                    show_progress=True,  # 显示加载进度
+                    use_cache=True  # 启用缓存优化
+                )
+                
+                # 对于大文件，使用分块处理避免内存溢出
+                # 使用与原始parakeet-mlx相同的默认值：120秒分块，15秒重叠
+                result = loaded_model.transcribe(input_file, chunk_duration=120.0, overlap_duration=15.0)
             
-            # 对于大文件，使用分块处理避免内存溢出
-            # 使用与原始parakeet-mlx相同的默认值：120秒分块，15秒重叠
-            result = loaded_model.transcribe(input_file, chunk_duration=120.0, overlap_duration=15.0)
+            # 此时模型缓存已自动释放
             
             # 将转录结果保存为 SRT，使用 timestamps=True 获得更精细的时间戳
             srt_content = to_srt(result, timestamps=True)
@@ -118,6 +124,7 @@ def process_single_file(
             subtitle_count = len(srt_content.strip().split('\n\n'))
             logger.info(f"转录完成，SRT文件保存至: {temp_srt_path}")
             print(f"✅ [bold green]转录完成[/bold green] (共 [cyan]{subtitle_count}[/cyan] 条字幕)")
+            print(f"🎯 [dim]模型已自动释放，内存已优化[/dim]")
 
         except Exception as e:
             print(f"[bold red]转录失败:[/bold red] {e}")

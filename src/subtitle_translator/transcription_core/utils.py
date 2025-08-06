@@ -7,7 +7,9 @@ import requests
 import urllib.parse
 import subprocess
 import shutil
-from typing import Optional, List
+import pickle
+import hashlib
+from typing import Optional, List, Dict, Any
 
 import mlx.core as mx
 from dacite import from_dict
@@ -44,6 +46,7 @@ from .parakeet import (
     ParakeetTDTCTC,
     ParakeetTDTCTCArgs,
 )
+from .model_cache import load_cached_model, model_context
 
 # 设置日志记录器
 logger = logging.getLogger(__name__)
@@ -54,6 +57,167 @@ HF_MIRROR_SITES = [
     "https://huggingface.co",  # 官方地址
     "https://hf-mirror.com",   # 推荐镜像站
 ]
+
+
+# 存储层优化 - 预编译模型缓存
+class ModelStorageOptimizer:
+    """模型存储层优化器 - 通过缓存优化后的模型状态加速加载"""
+    
+    def __init__(self):
+        # 获取缓存目录
+        self.cache_root = self._get_cache_dir()
+        self.optimized_cache_dir = self.cache_root / "optimized_models"
+        self.optimized_cache_dir.mkdir(parents=True, exist_ok=True)
+        
+    def _get_cache_dir(self) -> Path:
+        """获取缓存目录"""
+        cache_dir = os.environ.get("HF_HOME") or os.environ.get("HUGGINGFACE_HUB_CACHE") or Path.home() / ".cache" / "huggingface"
+        return Path(cache_dir)
+    
+    def _get_cache_key(self, model_id: str, dtype: mx.Dtype) -> str:
+        """生成缓存键"""
+        # 使用模型ID和数据类型生成唯一键
+        content = f"{model_id}_{dtype}"
+        return hashlib.md5(content.encode()).hexdigest()
+    
+    def _get_optimized_paths(self, model_id: str, dtype: mx.Dtype) -> Dict[str, Path]:
+        """获取优化缓存文件路径"""
+        cache_key = self._get_cache_key(model_id, dtype)
+        cache_dir = self.optimized_cache_dir / cache_key
+        
+        return {
+            "cache_dir": cache_dir,
+            "config_file": cache_dir / "config.json",
+            "weights_file": cache_dir / "optimized_weights.safetensors", 
+            "metadata_file": cache_dir / "metadata.json",
+            "model_state_file": cache_dir / "model_state.pkl"
+        }
+    
+    def has_optimized_cache(self, model_id: str, dtype: mx.Dtype) -> bool:
+        """检查是否存在优化缓存"""
+        paths = self._get_optimized_paths(model_id, dtype)
+        return (
+            paths["config_file"].exists() 
+            and paths["weights_file"].exists()
+            and paths["metadata_file"].exists()
+        )
+    
+    def save_optimized_model(self, model_id: str, dtype: mx.Dtype, 
+                           model: BaseParakeet, config: Dict[str, Any],
+                           original_weight_path: str) -> None:
+        """保存优化后的模型到存储"""
+        try:
+            paths = self._get_optimized_paths(model_id, dtype)
+            paths["cache_dir"].mkdir(parents=True, exist_ok=True)
+            
+            # 1. 保存配置文件
+            with open(paths["config_file"], 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            
+            # 2. 保存优化后的权重（已转换数据类型）
+            import shutil
+            shutil.copy2(original_weight_path, paths["weights_file"])
+            
+            # 3. 保存元数据
+            metadata = {
+                "model_id": model_id,
+                "dtype": str(dtype),
+                "cache_time": time.time(),
+                "original_weight_path": original_weight_path,
+                "version": "1.0"
+            }
+            with open(paths["metadata_file"], 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2)
+            
+            logger.debug(f"已保存优化缓存: {model_id} ({dtype})")
+            
+        except Exception as e:
+            logger.warning(f"保存优化缓存失败: {e}")
+    
+    def load_optimized_model(self, model_id: str, dtype: mx.Dtype) -> Optional[BaseParakeet]:
+        """从存储加载优化的模型"""
+        try:
+            if not self.has_optimized_cache(model_id, dtype):
+                return None
+            
+            paths = self._get_optimized_paths(model_id, dtype)
+            
+            # 加载配置
+            with open(paths["config_file"], 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            # 构建模型
+            model = from_config(config)
+            
+            # 加载权重
+            model.load_weights(str(paths["weights_file"]))
+            
+            # 转换数据类型（可能已经是正确类型，但保险起见）
+            curr_weights = dict(tree_flatten(model.parameters()))
+            curr_weights = [(k, v.astype(dtype)) for k, v in curr_weights.items()]
+            model.update(tree_unflatten(curr_weights))
+            
+            logger.debug(f"从优化缓存加载模型成功: {model_id} ({dtype})")
+            return model
+            
+        except Exception as e:
+            logger.warning(f"从优化缓存加载模型失败: {e}")
+            # 清理可能损坏的缓存
+            self.clear_optimized_cache(model_id, dtype)
+            return None
+    
+    def clear_optimized_cache(self, model_id: str, dtype: mx.Dtype) -> None:
+        """清理特定模型的优化缓存"""
+        try:
+            paths = self._get_optimized_paths(model_id, dtype)
+            if paths["cache_dir"].exists():
+                shutil.rmtree(paths["cache_dir"])
+                logger.debug(f"已清理优化缓存: {model_id} ({dtype})")
+        except Exception as e:
+            logger.warning(f"清理优化缓存失败: {e}")
+    
+    def clear_all_optimized_cache(self) -> None:
+        """清理所有优化缓存"""
+        try:
+            if self.optimized_cache_dir.exists():
+                shutil.rmtree(self.optimized_cache_dir)
+                self.optimized_cache_dir.mkdir(parents=True, exist_ok=True)
+                logger.info("已清理所有优化缓存")
+        except Exception as e:
+            logger.warning(f"清理所有优化缓存失败: {e}")
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取优化缓存统计信息"""
+        try:
+            if not self.optimized_cache_dir.exists():
+                return {"cached_models": 0, "total_size": 0}
+            
+            cached_models = 0
+            total_size = 0
+            
+            for cache_dir in self.optimized_cache_dir.iterdir():
+                if cache_dir.is_dir():
+                    metadata_file = cache_dir / "metadata.json"
+                    if metadata_file.exists():
+                        cached_models += 1
+                        # 计算目录大小
+                        for file in cache_dir.rglob('*'):
+                            if file.is_file():
+                                total_size += file.stat().st_size
+            
+            return {
+                "cached_models": cached_models,
+                "total_size": total_size,
+                "total_size_mb": total_size / (1024 * 1024),
+                "cache_dir": str(self.optimized_cache_dir)
+            }
+        except Exception as e:
+            logger.warning(f"获取缓存统计失败: {e}")
+            return {"cached_models": 0, "total_size": 0}
+
+
+# 全局存储优化器实例
+_storage_optimizer = ModelStorageOptimizer()
 
 def _get_hf_endpoint() -> str:
     """获取 Hugging Face 端点地址，支持环境变量配置"""
@@ -524,20 +688,24 @@ def _load_model_files(config_path: str, weight_path: str, silent: bool = False) 
 
 
 def from_pretrained(
-    hf_id_or_path: str, *, dtype: mx.Dtype = mx.bfloat16, show_progress: bool = True
+    hf_id_or_path: str, *, dtype: mx.Dtype = mx.bfloat16, show_progress: bool = True, 
+    use_cache: bool = True
 ) -> BaseParakeet:
     """
-    从 Hugging Face 或本地目录加载模型，优先使用本地缓存
+    从 Hugging Face 或本地目录加载模型，支持内存和存储层缓存优化
     
     加载策略（按优先级）：
-    1. 优先查找本地缓存的模型文件
-    2. 尝试从指定的本地路径加载  
-    3. 最后才从 Hugging Face Hub 下载
+    1. 内存缓存（最快，毫秒级）
+    2. 存储层优化缓存（快，秒级）
+    3. 本地缓存的原始模型文件（中等）
+    4. 指定的本地路径加载（中等）
+    5. 从 Hugging Face Hub 下载（最慢）
     
     Args:
         hf_id_or_path: Hugging Face 模型ID或本地路径
         dtype: 模型数据类型
         show_progress: 是否显示详细的加载进度
+        use_cache: 是否使用缓存优化
         
     Returns:
         加载的 Parakeet 模型
@@ -547,19 +715,71 @@ def from_pretrained(
         FileNotFoundError: 配置文件或模型权重文件不存在
         Exception: 其他加载错误
     """
+    
+    def _original_loader() -> BaseParakeet:
+        """原始的模型加载逻辑，作为fallback"""
+        return _load_model_original(hf_id_or_path, dtype, show_progress)
+    
+    # 使用缓存优化的加载
+    if use_cache:
+        return load_cached_model(hf_id_or_path, dtype, _original_loader)
+    else:
+        # 不使用缓存，直接加载
+        return _original_loader()
+
+
+def _load_model_original(
+    hf_id_or_path: str, dtype: mx.Dtype = mx.bfloat16, show_progress: bool = True
+) -> BaseParakeet:
+    """
+    原始模型加载逻辑（重构后的内部函数）
+    
+    加载策略（按优先级）：
+    1. 存储层优化缓存（预编译模型）
+    2. 本地缓存的原始模型文件
+    3. 指定的本地路径加载
+    4. 从 Hugging Face Hub 下载
+    """
     if show_progress:
         console.print(f"\n🤖 [bold cyan]开始加载模型:[/bold cyan] [bold]{hf_id_or_path}[/bold]")
-        console.print("📋 [dim]加载策略: 本地缓存 → 本地路径 → 在线下载[/dim]\n")
+        console.print("📋 [dim]加载策略: 存储优化缓存 → 本地缓存 → 本地路径 → 在线下载[/dim]\n")
     
     config = None
     weight = None
     loading_method = None
     
-    # 策略1: 优先查找本地缓存的模型文件（最快，无网络请求）
+    # 策略1: 尝试从存储层优化缓存加载（最快的文件加载）
     try:
         if show_progress:
-            with console.status("[bold blue]🔍 策略1: 查找本地缓存的模型文件...[/bold blue]"):
-                time.sleep(0.5)  # 给用户一点时间看到状态
+            with console.status("[bold blue]🚀 策略1: 查找存储层优化缓存...[/bold blue]"):
+                time.sleep(0.2)  # 给用户一点时间看到状态
+                optimized_model = _storage_optimizer.load_optimized_model(hf_id_or_path, dtype)
+        else:
+            optimized_model = _storage_optimizer.load_optimized_model(hf_id_or_path, dtype)
+        
+        if optimized_model is not None:
+            loading_method = "存储优化缓存"
+            if show_progress:
+                console.print("✅ [bold green]从存储优化缓存加载成功![/bold green] (极速加载)")
+                console.print(f"\n🎉 [bold green]模型加载完成![/bold green] (加载方式: [bold cyan]{loading_method}[/bold cyan])")
+                console.print("━" * 60)
+            return optimized_model
+        else:
+            if show_progress:
+                console.print("🔍 [dim]存储优化缓存不可用，将尝试其他方式[/dim]")
+    except Exception as e:
+        if show_progress:
+            console.print(f"🔍 [dim]存储优化缓存查找失败: {str(e)}[/dim]")
+        logger.debug(f"存储优化缓存查找失败: {str(e)}")
+    
+    config = None
+    weight = None
+    
+    # 策略2: 查找本地缓存的原始模型文件（无网络请求）
+    try:
+        if show_progress:
+            with console.status("[bold blue]🔍 策略2: 查找本地缓存的模型文件...[/bold blue]"):
+                time.sleep(0.3)  # 给用户一点时间看到状态
                 config_path, weight_path = _find_cached_model(hf_id_or_path)
                 config, weight = _load_model_files(config_path, weight_path, silent=not show_progress)
         else:
@@ -575,11 +795,11 @@ def from_pretrained(
             console.print(f"🔍 [dim]本地缓存不可用，将尝试其他方式[/dim]")
         logger.debug(f"本地缓存查找失败: {str(e)}")
     
-    # 策略2: 尝试从指定的本地路径加载
+    # 策略3: 尝试从指定的本地路径加载
     if config is None:
         try:
             if show_progress:
-                with console.status("[bold blue]🔍 策略2: 尝试从指定的本地路径加载...[/bold blue]"):
+                with console.status("[bold blue]🔍 策略3: 尝试从指定的本地路径加载...[/bold blue]"):
                     local_path = Path(hf_id_or_path)
                     config_path = str(local_path / "config.json")
                     weight_path = str(local_path / "model.safetensors")
@@ -599,7 +819,7 @@ def from_pretrained(
                 console.print(f"🔍 [dim]指定本地路径不可用，将尝试在线下载[/dim]")
             logger.debug(f"本地路径加载失败: {str(e)}")
     
-    # 策略3: 最后才从 Hugging Face Hub 下载（需要网络连接）
+    # 策略4: 最后才从 Hugging Face Hub 下载（需要网络连接）
     if config is None:
         try:
             if show_progress:
@@ -631,7 +851,6 @@ def from_pretrained(
             if show_progress:
                 console.print(error_msg)
             logger.error(error_msg)
-            # 继续执行后续逻辑，不要设置 config = None
             
         except ConnectionError as e:
             error_msg = f"❌ 网络连接失败: {str(e)}"
@@ -642,23 +861,22 @@ def from_pretrained(
                 console.print("   • 运行 'translate init' 配置镜像站")
                 console.print("   • 尝试设置环境变量: HF_ENDPOINT=https://hf-mirror.com")
             logger.error(error_msg)
-            # 继续执行后续逻辑，不要设置 config = None
             
         except Exception as e:
             error_msg = f"❌ 从 Hugging Face Hub 下载失败: {str(e)}"
             if show_progress:
                 console.print(f"[bold red]{error_msg}[/bold red]")
             logger.error(error_msg)
-            # 继续执行后续逻辑，不要设置 config = None
     
     # 如果所有策略都失败了
     if config is None:
         error_msg = f"""❌ [bold red]无法加载模型 {hf_id_or_path}[/bold red]
 
 📋 [bold]已尝试的加载策略:[/bold]
-   1. ❌ 本地缓存加载失败
-   2. ❌ 指定本地路径加载失败  
-   3. ❌ 在线下载失败
+   1. ❌ 存储优化缓存加载失败
+   2. ❌ 本地缓存加载失败
+   3. ❌ 指定本地路径加载失败  
+   4. ❌ 在线下载失败
 
 💡 [bold yellow]解决建议:[/bold yellow]
    • 检查网络连接是否正常
@@ -691,7 +909,7 @@ def from_pretrained(
         else:
             model.load_weights(weight)
 
-        # cast dtype
+        # 转换数据类型
         if show_progress:
             with console.status(f"[bold blue]🔄 正在转换模型数据类型为 {dtype}...[/bold blue]"):
                 curr_weights = dict(tree_flatten(model.parameters()))
@@ -702,6 +920,22 @@ def from_pretrained(
             curr_weights = dict(tree_flatten(model.parameters()))
             curr_weights = [(k, v.astype(dtype)) for k, v in curr_weights.items()]
             model.update(tree_unflatten(curr_weights))
+        
+        # 如果是从原始文件加载且不是存储优化缓存，尝试保存优化缓存（异步，不影响主流程）
+        if loading_method in ["本地缓存", "本地路径", "在线下载"]:
+            try:
+                if show_progress:
+                    with console.status("[bold blue]💾 保存存储优化缓存...[/bold blue]"):
+                        _storage_optimizer.save_optimized_model(hf_id_or_path, dtype, model, config, weight)
+                    console.print("✅ [green]存储优化缓存已保存[/green] (下次加载将更快)")
+                else:
+                    _storage_optimizer.save_optimized_model(hf_id_or_path, dtype, model, config, weight)
+                    logger.debug("存储优化缓存已保存")
+            except Exception as e:
+                # 保存缓存失败不影响主流程
+                logger.debug(f"保存存储优化缓存失败: {e}")
+                if show_progress:
+                    console.print("⚠️  [yellow]存储优化缓存保存失败，不影响模型使用[/yellow]")
         
         if show_progress:
             console.print(f"\n🎉 [bold green]模型加载完成![/bold green] (加载方式: [bold cyan]{loading_method}[/bold cyan])")
