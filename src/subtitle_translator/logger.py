@@ -8,15 +8,41 @@ import threading
 from typing import Optional
 import time
 
-# 路径 - 日志文件放在项目根目录
-ROOT_PATH = Path(__file__).parent.parent.parent  # 从src/subtitle_translator/回到项目根目录
-LOG_PATH = ROOT_PATH / "logs"
+# 智能日志路径选择
+def _get_log_path():
+    """智能选择日志路径：开发模式使用项目目录，生产模式使用用户目录"""
+    # 项目根目录路径
+    project_root = Path(__file__).parent.parent.parent
+    project_log_path = project_root / "logs"
+    
+    # 检查是否在开发环境（项目目录下有pyproject.toml等标志文件）
+    if (project_root / "pyproject.toml").exists() and (project_root / "src").exists():
+        # 开发模式：使用项目目录
+        return project_log_path
+    else:
+        # 生产模式：使用用户目录
+        user_log_path = Path.home() / ".local" / "share" / "subtitle-translator" / "logs"
+        return user_log_path
+
+LOG_PATH = _get_log_path()
 LOG_FILE = str(LOG_PATH / 'app.log')
 
 # 全局日志队列
 log_queue = queue.Queue()
 queue_handler = None
 _queue_listener = None
+
+def get_log_file_path():
+    """获取当前使用的日志文件路径"""
+    return LOG_FILE
+
+def get_log_mode_info():
+    """获取日志模式信息（开发模式或生产模式）"""
+    project_root = Path(__file__).parent.parent.parent
+    if (project_root / "pyproject.toml").exists() and (project_root / "src").exists():
+        return "开发模式", "项目目录"
+    else:
+        return "生产模式", "用户目录"
 
 # 检查命令行参数中是否有-d或--debug
 def is_debug_mode():

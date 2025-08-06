@@ -17,6 +17,7 @@ from rich.progress import (
 from rich.table import Table
 from typing_extensions import Annotated
 
+from ..logger import get_log_file_path, get_log_mode_info
 from . import AlignedResult, AlignedSentence, AlignedToken, from_pretrained
 from .utils import _find_cached_model, _check_network_connectivity
 
@@ -208,6 +209,13 @@ def main(
     # 如果调用了子命令，就不执行主逻辑
     if ctx.invoked_subcommand is not None:
         return
+    
+    # 显示日志文件路径信息
+    log_mode, log_location = get_log_mode_info()
+    log_path = get_log_file_path()
+    print(f"📝 [dim]日志模式: {log_mode} ({log_location})[/dim]")
+    print(f"📝 [dim]日志文件: {log_path}[/dim]")
+    print()  # 空行分隔
     
     # 如果没有提供音频文件，显示帮助信息
     if not audios:
