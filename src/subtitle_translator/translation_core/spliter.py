@@ -47,6 +47,15 @@ class SummaryError(Exception):
     def __str__(self):
         return self.message
 
+class EmptySubtitleError(Exception):
+    """空字幕文件异常 - 这是一个预期的情况，不需要详细错误堆栈"""
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)
+    
+    def __str__(self):
+        return self.message
+
 def is_pure_punctuation(s: str) -> bool:
     """
     检查字符串是否仅由标点符号组成

@@ -108,6 +108,14 @@ class SubtitleTranslatorService:
             logger.info(f"📊 字幕统计: 共 {len(asr_data.segments)} 条字幕")
             logger.debug(f"字幕内容预览: {asr_data.to_txt()[:100]}...")  
             
+            # 检查字幕是否为空
+            if len(asr_data.segments) == 0:
+                logger.info("⚠️  SRT文件为空，跳过翻译处理")
+                print(f"[yellow]⚠️  SRT文件为空，跳过翻译处理[/yellow]")
+                # 使用专门的空文件异常，避免显示堆栈跟踪
+                from .translation_core.spliter import EmptySubtitleError
+                raise EmptySubtitleError("SRT文件为空，无法进行翻译")
+            
             print(f"📊 [bold blue]加载完成[/bold blue] (共 [cyan]{len(asr_data.segments)}[/cyan] 条字幕)")
             
             # 检查是否需要重新断句
@@ -181,9 +189,9 @@ class SubtitleTranslatorService:
             raise
         
         except Exception as e:
-            # 检查是否是智能断句、翻译或总结异常，如果是则直接传播
-            from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError
-            if isinstance(e, (SmartSplitError, TranslationError, SummaryError)):
+            # 检查是否是智能断句、翻译、总结或空文件异常，如果是则直接传播
+            from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError, EmptySubtitleError
+            if isinstance(e, (SmartSplitError, TranslationError, SummaryError, EmptySubtitleError)):
                 raise e
             
             logger.error(f"💥 处理过程中发生错误: {str(e)}")
