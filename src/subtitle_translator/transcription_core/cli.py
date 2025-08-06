@@ -19,7 +19,8 @@ from typing_extensions import Annotated
 
 from ..logger import get_log_file_path, get_log_mode_info
 from . import AlignedResult, AlignedSentence, AlignedToken, from_pretrained
-from .utils import _find_cached_model, _check_network_connectivity
+from .utils import _find_cached_model, _check_network_connectivity, _storage_optimizer
+from .model_cache import model_context, get_cache_info, clear_model_cache
 
 # 默认转录模型
 DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
@@ -254,21 +255,10 @@ def _transcribe_files(
     fp32: bool
 ):
     """执行音频转录的核心逻辑"""
+    # 不再在这里立即加载模型，而是延迟到实际转录时加载
     if verbose:
-        print(f"正在加载模型: [bold cyan]{model}[/bold cyan]...")
-
-    try:
-        # 使用增强的模型加载体验
-        loaded_model = from_pretrained(
-            model, 
-            dtype=bfloat16 if not fp32 else float32,
-            show_progress=verbose
-        )
-        if verbose:
-            print("[green]模型加载成功。[/green]")
-    except Exception as e:
-        print(f"[bold red]加载模型 {model} 时出错:[/bold red] {e}")
-        raise typer.Exit(code=1)
+        print(f"准备使用模型: [bold cyan]{model}[/bold cyan]")
+        print("🚀 [dim]模型将在开始转录时加载，支持批量处理优化[/dim]")
 
     try:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -304,53 +294,76 @@ def _transcribe_files(
     if verbose:
         print(f"正在转录 {total_files} 个文件...")
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        transient=True,
-    ) as progress:
-        task = progress.add_task("正在转录...", total=total_files)
-
-        for i, audio_path in enumerate(audios):
-            if verbose:
-                print(
-                    f"\n正在处理文件 {i + 1}/{total_files}: [bold cyan]{audio_path.name}[/bold cyan]"
-                )
-            else:
-                progress.update(
-                    task, description=f"正在处理 [cyan]{audio_path.name}[/cyan]..."
-                )
-
-            try:
-                result: AlignedResult = loaded_model.transcribe(
-                    audio_path,
-                    dtype=bfloat16 if not fp32 else float32,
-                    chunk_duration=chunk_duration if chunk_duration != 0 else None,
-                    overlap_duration=overlap_duration,
-                    chunk_callback=lambda current, full: progress.update(
-                        task, total=total_files * full, completed=full * i + current
-                    ),
-                )
-
+    # 使用批量处理模式的模型缓存管理
+    batch_mode = total_files > 1
+    
+    with model_context(batch_mode=batch_mode):
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            transient=True,
+        ) as progress:
+            task = progress.add_task("正在转录...", total=total_files)
+            loaded_model = None  # 延迟初始化
+            
+            for i, audio_path in enumerate(audios):
                 if verbose:
-                    for sentence in result.sentences:
-                        start, end, text = sentence.start, sentence.end, sentence.text
-                        line = f"[blue][{format_timestamp(start)} --> {format_timestamp(end)}][/blue] {text.strip()}"
-                        print(line)
+                    print(
+                        f"\n正在处理文件 {i + 1}/{total_files}: [bold cyan]{audio_path.name}[/bold cyan]"
+                    )
+                else:
+                    progress.update(
+                        task, description=f"正在处理 [cyan]{audio_path.name}[/cyan]..."
+                    )
 
-                base_filename = audio_path.stem
-                template_vars = {
-                    "filename": base_filename,
-                    "date": datetime.datetime.now().strftime("%Y%m%d"),
-                    "index": str(i + 1),
-                }
+                try:
+                    # 懒加载模型（只在第一次需要时加载，后续复用缓存）
+                    if loaded_model is None:
+                        if verbose:
+                            print(f"🤖 [bold blue]正在加载模型...[/bold blue] [cyan]{model}[/cyan]")
+                        
+                        loaded_model = from_pretrained(
+                            model, 
+                            dtype=bfloat16 if not fp32 else float32,
+                            show_progress=verbose,
+                            use_cache=True  # 启用缓存
+                        )
+                        
+                        if verbose:
+                            if batch_mode:
+                                print("✅ [green]模型加载完成，批量处理模式已启用[/green]")
+                            else:
+                                print("✅ [green]模型加载完成[/green]")
+                    
+                    result: AlignedResult = loaded_model.transcribe(
+                        audio_path,
+                        dtype=bfloat16 if not fp32 else float32,
+                        chunk_duration=chunk_duration if chunk_duration != 0 else None,
+                        overlap_duration=overlap_duration,
+                        chunk_callback=lambda current, full: progress.update(
+                            task, total=total_files * full, completed=full * i + current
+                        ),
+                    )
 
-                output_basename = output_template.format(**template_vars)
+                    if verbose:
+                        for sentence in result.sentences:
+                            start, end, text = sentence.start, sentence.end, sentence.text
+                            line = f"[blue][{format_timestamp(start)} --> {format_timestamp(end)}][/blue] {text.strip()}"
+                            print(line)
 
-                for fmt in formats_to_generate:
+                    base_filename = audio_path.stem
+                    template_vars = {
+                        "filename": base_filename,
+                        "date": datetime.datetime.now().strftime("%Y%m%d"),
+                        "index": str(i + 1),
+                    }
+
+                    output_basename = output_template.format(**template_vars)
+
+                    for fmt in formats_to_generate:
                     formatter = formatters[fmt]
                     output_content = formatter(result)
                     
@@ -398,10 +411,21 @@ def _transcribe_files(
                             f"[bold red]写入输出文件 {output_filepath} 时出错:[/bold red] {e}"
                         )
 
-            except Exception as e:
-                print(f"[bold red]转录文件 {audio_path} 时出错:[/bold red] {e}")
+                except Exception as e:
+                    # 区分模型加载错误和转录错误
+                    if loaded_model is None:
+                        print(f"[bold red]加载模型 {model} 时出错:[/bold red] {e}")
+                        # 模型加载失败，终止整个批次
+                        raise typer.Exit(code=1)
+                    else:
+                        print(f"[bold red]转录文件 {audio_path} 时出错:[/bold red] {e}")
+                        # 单个文件转录失败，继续处理其他文件
 
-            progress.update(task, total=total_files, completed=i + 1)
+                progress.update(task, total=total_files, completed=i + 1)
+
+        # 批量处理完成后，模型缓存将自动释放
+        if verbose and batch_mode:
+            print("🎯 [dim]批量处理完成，模型缓存已自动释放[/dim]")
 
     print(
         f"\n[bold green]转录完成。[/bold green] 输出已保存在 '{output_dir.resolve()}'"
@@ -665,7 +689,7 @@ def model_cmd(
     
     else:
         console.print(f"[red]❌ 未知操作: {action}[/red]")
-        console.print("💡 支持的操作: list, info, download, clean")
+        console.print("💡 支持的操作: list, info, download, clean, cache")
         console.print("\n📖 使用示例:")
         console.print("   transcribe model list                                    # 列出已缓存转录模型")
         console.print("   transcribe model info                                    # 显示默认转录模型信息")
@@ -673,6 +697,117 @@ def model_cmd(
         console.print("   transcribe model download                                      # 预下载默认转录模型")
         console.print("   transcribe model download mlx-community/parakeet-tdt-0.6b-v2  # 预下载指定转录模型")
         console.print("   transcribe model clean                                   # 清理缓存")
+        console.print("   transcribe model cache status                           # 查看缓存状态")
+        console.print("   transcribe model cache clear                            # 清理内存缓存")
+
+
+@app.command("cache")
+def cache_cmd(
+    ctx: typer.Context,
+    action: str = typer.Argument(..., help="缓存操作: status(查看状态), clear(清理内存缓存), optimize(清理存储优化缓存)")
+):
+    """模型缓存管理命令"""
+    
+    if action == "status":
+        """显示缓存状态信息"""
+        try:
+            # 获取内存缓存信息
+            cache_info = get_cache_info()
+            
+            # 获取存储优化缓存信息
+            storage_stats = _storage_optimizer.get_cache_stats()
+            
+            # 创建状态表格
+            table = Table(title="🧠 模型缓存状态")
+            table.add_column("缓存类型", style="cyan")
+            table.add_column("状态", style="green")
+            table.add_column("详细信息", style="dim")
+            
+            # 内存缓存状态
+            if cache_info["status"] == "cached":
+                table.add_row(
+                    "内存缓存",
+                    "✅ 已缓存",
+                    f"模型: {cache_info['model_id']}, 类型: {cache_info['dtype']}, 访问: {cache_info['access_count']}次"
+                )
+                if cache_info.get("batch_mode", False):
+                    table.add_row("", "🔄 批量模式", f"引用计数: {cache_info.get('batch_ref_count', 0)}")
+            else:
+                table.add_row("内存缓存", "❌ 空闲", "无模型缓存")
+            
+            # 存储优化缓存状态
+            if storage_stats["cached_models"] > 0:
+                table.add_row(
+                    "存储优化缓存",
+                    "✅ 可用",
+                    f"{storage_stats['cached_models']} 个模型, {storage_stats['total_size_mb']:.1f} MB"
+                )
+            else:
+                table.add_row("存储优化缓存", "❌ 空白", "无优化缓存")
+            
+            console.print(table)
+            
+            # 显示缓存位置信息
+            if storage_stats.get("cache_dir"):
+                console.print(f"\n📍 存储位置: [dim]{storage_stats['cache_dir']}[/dim]")
+                
+        except Exception as e:
+            console.print(f"[red]❌ 获取缓存状态失败: {str(e)}[/red]")
+    
+    elif action == "clear":
+        """清理内存缓存"""
+        try:
+            cache_info = get_cache_info()
+            
+            if cache_info["status"] == "cached":
+                console.print(f"⚠️  [yellow]即将清理内存中的模型缓存[/yellow]")
+                console.print(f"模型: [cyan]{cache_info['model_id']}[/cyan]")
+                
+                confirm = typer.confirm("确定要清理内存缓存吗？")
+                if not confirm:
+                    console.print("❌ 取消清理操作")
+                    return
+                
+                clear_model_cache()
+                console.print("✅ [green]内存缓存已清理[/green]")
+                console.print("💡 [dim]下次使用时将重新从存储优化缓存或原始文件加载[/dim]")
+            else:
+                console.print("[yellow]📂 内存缓存为空，无需清理[/yellow]")
+                
+        except Exception as e:
+            console.print(f"[red]❌ 清理内存缓存失败: {str(e)}[/red]")
+    
+    elif action == "optimize":
+        """清理存储优化缓存"""
+        try:
+            storage_stats = _storage_optimizer.get_cache_stats()
+            
+            if storage_stats["cached_models"] > 0:
+                console.print(f"⚠️  [yellow]即将清理存储优化缓存[/yellow]")
+                console.print(f"缓存模型: {storage_stats['cached_models']} 个")
+                console.print(f"占用空间: {storage_stats['total_size_mb']:.1f} MB")
+                
+                confirm = typer.confirm("确定要清理存储优化缓存吗？")
+                if not confirm:
+                    console.print("❌ 取消清理操作")
+                    return
+                
+                _storage_optimizer.clear_all_optimized_cache()
+                console.print("✅ [green]存储优化缓存已清理[/green]")
+                console.print("💡 [dim]下次使用时将从原始文件重新构建优化缓存[/dim]")
+            else:
+                console.print("[yellow]📂 存储优化缓存为空，无需清理[/yellow]")
+                
+        except Exception as e:
+            console.print(f"[red]❌ 清理存储优化缓存失败: {str(e)}[/red]")
+    
+    else:
+        console.print(f"[red]❌ 未知操作: {action}[/red]")
+        console.print("💡 支持的操作: status, clear, optimize")
+        console.print("\n📖 使用示例:")
+        console.print("   transcribe cache status                           # 查看缓存状态")
+        console.print("   transcribe cache clear                            # 清理内存缓存")
+        console.print("   transcribe cache optimize                         # 清理存储优化缓存")
 
 
 if __name__ == "__main__":
