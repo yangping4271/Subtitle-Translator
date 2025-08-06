@@ -160,7 +160,7 @@ def process_single_file(
 
     except Exception as e:
         # 检查是否是智能断句异常
-        from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError
+        from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError, EmptySubtitleError
         if isinstance(e, SmartSplitError):
             logger.error(f"❌ 智能断句失败: {e.message}")
             if e.suggestion:
@@ -185,6 +185,11 @@ def process_single_file(
             if e.suggestion:
                 print(f"[bold yellow]{e.suggestion}[/bold yellow]")
             raise SummaryError(e.message, e.suggestion)
+        elif isinstance(e, EmptySubtitleError):
+            # 空文件异常 - 友好处理，不显示堆栈跟踪
+            logger.info(f"⚠️  {e.message}")
+            # 不打印错误信息，前面已经显示了友好提示
+            raise RuntimeError(f"{e.message}")
         else:
             logger.error(f"❌ 处理失败: {e}")
             logger.exception("详细错误信息:")

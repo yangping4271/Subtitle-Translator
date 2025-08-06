@@ -353,6 +353,36 @@ def _transcribe_files(
                 for fmt in formats_to_generate:
                     formatter = formatters[fmt]
                     output_content = formatter(result)
+                    
+                    # 对于SRT格式，检查内容是否为空
+                    if fmt == "srt":
+                        srt_content_trimmed = output_content.strip()
+                        if not srt_content_trimmed:
+                            print(f"[yellow]⚠️  未检测到语音内容，跳过保存 {fmt.upper()} 文件[/yellow]")
+                            continue
+                        
+                        # 检查是否只包含空的时间戳条目（没有实际文本内容）
+                        import re
+                        # 移除序号和时间戳行，检查是否还有实际内容
+                        lines = srt_content_trimmed.split('\n')
+                        content_lines = []
+                        for line in lines:
+                            line = line.strip()
+                            # 跳过序号行
+                            if line.isdigit():
+                                continue
+                            # 跳过时间戳行
+                            if re.match(r'\d{2}:\d{2}:\d{2}[,\.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,\.]\d{3}', line):
+                                continue
+                            # 跳过空行
+                            if not line:
+                                continue
+                            content_lines.append(line)
+                        
+                        if not content_lines:
+                            print(f"[yellow]⚠️  转录结果为空，跳过保存 {fmt.upper()} 文件[/yellow]")
+                            continue
+                    
                     output_filename = f"{output_basename}.{fmt}"
                     output_filepath = output_dir / output_filename
 
