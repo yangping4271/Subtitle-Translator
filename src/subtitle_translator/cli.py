@@ -13,7 +13,7 @@ from rich import print
 from .env_setup import setup_environment
 from .processor import process_single_file
 from .config_manager import init_config
-from .logger import setup_logger
+from .logger import setup_logger, get_log_file_path, get_log_mode_info
 from .transcription_core.utils import _find_cached_model, _check_network_connectivity, from_pretrained
 from .transcription_core import utils as transcription_utils
 
@@ -48,6 +48,13 @@ def main(
         return
         
     setup_environment()
+    
+    # 显示日志文件路径信息
+    log_mode, log_location = get_log_mode_info()
+    log_path = get_log_file_path()
+    print(f"📝 [dim]日志模式: {log_mode} ({log_location})[/dim]")
+    print(f"📝 [dim]日志文件: {log_path}[/dim]")
+    print()  # 空行分隔
     
     # 早期验证目标语言代码，提供友好错误信息
     try:
