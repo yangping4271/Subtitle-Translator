@@ -165,6 +165,26 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
     count = 0
     generated_ass_files = []
     
+    # 全局预检查转录模型（只对需要转录的文件执行）
+    model_precheck_passed = None
+    needs_transcription = any(f.suffix.lower() != '.srt' for f in files_to_process)
+    
+    if needs_transcription:
+        from .processor import precheck_model_availability
+        print("[bold blue]>>> 预检查转录环境...[/bold blue]")
+        model_precheck_passed = precheck_model_availability(model, show_progress=True)
+        
+        if not model_precheck_passed:
+            print("[bold red]❌ 转录模型不可用，无法处理需要转录的文件[/bold red]")
+            # 过滤掉需要转录的文件，只处理 .srt 文件
+            srt_files = [f for f in files_to_process if f.suffix.lower() == '.srt']
+            if srt_files:
+                print(f"[bold yellow]将只处理 {len(srt_files)} 个 SRT 文件[/bold yellow]")
+                files_to_process = srt_files
+            else:
+                print("[bold red]没有可处理的 SRT 文件，退出批量处理[/bold red]")
+                return
+    
     for i, current_input_file in enumerate(files_to_process):
         print()
         logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
@@ -173,7 +193,7 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
         try:
             process_single_file(
                 current_input_file, target_lang, output_dir, model, 
-                llm_model, reflect, debug
+                llm_model, reflect, debug, model_precheck_passed
             )
             count += 1
             logger.info(f"✅ {current_input_file.stem} 处理完成！")
