@@ -719,7 +719,7 @@ def from_pretrained(
     
     def _original_loader() -> BaseParakeet:
         """原始的模型加载逻辑，作为fallback"""
-        return _load_model_original(hf_id_or_path, dtype, show_progress)
+        return _load_model_original(hf_id_or_path, dtype, show_progress, skip_optimized_cache=True)
     
     # 使用缓存优化的加载
     if use_cache:
@@ -736,7 +736,7 @@ def from_pretrained(
 
 
 def _load_model_original(
-    hf_id_or_path: str, dtype: mx.Dtype = mx.bfloat16, show_progress: bool = True
+    hf_id_or_path: str, dtype: mx.Dtype = mx.bfloat16, show_progress: bool = True, skip_optimized_cache: bool = False
 ) -> BaseParakeet:
     """
     原始模型加载逻辑（重构后的内部函数）
@@ -756,28 +756,33 @@ def _load_model_original(
     loading_method = None
     
     # 策略1: 尝试从存储层优化缓存加载（最快的文件加载）
-    try:
-        if show_progress:
-            with console.status("[bold blue]🚀 策略1: 查找存储层优化缓存...[/bold blue]"):
-                time.sleep(0.2)  # 给用户一点时间看到状态
+    if not skip_optimized_cache:
+        try:
+            if show_progress:
+                with console.status("[bold blue]🚀 策略1: 查找存储层优化缓存...[/bold blue]"):
+                    time.sleep(0.2)  # 给用户一点时间看到状态
+                    optimized_model = _storage_optimizer.load_optimized_model(hf_id_or_path, dtype)
+            else:
                 optimized_model = _storage_optimizer.load_optimized_model(hf_id_or_path, dtype)
-        else:
-            optimized_model = _storage_optimizer.load_optimized_model(hf_id_or_path, dtype)
-        
-        if optimized_model is not None:
-            loading_method = "存储优化缓存"
+            
+            if optimized_model is not None:
+                loading_method = "存储优化缓存"
+                if show_progress:
+                    console.print("✅ [bold green]从存储优化缓存加载成功![/bold green] (极速加载)")
+                    console.print(f"\n🎉 [bold green]模型加载完成![/bold green] (加载方式: [bold cyan]{loading_method}[/bold cyan])")
+                    console.print("━" * 60)
+                return optimized_model
+            else:
+                if show_progress:
+                    console.print("🔍 [dim]存储优化缓存不可用，将尝试其他方式[/dim]")
+        except Exception as e:
             if show_progress:
-                console.print("✅ [bold green]从存储优化缓存加载成功![/bold green] (极速加载)")
-                console.print(f"\n🎉 [bold green]模型加载完成![/bold green] (加载方式: [bold cyan]{loading_method}[/bold cyan])")
-                console.print("━" * 60)
-            return optimized_model
-        else:
-            if show_progress:
-                console.print("🔍 [dim]存储优化缓存不可用，将尝试其他方式[/dim]")
-    except Exception as e:
+                console.print(f"🔍 [dim]存储优化缓存查找失败: {str(e)}[/dim]")
+            logger.debug(f"存储优化缓存查找失败: {str(e)}")
+    else:
+        # 存储优化缓存已在上层检查过，直接跳过
         if show_progress:
-            console.print(f"🔍 [dim]存储优化缓存查找失败: {str(e)}[/dim]")
-        logger.debug(f"存储优化缓存查找失败: {str(e)}")
+            console.print("🔍 [dim]跳过存储优化缓存检查（已在缓存层处理）[/dim]")
     
     config = None
     weight = None
