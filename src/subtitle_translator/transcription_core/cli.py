@@ -325,14 +325,16 @@ def _transcribe_files(
                         if verbose:
                             print(f"🤖 [bold blue]正在加载模型...[/bold blue] [cyan]{model}[/cyan]")
                         
-                        loaded_model = from_pretrained(
+                        loaded_model, from_cache = from_pretrained(
                             model, 
                             dtype=bfloat16 if not fp32 else float32,
                             show_progress=verbose,
-                            use_cache=True  # 启用缓存
+                            use_cache=True,  # 启用缓存
+                            return_cache_info=True  # 返回缓存信息
                         )
                         
-                        if verbose:
+                        # 只有当模型不是从缓存加载时才显示加载完成信息
+                        if verbose and not from_cache:
                             if batch_mode:
                                 print("✅ [green]模型加载完成，批量处理模式已启用[/green]")
                             else:

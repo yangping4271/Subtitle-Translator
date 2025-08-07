@@ -9,7 +9,7 @@ import subprocess
 import shutil
 import pickle
 import hashlib
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 
 import mlx.core as mx
 from dacite import from_dict
@@ -689,8 +689,8 @@ def _load_model_files(config_path: str, weight_path: str, silent: bool = False) 
 
 def from_pretrained(
     hf_id_or_path: str, *, dtype: mx.Dtype = mx.bfloat16, show_progress: bool = True, 
-    use_cache: bool = True
-) -> BaseParakeet:
+    use_cache: bool = True, return_cache_info: bool = False
+) -> Union[BaseParakeet, tuple[BaseParakeet, bool]]:
     """
     从 Hugging Face 或本地目录加载模型，支持内存和存储层缓存优化
     
@@ -706,9 +706,10 @@ def from_pretrained(
         dtype: 模型数据类型
         show_progress: 是否显示详细的加载进度
         use_cache: 是否使用缓存优化
+        return_cache_info: 是否返回缓存信息 (model, from_cache)
         
     Returns:
-        加载的 Parakeet 模型
+        BaseParakeet 或 tuple[BaseParakeet, bool]: 模型实例，如果 return_cache_info=True 则返回 (模型, 是否从缓存加载)
         
     Raises:
         ValueError: 不支持的模型类型
@@ -722,10 +723,16 @@ def from_pretrained(
     
     # 使用缓存优化的加载
     if use_cache:
-        return load_cached_model(hf_id_or_path, dtype, _original_loader)
+        model, from_cache = load_cached_model(hf_id_or_path, dtype, _original_loader, show_progress)
+        if return_cache_info:
+            return model, from_cache
+        return model
     else:
         # 不使用缓存，直接加载
-        return _original_loader()
+        model = _original_loader()
+        if return_cache_info:
+            return model, False
+        return model
 
 
 def _load_model_original(
