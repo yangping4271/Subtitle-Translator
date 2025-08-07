@@ -485,8 +485,17 @@ def main_callback(
     fp32: Annotated[
         bool, typer.Option("--fp32/--bf16", help="使用 FP32 精度")
     ] = False,
+    version: Annotated[
+        bool, typer.Option("--version", help="显示版本信息并退出")
+    ] = False,
 ):
     """使用 Parakeet MLX 模型转录音频文件。"""
+    # 处理版本信息请求
+    if version:
+        from ..version_utils import get_simple_version_info
+        print(get_simple_version_info())
+        raise typer.Exit()
+    
     # 如果调用了子命令，就不执行主逻辑
     if ctx.invoked_subcommand is not None:
         return

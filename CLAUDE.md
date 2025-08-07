@@ -261,7 +261,6 @@ ffmpeg -f lavfi -i testsrc2=duration=30:size=1280x720:rate=30 -f lavfi -i sine=f
 ```
 
 ### Reinstallation Process
-Use the `subtitle-translator-reinstaller` agent for clean reinstallation:
 1. Performs complete uninstall and cleanup
 2. Reinstalls with fresh dependencies
 3. Tests installation integrity

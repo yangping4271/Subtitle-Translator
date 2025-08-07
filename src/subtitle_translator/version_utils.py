@@ -61,6 +61,12 @@ def get_dependency_versions() -> Dict[str, str]:
     return versions
 
 
+def get_simple_version_info() -> str:
+    """获取简洁的版本信息字符串"""
+    project_version = get_project_version()
+    return f"Subtitle Translator v{project_version}"
+
+
 def display_version_info(console: Optional[Console] = None) -> None:
     """显示格式化的版本信息"""
     if console is None:

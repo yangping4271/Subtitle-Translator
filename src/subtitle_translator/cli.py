@@ -41,8 +41,15 @@ def main(
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
     reflect: bool = typer.Option(False, "--reflect", "-r", help="启用反思翻译模式，提高翻译质量但会增加处理时间。"),
     debug: bool = typer.Option(False, "--debug", "-d", help="启用调试日志级别，显示更详细的处理信息。"),
+    version: bool = typer.Option(False, "--version", help="显示版本信息并退出。"),
 ):
     """字幕翻译工具主命令"""
+    # 处理版本信息请求
+    if version:
+        from .version_utils import get_simple_version_info
+        print(get_simple_version_info())
+        raise typer.Exit()
+    
     # 如果调用了子命令，就不执行主逻辑
     if ctx.invoked_subcommand is not None:
         return
