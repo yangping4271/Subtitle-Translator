@@ -214,7 +214,7 @@ def model_context(batch_mode: bool = False):
             cache.auto_release_if_needed()
 
 
-def load_cached_model(model_id: str, dtype: mx.Dtype, loader_func) -> BaseParakeet:
+def load_cached_model(model_id: str, dtype: mx.Dtype, loader_func, show_progress: bool = True) -> tuple[BaseParakeet, bool]:
     """
     加载缓存的模型实例
     
@@ -222,30 +222,34 @@ def load_cached_model(model_id: str, dtype: mx.Dtype, loader_func) -> BaseParake
         model_id: 模型ID
         dtype: 数据类型
         loader_func: 实际的模型加载函数，signature: () -> BaseParakeet
+        show_progress: 是否显示加载进度（当缓存未命中时使用）
         
     Returns:
-        模型实例
+        tuple: (模型实例, 是否从缓存加载)
     """
     cache = get_model_cache()
     
     # 尝试从缓存获取
     model = cache.get_model(model_id, dtype)
     if model is not None:
-        return model
+        # 缓存命中，静默返回，不输出加载信息
+        return model, True
     
-    # 缓存未命中，加载新模型
-    logger.info(f"缓存未命中，开始加载模型: {model_id} ({dtype})")
+    # 缓存未命中，需要实际加载模型
+    if show_progress:
+        logger.info(f"缓存未命中，开始加载模型: {model_id} ({dtype})")
     start_time = time.time()
     
     model = loader_func()
     
     load_time = time.time() - start_time
-    logger.info(f"模型加载完成，耗时: {load_time:.2f}秒")
+    if show_progress:
+        logger.info(f"模型加载完成，耗时: {load_time:.2f}秒")
     
     # 缓存新模型
     cache.set_model(model_id, dtype, model)
     
-    return model
+    return model, False
 
 
 def clear_model_cache() -> None:
