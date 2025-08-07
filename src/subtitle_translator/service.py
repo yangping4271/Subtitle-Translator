@@ -118,7 +118,7 @@ class SubtitleTranslatorService:
                 from .translation_core.spliter import EmptySubtitleError
                 raise EmptySubtitleError("SRT文件为空，无法进行翻译")
             
-            print(f"📊 [bold blue]加载完成[/bold blue] (共 [cyan]{len(asr_data.segments)}[/cyan] 条字幕)")
+            print(f"📊 [bold blue]加载完成[/bold blue]")
             
             # 检查是否需要重新断句
             split_time = 0
