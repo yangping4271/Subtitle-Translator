@@ -202,7 +202,7 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
         for i, current_input_file in enumerate(files_to_process):
             print()
             logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
-            print(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): [bold cyan]{current_input_file.name}[/bold cyan]")
+            print(f"🎯 [bold cyan]开始处理第 {i+1}/{len(files_to_process)} 个文件...[/bold cyan]")
             
             try:
                 # 批量模式处理，传入已初始化的翻译服务
@@ -212,15 +212,16 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
                     batch_mode=True, translator_service=translator_service
                 )
                 count += 1
-                logger.info(f"✅ {current_input_file.stem} 处理完成！")
-                print(f"[bold green]✅ {current_input_file.stem} 处理完成！[/bold green]")
                 
                 # 检查是否生成了ASS文件
                 ass_file = output_dir / f"{current_input_file.stem}.ass"
                 if ass_file.exists():
                     generated_ass_files.append(ass_file)
                     logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
-                    print(f"📺 双语ASS文件已生成: [cyan]{ass_file.name}[/cyan]")
+                    print(f"📺 [cyan]双语ASS文件已生成[/cyan]")
+                
+                logger.info(f"✅ {current_input_file.stem} 处理完成！")
+                print(f"[bold green]✅ 处理完成！[/bold green]")
             
             except Exception as e:
                 from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError

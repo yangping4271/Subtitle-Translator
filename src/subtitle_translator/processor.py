@@ -99,7 +99,7 @@ def process_single_file(
         try:
             # 转录阶段 - 使用优化的缓存管理
             logger.info("开始转录音频...")
-            print(f"🎤 [bold cyan]正在转录音频:[/bold cyan] [dim]{input_file}[/dim]")
+            print(f"🎤 [bold cyan]正在转录音频...[/bold cyan]")
             
             # 使用批量模式缓存管理
             with model_context(batch_mode=batch_mode):
@@ -237,4 +237,4 @@ def process_single_file(
         if temp_srt_path and temp_srt_path.exists():
             if input_file.suffix.lower() != '.srt':
                 logger.info(f"保留原始转录文件: {temp_srt_path}")
-                print(f"💾 [bold green]保留转录文件:[/bold green] [cyan]{temp_srt_path.name}[/cyan]") 
+                print(f"💾 [bold green]保留转录文件[/bold green]") 
