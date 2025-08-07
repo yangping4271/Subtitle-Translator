@@ -364,8 +364,8 @@ def _transcribe_files(
                     output_basename = output_template.format(**template_vars)
 
                     for fmt in formats_to_generate:
-                    formatter = formatters[fmt]
-                    output_content = formatter(result)
+                        formatter = formatters[fmt]
+                        output_content = formatter(result)
                     
                     # 对于SRT格式，检查内容是否为空
                     if fmt == "srt":
