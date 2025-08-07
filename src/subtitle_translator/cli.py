@@ -437,6 +437,16 @@ def model_cmd(
         console.print("   translate model clean                                   # 清理缓存")
 
 
+@app.command("version")
+def version():
+    """显示版本信息"""
+    from rich.console import Console
+    from .version_utils import display_version_info
+    
+    console = Console()
+    display_version_info(console)
+
+
 @app.command("init")
 def init():
     """初始化全局配置 - 检查当前目录.env文件或交互式输入配置"""

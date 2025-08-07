@@ -703,6 +703,16 @@ def model_cmd(
         console.print("   transcribe model cache clear                            # 清理内存缓存")
 
 
+@app.command("version") 
+def version():
+    """显示版本信息"""
+    from rich.console import Console
+    from ..version_utils import display_version_info
+    
+    console = Console()
+    display_version_info(console)
+
+
 @app.command("cache")
 def cache_cmd(
     ctx: typer.Context,
