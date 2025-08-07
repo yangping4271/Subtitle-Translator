@@ -224,7 +224,7 @@ class SubtitleTranslatorService:
         mode_name = "反思翻译" if reflect else "常规翻译"
         log_section_start(logger, f"字幕{mode_name}", "🌍")
         
-        print(f"🌍 [bold magenta]{mode_name}中...[/bold magenta] ({len(asr_data.segments)} 句)")
+        print(f"🌍 [bold magenta]{mode_name}中...[/bold magenta]")
         
         logger.info(f"🤖 使用模型: {self.config.translation_model}")
         logger.info(f"⚡ 线程数: {self.config.thread_num}")

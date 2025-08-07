@@ -148,99 +148,6 @@ The application processes files with intelligent file discovery:
 4. Prioritizes input: `.srt` > `.mp3` > `.mp4`
 5. Generates bilingual `.ass` files and preserves original `.srt`
 
-## Error Handling
-
-The codebase includes comprehensive error handling with specific exception types:
-- `SmartSplitError`: Sentence splitting failures
-- `TranslationError`: Translation API failures  
-- `SummaryError`: Summarization failures
-
-Errors are logged and displayed with user-friendly messages while maintaining detailed logs for debugging.
-
-## Hugging Face Download Optimization
-
-The application includes an intelligent download system for Hugging Face models, designed to improve reliability and speed, especially for users in regions with poor connectivity to the official Hugging Face Hub.
-
-### Download Strategy
-
-The system employs a 4-tier download strategy with automatic fallback:
-
-1. **huggingface-cli + configured mirror** (if huggingface-cli is available)
-2. **hf_hub_download + configured mirror**
-3. **Mirror site polling with huggingface-cli** (tries all available mirrors)
-4. **Mirror site polling with hf_hub_download** (tries all available mirrors)
-
-### Configuration
-
-#### Environment Variables
-- `HF_ENDPOINT`: Sets the preferred Hugging Face endpoint
-- Supported values:
-  - `https://huggingface.co` (official, default)
-  - `https://hf-mirror.com` (recommended for China users)
-  - Custom mirror URLs
-
-#### Interactive Configuration
-The `translate init` command includes HF mirror configuration:
-- Prompts user whether to use a mirror site
-- Provides options for popular mirrors
-- Allows custom mirror URL input
-- Automatically adds HF_ENDPOINT to generated .env file
-
-### Implementation Details
-
-#### Key Components (`transcription_core/utils.py`)
-
-**Network Detection**:
-- `_check_endpoint_connectivity()`: Tests individual mirror connectivity
-- `_find_best_hf_endpoint()`: Automatically selects the best available endpoint
-- `_check_network_connectivity()`: General network connectivity check
-
-**Download Methods**:
-- `_download_with_huggingface_cli()`: Uses official CLI tool with mirror support
-- `_download_with_hf_hub()`: Uses huggingface_hub library with custom endpoint
-- `_download_with_retry()`: Main intelligent download orchestrator
-
-**Mirror Management**:
-```python
-HF_MIRROR_SITES = [
-    "https://huggingface.co",  # Official
-    "https://hf-mirror.com",   # Primary mirror
-]
-```
-
-#### Download Flow
-1. Check if huggingface-cli is available
-2. Test configured endpoint connectivity
-3. Try primary download methods with configured endpoint
-4. If failed, iterate through all mirror sites
-5. Provide detailed error reporting with suggestions
-
-### Testing and Development
-
-#### Testing Download Functionality
-```bash
-# Test basic HF functionality
-uv run python -c "from src.subtitle_translator.transcription_core.utils import _get_hf_endpoint, _is_huggingface_cli_available, _check_network_connectivity; print(f'HF Endpoint: {_get_hf_endpoint()}'); print(f'CLI Available: {_is_huggingface_cli_available()}'); print(f'Network OK: {_check_network_connectivity()}')"
-
-# Test mirror connectivity
-uv run python -c "from src.subtitle_translator.transcription_core.utils import _check_endpoint_connectivity, HF_MIRROR_SITES; [print(f'{site}: {_check_endpoint_connectivity(site)}') for site in HF_MIRROR_SITES]"
-
-# Test download with specific mirror
-HF_ENDPOINT=https://hf-mirror.com uv run python -c "from src.subtitle_translator.transcription_core.utils import _download_with_retry; _download_with_retry('distilbert-base-uncased', 'config.json')"
-```
-
-#### Configuration Testing
-```bash
-# Test optimized config manager functionality (after code refactoring)
-uv run python -c "from src.subtitle_translator.config_manager import safe_prompt, safe_prompt_operation; print('✅ 优化后的配置管理器可用')"
-
-# Test configuration validation
-uv run python -c "from src.subtitle_translator.config_manager import validate_existing_config_and_return_result; print('Config validation functions available')"
-
-# Test configuration initialization (development mode - recommended)
-uv run python -m subtitle_translator.cli init
-```
-
 #### Development Mode Recommendations
 For development and testing, **always prefer development mode** over installed tools:
 
@@ -295,4 +202,4 @@ The system provides enhanced error messages for download failures:
 
 ### Toolchain and Testing Strategies
 - **Development Task Memory**:
-  * 使用ffmpeg生成音视频测试文件，需要srt，自己生成。不要单独创建测试用例，任务执行后删除这些测试文件，重新安装使用subtitle-translator-reinstaller agent，安装后测试，没问题，升级版本，提交代码
+  * 使用ffmpeg生成音视频测试文件，需要srt，自己生成。不要单独创建测试用例，任务执行后保留这些测试文件，已备下次使用。重新安装使用subtitle-translator-reinstaller agent，安装后测试，没问题，升级版本，提交代码
