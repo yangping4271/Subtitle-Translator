@@ -289,3 +289,10 @@ The system provides enhanced error messages for download failures:
 - **Improved Speed**: Uses fastest available endpoint based on real-time testing
 - **Better User Experience**: Clear progress reporting and helpful error messages
 - **Zero Configuration**: Works out of the box with intelligent defaults
+```
+
+## Development Testing and Research
+
+### Toolchain and Testing Strategies
+- **Development Task Memory**:
+  * 使用ffmpeg生成音视频测试文件，需要srt，自己生成。不要单独创建测试用例，任务执行后删除这些测试文件，重新安装使用subtitle-translator-reinstaller agent，安装后测试，没问题，升级版本，提交代码
