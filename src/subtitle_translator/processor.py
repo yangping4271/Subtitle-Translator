@@ -67,7 +67,8 @@ def precheck_model_availability(model: str, show_progress: bool = True, silent: 
 def process_single_file(
     input_file: Path, target_lang: str, output_dir: Path, 
     model: str, llm_model: Optional[str], reflect: bool, debug: bool,
-    model_precheck_passed: Optional[bool] = None
+    model_precheck_passed: Optional[bool] = None,
+    batch_mode: bool = False, translator_service = None
 ):
     """处理单个文件的核心逻辑"""
 
@@ -100,8 +101,8 @@ def process_single_file(
             logger.info("开始转录音频...")
             print(f"🎤 [bold cyan]正在转录音频:[/bold cyan] [dim]{input_file}[/dim]")
             
-            # 使用单文件模式（处理完后立即释放缓存）
-            with model_context(batch_mode=False):
+            # 使用批量模式缓存管理
+            with model_context(batch_mode=batch_mode):
                 # 懒加载模型，只在需要时加载
                 loaded_model = from_pretrained(
                     model, 
@@ -113,7 +114,10 @@ def process_single_file(
                 # 使用与原始parakeet-mlx相同的默认值：120秒分块，15秒重叠
                 result = loaded_model.transcribe(input_file, chunk_duration=120.0, overlap_duration=15.0)
             
-            # 此时模型缓存已自动释放
+            # 根据批量模式决定是否显示缓存释放信息
+            if not batch_mode:
+                # 此时模型缓存已自动释放
+                pass  # 在单文件模式下会显示释放信息
             
             # 将转录结果保存为 SRT，使用 timestamps=True 获得更精细的时间戳
             srt_content = to_srt(result, timestamps=True)
@@ -124,7 +128,10 @@ def process_single_file(
             subtitle_count = len(srt_content.strip().split('\n\n'))
             logger.info(f"转录完成，SRT文件保存至: {temp_srt_path}")
             print(f"✅ [bold green]转录完成[/bold green] (共 [cyan]{subtitle_count}[/cyan] 条字幕)")
-            print(f"🎯 [dim]模型已自动释放，内存已优化[/dim]")
+            
+            # 只在单文件模式下显示模型释放信息
+            if not batch_mode:
+                print(f"🎯 [dim]模型已自动释放，内存已优化[/dim]")
 
         except Exception as e:
             print(f"[bold red]转录失败:[/bold red] {e}")
@@ -136,18 +143,26 @@ def process_single_file(
     # --- 翻译阶段 ---
     logger.info(">>> 开始翻译...")
     print("[bold green]>>> 开始翻译...[/bold green]")
-    try:
-        translator_service = SubtitleTranslatorService()
-    except Exception as init_error:
-        print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
-        raise
+    
+    # 使用传入的翻译服务或创建新的服务
+    service_was_passed = translator_service is not None
+    if translator_service is None:
+        # 单文件模式，需要创建并初始化翻译服务
+        try:
+            translator_service = SubtitleTranslatorService()
+            translator_service._init_translation_env(llm_model, show_config=True)
+        except Exception as init_error:
+            print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
+            raise
+    # 批量模式下，翻译服务已经初始化完成，直接使用
     try:
         final_target_lang_path = translator_service.translate_srt(
             input_srt_path=temp_srt_path,
             target_lang=target_lang,
             output_dir=output_dir,
             llm_model=llm_model,
-            reflect=reflect
+            reflect=reflect,
+            skip_env_init=service_was_passed  # 如果服务是传入的（批量模式），跳过环境初始化
         )
         # 确保这里正确赋值
         final_english_path = output_dir / f"{temp_srt_path.stem}.en.srt"

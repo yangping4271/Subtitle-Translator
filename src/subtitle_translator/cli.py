@@ -162,6 +162,8 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
 def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path, 
                         model: str, llm_model: Optional[str], reflect: bool, debug: bool):
     """批量处理文件"""
+    from .transcription_core.model_cache import model_context
+    
     count = 0
     generated_ass_files = []
     
@@ -185,38 +187,56 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
                 print("[bold red]没有可处理的 SRT 文件，退出批量处理[/bold red]")
                 return
     
-    for i, current_input_file in enumerate(files_to_process):
-        print()
-        logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
-        print(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): [bold cyan]{current_input_file.name}[/bold cyan]")
-        
-        try:
-            process_single_file(
-                current_input_file, target_lang, output_dir, model, 
-                llm_model, reflect, debug, model_precheck_passed
-            )
-            count += 1
-            logger.info(f"✅ {current_input_file.stem} 处理完成！")
-            print(f"[bold green]✅ {current_input_file.stem} 处理完成！[/bold green]")
-            
-            # 检查是否生成了ASS文件
-            ass_file = output_dir / f"{current_input_file.stem}.ass"
-            if ass_file.exists():
-                generated_ass_files.append(ass_file)
-                logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
-                print(f"📺 双语ASS文件已生成: [cyan]{ass_file.name}[/cyan]")
-        
-        except Exception as e:
-            from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError
-            if isinstance(e, (SmartSplitError, TranslationError, SummaryError)):
-                # 这些异常已经在processor.py中显示过了，这里不重复显示
-                # 但需要记录到日志中用于统计
-                logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
-            else:
-                logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
-                print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
-        
+    # 在批量处理开始时初始化翻译服务并显示配置（只显示一次）
+    from .service import SubtitleTranslatorService
+    try:
+        translator_service = SubtitleTranslatorService()
+        translator_service._init_translation_env(llm_model, show_config=True)
         print()  # 添加空行分隔
+    except Exception as init_error:
+        print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
+        raise
+    
+    # 使用批量模式上下文管理器处理整个批量任务
+    with model_context(batch_mode=True):
+        for i, current_input_file in enumerate(files_to_process):
+            print()
+            logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
+            print(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): [bold cyan]{current_input_file.name}[/bold cyan]")
+            
+            try:
+                # 批量模式处理，传入已初始化的翻译服务
+                process_single_file(
+                    current_input_file, target_lang, output_dir, model, 
+                    llm_model, reflect, debug, model_precheck_passed,
+                    batch_mode=True, translator_service=translator_service
+                )
+                count += 1
+                logger.info(f"✅ {current_input_file.stem} 处理完成！")
+                print(f"[bold green]✅ {current_input_file.stem} 处理完成！[/bold green]")
+                
+                # 检查是否生成了ASS文件
+                ass_file = output_dir / f"{current_input_file.stem}.ass"
+                if ass_file.exists():
+                    generated_ass_files.append(ass_file)
+                    logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
+                    print(f"📺 双语ASS文件已生成: [cyan]{ass_file.name}[/cyan]")
+            
+            except Exception as e:
+                from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError
+                if isinstance(e, (SmartSplitError, TranslationError, SummaryError)):
+                    # 这些异常已经在processor.py中显示过了，这里不重复显示
+                    # 但需要记录到日志中用于统计
+                    logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
+                else:
+                    logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
+                    print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
+            
+            print()  # 添加空行分隔
+    
+    # 批量处理完成，显示模型优化信息
+    if needs_transcription and count > 0:
+        print("🎯 [dim]批量处理完成，模型已自动释放，内存已优化[/dim]")
     
     # 显示处理结果
     _show_batch_results(count, generated_ass_files, output_dir)
