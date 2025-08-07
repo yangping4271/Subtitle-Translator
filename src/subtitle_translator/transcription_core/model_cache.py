@@ -229,13 +229,24 @@ def load_cached_model(model_id: str, dtype: mx.Dtype, loader_func, show_progress
     """
     cache = get_model_cache()
     
-    # 尝试从缓存获取
+    # 尝试从内存缓存获取
     model = cache.get_model(model_id, dtype)
     if model is not None:
-        # 缓存命中，静默返回，不输出加载信息
+        # 内存缓存命中，静默返回
         return model, True
     
-    # 缓存未命中，需要实际加载模型
+    # 内存缓存未命中，检查存储优化缓存
+    try:
+        from .utils import _storage_optimizer
+        optimized_model = _storage_optimizer.load_optimized_model(model_id, dtype)
+        if optimized_model is not None:
+            # 存储优化缓存命中，加入内存缓存并静默返回
+            cache.set_model(model_id, dtype, optimized_model)
+            return optimized_model, True
+    except Exception as e:
+        logger.debug(f"存储优化缓存查找失败: {str(e)}")
+    
+    # 所有缓存都未命中，需要实际加载模型
     if show_progress:
         logger.info(f"缓存未命中，开始加载模型: {model_id} ({dtype})")
     start_time = time.time()
