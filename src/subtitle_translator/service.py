@@ -34,7 +34,7 @@ class SubtitleTranslatorService:
             self.logger = logger
         return self.logger
 
-    def _init_translation_env(self, llm_model: str) -> None:
+    def _init_translation_env(self, llm_model: str, show_config: bool = True) -> None:
         """初始化翻译环境配置"""
         logger = self._get_logger()
         start_time = time.time()
@@ -54,28 +54,29 @@ class SubtitleTranslatorService:
         }
         log_stats(logger, model_config, "模型配置")
         
-        # 显示 API 配置
-        print(f"🌐 [bold blue]API 配置:[/bold blue]")
-        print(f"   端点: [cyan]{self.config.openai_base_url}[/cyan]")
-        # 对 API 密钥进行脱敏处理
-        api_key = self.config.openai_api_key
-        if api_key:
-            masked_key = api_key[:10] + '*' * (len(api_key) - 10) if len(api_key) > 10 else '*' * len(api_key)
-            print(f"   密钥: [cyan]{masked_key}[/cyan]")
-        else:
-            print(f"   密钥: [red]未设置[/red]")
-        
-        # 显示模型配置
-        print(f"🤖 [bold blue]模型配置:[/bold blue]")
-        print(f"   断句: [cyan]{self.config.split_model}[/cyan]")
-        print(f"   总结: [cyan]{self.config.summary_model}[/cyan]")
-        print(f"   翻译: [cyan]{self.config.translation_model}[/cyan]")
+        # 只在需要时显示 API 配置
+        if show_config:
+            print(f"🌐 [bold blue]API 配置:[/bold blue]")
+            print(f"   端点: [cyan]{self.config.openai_base_url}[/cyan]")
+            # 对 API 密钥进行脱敏处理
+            api_key = self.config.openai_api_key
+            if api_key:
+                masked_key = api_key[:10] + '*' * (len(api_key) - 10) if len(api_key) > 10 else '*' * len(api_key)
+                print(f"   密钥: [cyan]{masked_key}[/cyan]")
+            else:
+                print(f"   密钥: [red]未设置[/red]")
+            
+            # 显示模型配置
+            print(f"🤖 [bold blue]模型配置:[/bold blue]")
+            print(f"   断句: [cyan]{self.config.split_model}[/cyan]")
+            print(f"   总结: [cyan]{self.config.summary_model}[/cyan]")
+            print(f"   翻译: [cyan]{self.config.translation_model}[/cyan]")
         
         elapsed_time = time.time() - start_time
         log_section_end(logger, "翻译环境初始化", elapsed_time, "✅")
 
     def translate_srt(self, input_srt_path: Path, target_lang: str, output_dir: Path, 
-                      llm_model: Optional[str] = None, reflect: bool = False) -> Path:
+                      llm_model: Optional[str] = None, reflect: bool = False, skip_env_init: bool = False) -> Path:
         """翻译字幕文件"""
         logger = self._get_logger()
         try:
@@ -98,8 +99,9 @@ class SubtitleTranslatorService:
                 print(str(e))
                 raise ValueError(str(e))
             
-            # 初始化翻译环境
-            self._init_translation_env(llm_model)
+            # 只在需要时初始化翻译环境
+            if not skip_env_init:
+                self._init_translation_env(llm_model)
             
             # 加载字幕文件
             from .translation_core.data import load_subtitle
