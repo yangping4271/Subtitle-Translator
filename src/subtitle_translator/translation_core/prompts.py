@@ -98,7 +98,6 @@ Expected Output:
 
 1. Content Understanding
    - Identify video type and domain
-   - Assess technical complexity
    - Extract key arguments and information
    - Note context-dependent expressions
 
@@ -116,16 +115,8 @@ Expected Output:
      * Prefer the form that appears consistently and repeatedly in content, unless the filename clearly indicates the official stylization
      * When uncertain, prefer the filename form but explicitly mark uncertainty
    - Provide brief rationale and one example context sentence from content
-   - Execution requirement:
-     * Add the chosen canonical form to terms.entities and terms.do_not_translate
-     * In translation_notes, add one sentence stating to use the canonical form consistently across the translation
 
-4. do_not_translate Scope (Strict)
-   - Only include:
-     * Proper nouns (product/company/person/organization names)
-     * Standardized abbreviations/acronyms and tokens that are conventionally kept as-is
-   - EXCLUDE general technical concepts from do_not_translate; such items belong to terms.keywords
-   - When uncertain, prefer placing terms under terms.keywords rather than do_not_translate
+ 
 
 ## Terminology Processing Guidelines
 
@@ -211,7 +202,7 @@ Return a JSON object in the source language (e.g., if subtitles are in English, 
 {
     "summary": {
         "content_type": "Video type and main domain",
-        "technical_level": "Technical complexity assessment",
+        
         "key_points": "Main content points",
         "translation_notes": "Translation considerations and cultural notes",
         "naming_inconsistencies": [
