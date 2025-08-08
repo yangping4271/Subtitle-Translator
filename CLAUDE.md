@@ -68,29 +68,49 @@ uv sync --dev
 ```
 
 ### Reinstallation (Clean Install)
-When you need to completely reinstall the project (e.g., after major changes):
+
+#### Standard Reinstallation (Recommended)
+For most development scenarios, a basic reinstall is sufficient:
+
+```bash
+# Basic reinstall - handles most cases efficiently
+uv tool uninstall subtitle-translator
+uv tool install .
+```
+
+#### Deep Clean Reinstallation (When Needed)
+Only use when encountering specific issues:
 
 ```bash
 # 1. Uninstall the existing tool
 uv tool uninstall subtitle-translator
 
-# 2. Clean all caches and build artifacts
+# 2. Clean Python bytecode (optional, but recommended for issues)
+find . -name "*.pyc" -delete
+find . -name "__pycache__" -type d -exec rm -rf {} +
+
+# 3. Clean UV cache (only if dependency issues occur)
 uv cache clean
-rm -rf build/ dist/ *.egg-info/ .eggs/ __pycache__/ .pytest_cache/ .coverage src/**/__pycache__/ **/*.pyc
 
-# 3. Reinstall
+# 4. Reinstall
 uv tool install .
-
-# 4. Update PATH if needed (usually not required for reinstalls)
-uv tool update-shell
-source ~/.zshenv  # or restart shell
 ```
 
-**Note**: This clean reinstallation process should be performed whenever:
-- You've made significant changes to the codebase
-- Dependencies have been updated
-- You encounter installation-related issues
-- You want to ensure a clean environment
+**When to use each approach:**
+
+**Standard Reinstall** (most common):
+- Code changes in Python files
+- Version number updates
+- Configuration or prompt modifications
+- Regular development workflow
+
+**Deep Clean Reinstall** (only when needed):
+- Dependencies have been added/removed/updated in `pyproject.toml`
+- Python version requirements changed
+- Encountering installation conflicts or cache corruption
+- Persistent import errors or module loading issues
+
+**Note**: `uv tool install` is intelligent enough to handle most build artifacts automatically. Manual cache cleaning is rarely necessary due to UV's efficient dependency resolution.
 
 ### Running the Application
 ```bash
@@ -208,7 +228,7 @@ uv run python -m subtitle_translator.transcription_core.cli --help
 ```
 
 #### Code Quality Verification
-After making changes, verify functionality:
+After making changes, verify functionality using **development mode** (preferred):
 
 ```bash
 # Verify imports and basic functionality
@@ -219,6 +239,31 @@ uv run python -c "from subtitle_translator.processor import process_single_file;
 
 # Validate transcription core
 uv run python -c "from subtitle_translator.transcription_core.parakeet import ParakeetModel; print('✅ Transcription engine ready')"
+```
+
+#### Efficient Development Workflow
+
+**For Regular Development:**
+```bash
+# 1. Make code changes
+# 2. Test in development mode (no reinstall needed)
+uv run python -m subtitle_translator.cli -i test.mp4 -d
+
+# 3. When ready for production testing, do standard reinstall
+uv tool uninstall subtitle-translator
+uv tool install .
+```
+
+**For Dependency Changes:**
+```bash
+# 1. Update pyproject.toml
+# 2. Sync development environment
+uv sync --dev
+
+# 3. Deep clean reinstall for tool
+uv tool uninstall subtitle-translator
+uv cache clean  # Clear UV cache for new dependencies
+uv tool install .
 ```
 
 ## Recent Improvements (v0.2.x series)
@@ -261,25 +306,28 @@ ffmpeg -f lavfi -i testsrc2=duration=30:size=1280x720:rate=30 -f lavfi -i sine=f
 ```
 
 ### Reinstallation Process
-1. Performs complete uninstall and cleanup
-2. Reinstalls with fresh dependencies
-3. Tests installation integrity
-4. Updates version if needed
-5. Commits changes to repository
+The project now uses an **optimized reinstallation strategy**:
+
+1. **Standard reinstall** for most development (fast and efficient)
+2. **Development mode testing** to avoid unnecessary reinstalls  
+3. **Deep clean** only when encountering dependency issues
+4. **Selective cache cleaning** based on actual needs
 
 ### Quality Assurance and Maintenance
 
 #### Pre-Commit Workflow
-- Test installation → Validate functionality → Update version → Commit code
-- Always test with both development mode and installed tool
-- Verify all major workflows: transcription-only, translation-only, full pipeline
+- **Development mode testing** → **Standard reinstall** → **Production testing** → **Version update** → **Commit code**
+- Always prefer development mode (`uv run`) for initial testing
+- Use standard reinstall for final validation
+- Only use deep clean when encountering specific issues
 
 #### Post-Commit Documentation Sync
 **Important**: After each code commit, review and update this CLAUDE.md file to maintain accuracy:
 - Check if version number in `pyproject.toml` needs updating in documentation
-- Document new features, architectural changes, or module additions
+- Document new features, architectural changes, or module additions  
 - Update development commands, configuration requirements, or dependencies
 - Record significant performance improvements or bug fixes
-- Ensure documentation reflects current codebase state
+- Update reinstallation guidance based on new patterns or issues discovered
+- Ensure documentation reflects current codebase state and best practices
 
 This practice ensures that future Claude Code instances always receive the most current and accurate project guidance.
