@@ -52,6 +52,212 @@ src/subtitle_translator/
 
 **Configuration System**: Environment-based configuration with interactive setup via `translate init`. Supports per-model configuration for splitting, translation, and summarization tasks.
 
+### Translation Pipeline Architecture
+
+The project implements a sophisticated **three-stage processing architecture** that ensures high-quality subtitle translation from speech to bilingual output.
+
+#### Architecture Overview
+
+The translation pipeline consists of three critical stages that work together to transform raw transcriptions into professional bilingual subtitles:
+
+1. **Segmentation Stage** - Intelligent text splitting and punctuation restoration
+2. **Summarization Stage** - Global analysis and error correction
+3. **Translation Stage** - Batch processing with context-aware optimization
+
+This design separates concerns effectively: segmentation handles display constraints, summarization provides global context, and translation focuses on quality output.
+
+#### Segmentation Stage (断句阶段)
+
+**Why Segmentation is Essential:**
+- ASR outputs typically lack proper punctuation marks
+- Long sentences exceed subtitle display time constraints (viewers need time to read)
+- Chinese translations require more screen space than English source
+- Technical terms must remain intact for accuracy
+
+**Core Functions:**
+- **Punctuation Restoration**: Adds missing periods, commas, question marks based on speech patterns
+- **Smart Splitting**: Breaks text at semantic boundaries (max 20 words per segment)
+- **Term Protection**: Preserves technical terms, product names, and proper nouns intact
+- **Length Balancing**: Optimizes segment lengths for comfortable reading speed
+- **Translation Preparation**: Considers target language expansion (Chinese typically 20-30% longer)
+
+**Technical Implementation:**
+- Uses LLM model (configured via `SPLIT_MODEL`) for intelligent decision-making
+- Processes text with `<br>` delimiters for segment boundaries
+- Maintains semantic coherence while respecting display constraints
+- Module: `translation_core/spliter.py` with prompt in `SPLIT_SYSTEM_PROMPT`
+
+#### Summarization Stage (总结阶段)
+
+**Why Global Analysis is Necessary:**
+- ASR errors are systematic - the same misrecognition repeats throughout
+- Proper context requires full document understanding
+- Terminology consistency needs global perspective
+- Cultural and domain context improves translation quality
+
+**Five Core Functions:**
+
+1. **ASR Error Detection**
+   - Identifies phonetic misrecognitions (e.g., "Windsurf" → "WinSurf")
+   - Recognizes systematic patterns across entire transcript
+   - Validates corrections through multiple occurrences
+   - Creates error-correction mapping for consistency
+
+2. **Content Understanding**
+   - Identifies video type (tutorial, presentation, interview, etc.)
+   - Extracts main topics and key arguments
+   - Recognizes technical domain and expertise level
+   - Notes cultural references and context-dependent expressions
+
+3. **Terminology Unification**
+   - Establishes canonical forms for proper nouns
+   - Creates consistent technical term glossary
+   - Resolves naming inconsistencies (filename vs. content)
+   - Builds "do not translate" term list
+
+4. **Context Construction**
+   - Provides domain background information
+   - Identifies potential cultural adaptation needs
+   - Flags idiomatic expressions requiring special handling
+   - Notes speaker style and tone for translation consistency
+
+5. **Translation Guidance**
+   - Marks segments needing special attention
+   - Provides constraints without specific translations
+   - Identifies ambiguous references needing clarification
+   - Suggests appropriate formality level
+
+**Technical Implementation:**
+- Processes entire subtitle file for global perspective
+- Uses LLM model (configured via `SUMMARY_MODEL`)
+- Outputs structured JSON with corrections and context
+- Module: `translation_core/summarizer.py`
+
+#### Translation Stage (翻译阶段)
+
+**Why Batch Processing:**
+- LLM context windows have token limits
+- Parallel processing dramatically improves speed
+- Failed batches can be retried independently
+- Maintains consistency through shared context
+
+**Working Mechanism:**
+- **Batch Size**: ~50 subtitle segments per batch
+- **Context Injection**: Each batch receives summarization results
+- **Error Correction**: Applies global ASR fixes consistently
+- **Quality Modes**:
+  - Standard mode: Direct translation with corrections
+  - Reflection mode: Initial translation + self-critique + revision
+- **Parallel Execution**: Multiple batches processed simultaneously
+- **Fallback Strategy**: Failed batches retry with single-segment processing
+
+**Information Flow:**
+```
+Summary JSON → Parse corrections & context
+             ↓
+         Batch 1 → Apply corrections → Translate → Optimize
+         Batch 2 → Apply corrections → Translate → Optimize  
+         Batch N → Apply corrections → Translate → Optimize
+             ↓
+         Merge results → Alignment → Output
+```
+
+**Technical Implementation:**
+- Uses threading for parallel batch processing
+- Configured via `TRANSLATION_MODEL` and `thread_num`
+- Implements retry logic with fallback strategies
+- Module: `translation_core/optimizer.py`
+
+#### Information Flow Design
+
+The pipeline implements a carefully orchestrated data flow:
+
+```
+Audio/Video Input
+       ↓
+   Transcription (Parakeet MLX)
+       ↓
+   Segmentation (Smart Splitting)
+       ↓
+   Summarization (Global Analysis) ←──────┐
+       ↓                                  │
+   [Summary Context]                      │
+       ↓                                  │
+   ┌─────────────┐                       │
+   │  Batch 1    │ → Translation → Quality Check
+   │  Batch 2    │ → Translation → Quality Check  
+   │  ...        │ → Translation → Quality Check
+   │  Batch N    │ → Translation → Quality Check
+   └─────────────┘
+       ↓
+   Result Merging
+       ↓
+   Timeline Alignment
+       ↓
+   ASS Generation (Bilingual Output)
+```
+
+**Key Design Principles:**
+- **Unidirectional flow** prevents circular dependencies
+- **Context preservation** ensures consistency across batches
+- **Graceful degradation** handles failures without stopping
+- **Progressive enhancement** allows quality improvements at each stage
+
+#### Supporting Systems
+
+**Alignment System (`aligner.py`)**
+- Matches translated segments with original timestamps
+- Handles text reflow from splitting/merging
+- Ensures synchronization with video/audio
+
+**ASS Generator (`ass_converter.py`)**
+- Creates professional Advanced SubStation Alpha format
+- Implements bilingual display (original + translation)
+- Configures fonts, colors, and positioning
+- Optimizes for readability
+
+**JSON Repair Utility (`json_repair.py`)**
+- Fixes malformed LLM JSON outputs
+- Handles missing quotes, trailing commas
+- Recovers from partial responses
+- Ensures robust parsing
+
+**Model Cache System (`model_cache.py`)**
+- Caches loaded ML models in memory
+- Reduces startup time for repeated operations
+- Manages memory efficiently
+- Validates cache integrity
+
+#### Design Advantages
+
+This architecture delivers several critical benefits:
+
+**Consistency & Accuracy**
+- Global error correction prevents inconsistent translations
+- Unified terminology across entire subtitle file
+- Context-aware processing improves accuracy
+- Systematic ASR fixes applied uniformly
+
+**Quality & Performance**
+- Parallel processing accelerates translation
+- Reflection mode enables self-improvement
+- Contextual information enhances translation quality
+- Intelligent segmentation improves readability
+
+**Reliability & Maintainability**
+- Modular design enables independent optimization
+- Failed batches don't affect successful ones
+- Clear separation of concerns
+- Comprehensive error handling
+
+**Scalability & Extensibility**
+- Easy to add new language support
+- Model upgrades don't require architecture changes
+- Processing stages can be enhanced independently
+- Supports different quality/speed trade-offs
+
+This sophisticated pipeline architecture ensures professional-quality subtitle translation, transforming raw speech recognition output into polished bilingual subtitles that maintain semantic accuracy, technical precision, and viewing comfort.
+
 ## Development Commands
 
 ### Installation and Setup
