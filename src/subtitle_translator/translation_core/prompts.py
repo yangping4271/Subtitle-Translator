@@ -304,6 +304,8 @@ Use the following materials if provided:
    - Do NOT hyphenate or split single-token technical terms; never output forms like "pre amble" or "pre‑amble" when the source uses "preambles"
    - Do NOT insert soft hyphen (U+00AD), non-breaking hyphen (U+2011), figure/minus/en/em dashes (U+2010–U+2015, U+2212), or zero-width characters (U+200B, U+200C, U+200D, U+2060) into terms
    - Only keep hyphens if they already exist in the source line, and use plain ASCII '-' for such hyphens
+   - Do NOT insert spaces inside alphanumeric tokens (e.g., keep "GPT-5", "preambles", "Windsurf" as contiguous tokens)
+   - Do NOT add spaces at CJK–Latin boundaries in Chinese translations (prefer "在GPT-5上" over "在 GPT-5 上")
 
    Context-Based Correction:
    - Check if a term matches the subject domain
@@ -433,6 +435,8 @@ Use the following materials if provided:
    - Do NOT hyphenate or split single-token technical terms; never output forms like "pre amble" or "pre‑amble" when the source uses "preambles"
    - Do NOT insert soft hyphen (U+00AD), non-breaking hyphen (U+2011), figure/minus/en/em dashes (U+2010–U+2015, U+2212), or zero-width characters (U+200B, U+200C, U+200D, U+2060) into terms
    - Only keep hyphens if they already exist in the source line, and use plain ASCII '-' for such hyphens
+   - Do NOT insert spaces inside alphanumeric tokens (e.g., keep "GPT-5", "preambles", "Windsurf" as contiguous tokens)
+   - Do NOT add spaces at CJK–Latin boundaries in Chinese translations (prefer "在GPT-5上" over "在 GPT-5 上")
 
    Context-Based Correction:
    - Check if a term matches the subject domain
