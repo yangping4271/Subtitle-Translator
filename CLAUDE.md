@@ -8,7 +8,7 @@ Subtitle Translator is a command-line tool that integrates English video transcr
 - `translate`: Full workflow from audio/video to bilingual subtitles  
 - `transcribe`: Transcription-only workflow
 
-The project is structured as a Python package using `uv` for dependency management and distribution via `uv tool install`. Current version: **0.2.5**.
+The project is structured as a Python package using `uv` for dependency management and distribution via `uv tool install`. Current version: **0.2.7**.
 
 ## Architecture
 
@@ -75,6 +75,8 @@ For most development scenarios, a basic reinstall is sufficient:
 ```bash
 # Basic reinstall - handles most cases efficiently
 uv tool uninstall subtitle-translator
+find . -name "*.pyc" -delete
+find . -name "__pycache__" -type d -exec rm -rf {} +
 uv tool install .
 ```
 
@@ -182,7 +184,7 @@ The application processes files with intelligent file discovery:
 ## Version Management and Testing
 
 ### Version Updates
-Current version: **0.2.5** (see `pyproject.toml`)
+Current version: **0.2.7** (see `pyproject.toml`)
 
 Recent optimizations include:
 - Enhanced terminal output experience with reduced redundancy
