@@ -300,6 +300,11 @@ Use the following materials if provided:
    - Do not invent new spellings or stylizations; follow the chosen canonical form
    - Do not translate proper nouns that are marked as do_not_translate
 
+   Terminology Normalization (CRITICAL):
+   - Do NOT hyphenate or split single-token technical terms; never output forms like "pre amble" or "pre‑amble" when the source uses "preambles"
+   - Do NOT insert soft hyphen (U+00AD), non-breaking hyphen (U+2011), figure/minus/en/em dashes (U+2010–U+2015, U+2212), or zero-width characters (U+200B, U+200C, U+200D, U+2060) into terms
+   - Only keep hyphens if they already exist in the source line, and use plain ASCII '-' for such hyphens
+
    Context-Based Correction:
    - Check if a term matches the subject domain
    - Compare terms with surrounding content
@@ -423,6 +428,11 @@ Use the following materials if provided:
    - Read summary.naming_inconsistencies and apply its decision to normalize proper nouns in optimized_subtitle (source language only)
    - Do not invent new spellings or stylizations; follow the chosen canonical form
    - Do not translate proper nouns that are marked as do_not_translate
+
+   Terminology Normalization (CRITICAL):
+   - Do NOT hyphenate or split single-token technical terms; never output forms like "pre amble" or "pre‑amble" when the source uses "preambles"
+   - Do NOT insert soft hyphen (U+00AD), non-breaking hyphen (U+2011), figure/minus/en/em dashes (U+2010–U+2015, U+2212), or zero-width characters (U+200B, U+200C, U+200D, U+2060) into terms
+   - Only keep hyphens if they already exist in the source line, and use plain ASCII '-' for such hyphens
 
    Context-Based Correction:
    - Check if a term matches the subject domain
