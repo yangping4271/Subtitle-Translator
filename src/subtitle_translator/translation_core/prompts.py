@@ -150,14 +150,6 @@ Expected Output:
          > Misrecognition of product names, AI models, or core technical terms
          > ASR errors that could lead to incorrect actions or decisions
          > Transcription errors that significantly alter technical meaning
-       - Medium:
-         > Speech recognition errors that may cause confusion but context helps
-         > Transcription changes that partially affect meaning
-         > ASR issues that might impact usability but are recognizable
-       - Low:
-         > Minor pronunciation variations that don't affect meaning
-         > Obvious speech recognition errors easily corrected by context
-         > Non-critical transcription inconsistencies
      * Impact: Describe specific consequences
        - Technical accuracy: How it affects technical understanding
        - User action: How it might influence user behavior
