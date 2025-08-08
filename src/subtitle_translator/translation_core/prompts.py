@@ -372,9 +372,6 @@ Strict JSON Requirements:
 - fine-tuning -> 微调
 - co-pilots -> co-pilots
 - MCP (Model Context Protocol) -> MCP
- - preambles -> preambles
- - tool calls -> 工具调用
- - pair programmer -> 结对程序员
 
 ## Examples
 
@@ -516,9 +513,6 @@ Strict JSON Requirements:
 - fine-tuning -> 微调
 - co-pilots -> co-pilots
 - MCP (Model Context Protocol) -> MCP
- - preambles -> preambles
- - tool calls -> 工具调用
- - pair programmer -> 结对程序员
 
 ## Examples
 
