@@ -102,6 +102,15 @@ Expected Output:
    - Note domain-specific expressions
    - Flag context-dependent terminology
 
+3. Naming Consistency (Non-ASR)
+   - Compare proper nouns in the provided Filename (metadata) with those appearing in the subtitle content
+   - If there are discrepancies (e.g., "Windsurf" in filename vs "WinSurf" in content), record them under naming_inconsistencies (NOT under asr_issues)
+   - This is NOT an ASR issue unless clear phonetic similarity exists from speech; treat as metadata/content inconsistency
+   - Decision guideline:
+     * Prefer the form that appears consistently and repeatedly in content, unless the filename clearly indicates the official stylization
+     * When uncertain, prefer the filename form but explicitly mark uncertainty
+   - Provide brief rationale and one example context sentence from content
+
 ## Terminology Processing Guidelines
 
 1. ASR Error Definition and Criteria
@@ -189,6 +198,17 @@ Return a JSON object in the source language (e.g., if subtitles are in English, 
         "technical_level": "Technical complexity assessment",
         "key_points": "Main content points",
         "translation_notes": "Translation considerations and cultural notes",
+        "naming_inconsistencies": [
+            // Mismatches between filename metadata and content (NON-ASR)
+            // Format: {
+            //   "filename_term": "term in filename",
+            //   "content_term": "term in content",
+            //   "entity_type": "product|company|person|organization|other",
+            //   "context": "one representative sentence from content",
+            //   "decision": "which form to prefer and why",
+            //   "rationale": "brief reasoning (consistency in content, official stylization, uncertainty, etc.)"
+            // }
+        ],
         "asr_issues": {
             "product_names": [
                 // Only include speech recognition errors
