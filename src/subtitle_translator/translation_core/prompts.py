@@ -112,12 +112,16 @@ Expected Output:
    - ASR errors must meet ALL of the following criteria:
      * The transcribed word and correct word have phonetic similarity
      * The error is clearly a result of speech recognition limitations
-     * The context confirms this is an incorrect transcription, not deliberate mention
+      * The context confirms this is an incorrect transcription, not deliberate mention
+      * The report explicitly states at least one concrete phonetic similarity (e.g., shared vowel sounds, consonant onset, syllable pattern). If you cannot articulate one, do not record it
    - Explicitly NOT ASR errors:
      * Historical name changes mentioned in content (e.g., "it changed name from X to Y")
      * Comparisons between different tools or products
      * Intentional references to alternative names or previous versions
-     * Different spellings or capitalizations of correctly recognized words
+      * Different spellings or capitalizations of correctly recognized words
+      * Conceptual generalization/normalization
+      * Co-occurrence of a specific term and its general category in the same or adjacent sentence (treat as intentional distinction, not ASR)
+      * Cases without explicit phonetic similarity evidence
 
 2. Pattern Recognition & Consistency
    - Identify and categorize ASR (Audio Speech Recognition) errors by type:
@@ -133,10 +137,13 @@ Expected Output:
        > Check surrounding sentences to confirm if it's really an error
        > Look for phrases like "changed name from", "formerly known as", "instead of"
        > Verify if seemingly different terms are actually being compared or contrasted
-       > Confirm phonetic similarity between the transcribed and correct terms
+        > Confirm phonetic similarity between the transcribed and correct terms
+        > Include sentence index (or timestamp) and, when possible, the previous/next sentence as evidence
    - For each ASR error, analyze:
      * Validation check: 
-       - Confirm phonetic similarity exists (required condition)
+        - Confirm phonetic similarity exists (required condition)
+        - Provide at least one explicit phonetic feature similarity (e.g., vowel/consonant similarity, syllable pattern)
+        - Include the sentence index or timestamp (optionally include neighboring sentence indices)
        - Ensure the error is not part of a historical reference or comparison
        - Verify through multiple instances if possible
        - Check if both terms appear in close proximity as distinct entities
@@ -254,6 +261,11 @@ Use the following materials if provided:
 1. Text Optimization Rules
    * Strictly maintain one-to-one correspondence of subtitle numbers - do not merge or split subtitles
 
+   Language Consistency (CRITICAL):
+   - All optimizations must be performed in the source language (the same language as the original subtitles)
+   - Do NOT translate or paraphrase into [TargetLanguage] when writing "optimized_subtitle"
+   - The field "optimized_subtitle" MUST remain in the source language; only the field "translation" is in [TargetLanguage]
+
    Context-Based Correction:
    - Check if a term matches the subject domain
    - Compare terms with surrounding content
@@ -305,6 +317,10 @@ Return a pure JSON with the following structure:
   "2": { ... }
 }
 
+Language Requirements:
+- "optimized_subtitle" is strictly in the source language (same as input)
+- "translation" is strictly in [TargetLanguage]
+
 ## Standard Terminology (Do Not Change)
 - AGI -> 通用人工智能
 - LLM/Large Language Model -> 大语言模型
@@ -318,6 +334,7 @@ Return a pure JSON with the following structure:
 - multi-modal -> 多模态
 - fine-tuning -> 微调
 - co-pilots -> co-pilots
+- MCP (Model Context Protocol) -> MCP
 
 ## Examples
 
@@ -359,6 +376,11 @@ Use the following materials if provided:
 
 1. Text Optimization Rules
    * Strictly maintain one-to-one correspondence of subtitle numbers - do not merge or split subtitles
+
+   Language Consistency (CRITICAL):
+   - All optimizations must be performed in the source language (the same language as the original subtitles)
+   - Do NOT translate or paraphrase into [TargetLanguage] when writing "optimized_subtitle"
+   - The field "optimized_subtitle" MUST remain in the source language; only the fields "translation" and "revised_translation" are in [TargetLanguage]
 
    Context-Based Correction:
    - Check if a term matches the subject domain
@@ -428,6 +450,10 @@ Return a pure JSON with the following structure:
   "2": { ... }
 }
 
+Language Requirements:
+- "optimized_subtitle" is strictly in the source language (same as input)
+- "translation" and "revised_translation" are strictly in [TargetLanguage]
+
 ## Standard Terminology (Do Not Change)
 - AGI -> 通用人工智能
 - LLM/Large Language Model -> 大语言模型
@@ -441,6 +467,7 @@ Return a pure JSON with the following structure:
 - multi-modal -> 多模态
 - fine-tuning -> 微调
 - co-pilots -> co-pilots
+- MCP (Model Context Protocol) -> MCP
 
 ## Examples
 
