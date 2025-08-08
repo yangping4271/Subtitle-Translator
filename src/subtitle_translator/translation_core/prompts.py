@@ -88,6 +88,12 @@ Expected Output:
 - Translation-specific notes
 - ASR error analysis and correction suggestions
 
+## Style Guidelines
+- Objectivity: Avoid marketing language and calls-to-action. Write factual, neutral, verifiable statements.
+- Key Points style: Use at most 3 concise sentences (each ≤ 20 words). Prefer short, declarative sentences; avoid hype adjectives.
+- Translation notes scope: Provide constraints, conventions, and cautions only. Do NOT include concrete translations. Do NOT introduce target-language content that could leak into optimized_subtitle later.
+- Uncertainty handling: Prefer the decision made in naming_inconsistencies. If absent, prefer the filename form when reasonable.
+
 ## Content Analysis & Preparation
 
 1. Content Understanding
@@ -110,6 +116,9 @@ Expected Output:
      * Prefer the form that appears consistently and repeatedly in content, unless the filename clearly indicates the official stylization
      * When uncertain, prefer the filename form but explicitly mark uncertainty
    - Provide brief rationale and one example context sentence from content
+   - Execution requirement:
+     * Add the chosen canonical form to terms.entities and terms.do_not_translate
+     * In translation_notes, add one sentence stating to use the canonical form consistently across the translation
 
 ## Terminology Processing Guidelines
 
@@ -285,6 +294,11 @@ Use the following materials if provided:
    - All optimizations must be performed in the source language (the same language as the original subtitles)
    - Do NOT translate or paraphrase into [TargetLanguage] when writing "optimized_subtitle"
    - The field "optimized_subtitle" MUST remain in the source language; only the field "translation" is in [TargetLanguage]
+   
+   Canonical Naming Enforcement (High Priority):
+   - Read summary.naming_inconsistencies and apply its decision to normalize proper nouns in optimized_subtitle (source language only)
+   - Do not invent new spellings or stylizations; follow the chosen canonical form
+   - Do not translate proper nouns that are marked as do_not_translate
 
    Context-Based Correction:
    - Check if a term matches the subject domain
@@ -341,6 +355,9 @@ Language Requirements:
 - "optimized_subtitle" is strictly in the source language (same as input)
 - "translation" is strictly in [TargetLanguage]
 
+Strict JSON Requirements:
+- Return valid JSON only (no trailing commas, no comments, no additional fields)
+
 ## Standard Terminology (Do Not Change)
 - AGI -> 通用人工智能
 - LLM/Large Language Model -> 大语言模型
@@ -355,6 +372,9 @@ Language Requirements:
 - fine-tuning -> 微调
 - co-pilots -> co-pilots
 - MCP (Model Context Protocol) -> MCP
+ - preambles -> preambles
+ - tool calls -> 工具调用
+ - pair programmer -> 结对程序员
 
 ## Examples
 
@@ -401,6 +421,11 @@ Use the following materials if provided:
    - All optimizations must be performed in the source language (the same language as the original subtitles)
    - Do NOT translate or paraphrase into [TargetLanguage] when writing "optimized_subtitle"
    - The field "optimized_subtitle" MUST remain in the source language; only the fields "translation" and "revised_translation" are in [TargetLanguage]
+   
+   Canonical Naming Enforcement (High Priority):
+   - Read summary.naming_inconsistencies and apply its decision to normalize proper nouns in optimized_subtitle (source language only)
+   - Do not invent new spellings or stylizations; follow the chosen canonical form
+   - Do not translate proper nouns that are marked as do_not_translate
 
    Context-Based Correction:
    - Check if a term matches the subject domain
@@ -474,6 +499,9 @@ Language Requirements:
 - "optimized_subtitle" is strictly in the source language (same as input)
 - "translation" and "revised_translation" are strictly in [TargetLanguage]
 
+Strict JSON Requirements:
+- Return valid JSON only (no trailing commas, no comments, no additional fields)
+
 ## Standard Terminology (Do Not Change)
 - AGI -> 通用人工智能
 - LLM/Large Language Model -> 大语言模型
@@ -488,6 +516,9 @@ Language Requirements:
 - fine-tuning -> 微调
 - co-pilots -> co-pilots
 - MCP (Model Context Protocol) -> MCP
+ - preambles -> preambles
+ - tool calls -> 工具调用
+ - pair programmer -> 结对程序员
 
 ## Examples
 
