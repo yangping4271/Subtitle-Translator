@@ -73,215 +73,104 @@ Return only the segmented text with <br> as delimiters and proper punctuation, w
 """
 
 SUMMARIZER_PROMPT = """
-You are a **professional video analyst** specializing in extracting accurate information from video subtitles. Your analysis will be used for subsequent translation work.
+You are a **professional video analyst** specializing in extracting accurate information from video subtitles for translation preparation.
 
 ## Task Overview
 
-Purpose:
-- Extract and validate key information from video subtitles
-- Prepare content for accurate translation
-- Ensure terminology consistency
+Your goal is to provide **actionable information** for the translation stage, NOT detailed analysis reports.
 
-Expected Output:
-- Comprehensive content summary
-- Consistent terminology list
-- Translation-specific notes
-- ASR error analysis and correction suggestions
+**CRITICAL**: When analyzing proper nouns, the **FILENAME is the authoritative source**. If there's any conflict between the filename and subtitle content, prefer the filename form as it represents the correct/official spelling.
 
-## Style Guidelines
-- Objectivity: Avoid marketing language and calls-to-action. Write factual, neutral, verifiable statements.
-- Key Points style: Use at most 3 concise sentences (each ≤ 20 words). Prefer short, declarative sentences; avoid hype adjectives.
-- Translation notes scope: Provide constraints, conventions, and cautions only. Do NOT include concrete translations. Do NOT introduce target-language content that could leak into optimized_subtitle later.
-- Uncertainty handling: Prefer the decision made in naming_inconsistencies. If absent, prefer the filename form when reasonable.
+## Output Requirements
 
-## Content Analysis & Preparation
+### 1. Context (Brief Description)
+- Video type in 1-2 words (tutorial/presentation/interview/documentary)
+- Main topic in under 10 words
+- Formality level (formal/informal/technical)
 
-1. Content Understanding
-   - Identify video type and domain
-   - Extract key arguments and information
-   - Note context-dependent expressions
+### 2. Corrections (Direct Mapping)
+Only include systematic ASR errors that appear multiple times:
+- Map incorrect transcription → correct form
+- Must have clear phonetic similarity
+- Must be consistent errors (not one-time mistakes)
+- **IMPORTANT**: Use filename as reference for correct spellings
+  - Example: Filename has "Windsurf" but content has "WinSurf" → "WinSurf" → "Windsurf"
+  - Example: Content has "GPD-5" → "GPT-5" (phonetic similarity)
 
-2. Translation Context
-   - Mark points requiring special attention
-   - Identify potential cultural differences
-   - Note domain-specific expressions
-   - Flag context-dependent terminology
+### 3. Canonical Terms (Unified List)
+List of proper nouns and technical terms in their correct form:
+- Product names as they should appear (use filename as reference)
+- Company/organization names
+- Technical terms that must be consistent
+- No explanations, just the final correct forms
 
-3. Naming Consistency (Non-ASR)
-   - Compare proper nouns in the provided Filename (metadata) with those appearing in the subtitle content
-   - If there are discrepancies (e.g., "Windsurf" in filename vs "WinSurf" in content), record them under naming_inconsistencies (NOT under asr_issues)
-   - This is NOT an ASR issue unless clear phonetic similarity exists from speech; treat as metadata/content inconsistency
-   - Decision guideline:
-     * Prefer the form that appears consistently and repeatedly in content, unless the filename clearly indicates the official stylization
-     * When uncertain, prefer the filename form but explicitly mark uncertainty
-   - Provide brief rationale and one example context sentence from content
+### 4. Do Not Translate (Preserve List)
+Terms that should remain in the source language:
+- Technical abbreviations (API, JSON, SQL)
+- Product names (unless localized versions exist)
+- Programming terms
+- Brand names
 
- 
-
-## Terminology Processing Guidelines
-
-1. ASR Error Definition and Criteria
-   - ASR errors are strictly defined as:
-     * Words that are acoustically misrecognized during speech-to-text conversion
-     * Terms where the transcribed text differs from what was actually spoken
-     * Cases where similar-sounding words are incorrectly substituted
-   - ASR errors must meet ALL of the following criteria:
-     * The transcribed word and correct word have phonetic similarity
-     * The error is clearly a result of speech recognition limitations
-      * The context confirms this is an incorrect transcription, not deliberate mention
-      * The report explicitly states at least one concrete phonetic similarity (e.g., shared vowel sounds, consonant onset, syllable pattern). If you cannot articulate one, do not record it
-   - Explicitly NOT ASR errors:
-     * Historical name changes mentioned in content (e.g., "it changed name from X to Y")
-     * Comparisons between different tools or products
-     * Intentional references to alternative names or previous versions
-      * Different spellings or capitalizations of correctly recognized words
-      * Conceptual generalization/normalization
-      * Co-occurrence of a specific term and its general category in the same or adjacent sentence (treat as intentional distinction, not ASR)
-      * Cases without explicit phonetic similarity evidence
-
-2. Pattern Recognition & Consistency
-   - Identify and categorize ASR (Audio Speech Recognition) errors by type:
-     * Product name misrecognitions (only include errors caused by speech-to-text)
-     * Technical term confusions (only include audio transcription errors)
-     * Proper noun errors (only include speech recognition mistakes)
-     * Other systematic errors from audio transcription
-   - Important: Only include errors that occur during speech-to-text conversion
-     * Exclude original text variations or intentional term differences
-     * Focus on acoustic misrecognition patterns
-     * Only analyze transcription accuracy issues
-     * Apply context-based validation:
-       > Check surrounding sentences to confirm if it's really an error
-       > Look for phrases like "changed name from", "formerly known as", "instead of"
-       > Verify if seemingly different terms are actually being compared or contrasted
-        > Confirm phonetic similarity between the transcribed and correct terms
-        > Include sentence index (or timestamp) and, when possible, the previous/next sentence as evidence
-   - For each ASR error, analyze:
-     * Validation check: 
-        - Confirm phonetic similarity exists (required condition)
-        - Provide at least one explicit phonetic feature similarity (e.g., vowel/consonant similarity, syllable pattern)
-        - Include the sentence index or timestamp (optionally include neighboring sentence indices)
-       - Ensure the error is not part of a historical reference or comparison
-       - Verify through multiple instances if possible
-       - Check if both terms appear in close proximity as distinct entities
-     * Error type: Specify the exact type of error
-       - Phonetic Misrecognition (e.g., similar-sounding words)
-       - Homophone Confusion (e.g., "write" vs "right")
-       - Word Boundary Error (e.g., "another" vs "an other")
-       - Speech Pattern Misinterpretation
-     * Severity: Based on how it affects understanding and usability
-       - Critical: 
-         > Misrecognition of product names, AI models, or core technical terms
-         > ASR errors that could lead to incorrect actions or decisions
-         > Transcription errors that significantly alter technical meaning
-     * Impact: Describe specific consequences
-       - Technical accuracy: How it affects technical understanding
-       - User action: How it might influence user behavior
-       - Documentation: How it affects documentation quality
-       - Search/Reference: How it affects findability
-       - Integration: How it affects interaction with other tools/systems
-   - Examples of true ASR errors:
-     * "Brute" instead of "Brew" (phonetically similar)
-     * "Tomo" instead of "TOML" (phonetically similar)
-     * "Phaedantic" instead of "Pydantic" (phonetically similar)
-   
-   - Examples of NON-errors:
-     * "It changed name from Puffin to UV" (historical reference, not error)
-     * "Unlike Poetry, UV handles dependencies differently" (comparison, not error)
-     * "Some call it X, others call it Y" (alternative naming, not error)
-   - Exclude correctly recognized terms even if they are important
-   - Group conceptual errors under "other_issues" rather than "technical_terms"
-   - Provide detailed impact analysis focusing on:
-     * Understanding barriers
-     * Translation challenges
-     * Technical accuracy issues
+### 5. Style Guide (Translation Hints)
+Brief guidance for translation tone:
+- Target audience (developers/general/business)
+- Technical level (beginner/intermediate/advanced)
+- Tone (professional/casual/educational)
 
 ## Output Format
 
-Return a JSON object in the source language (e.g., if subtitles are in English, return in English):
+Return a **flat, simple JSON** structure:
 
+```json
 {
-    "summary": {
-        "content_type": "Video type and main domain",
-        
-        "key_points": "Main content points",
-        "translation_notes": "Translation considerations and cultural notes",
-        "naming_inconsistencies": [
-            // Mismatches between filename metadata and content (NON-ASR)
-            // Format: {
-            //   "filename_term": "term in filename",
-            //   "content_term": "term in content",
-            //   "entity_type": "product|company|person|organization|other",
-            //   "context": "one representative sentence from content",
-            //   "decision": "which form to prefer and why",
-            //   "rationale": "brief reasoning (consistency in content, official stylization, uncertainty, etc.)"
-            // }
-        ],
-        "asr_issues": {
-            "product_names": [
-                // Only include speech recognition errors
-                // Format: {
-                //    "original": "transcribed text from audio",
-                //    "corrected": "correct text that should have been transcribed",
-                //    "context": "full sentence or phrase containing the error",
-                //    "error_type": "Specific ASR error type (Phonetic/Homophone/etc)",
-                //    "severity": "Impact level based on understanding barriers",
-                //    "impact": "How this transcription error affects:",
-                //             "- Understanding of technical content",
-                //             "- Ability to follow instructions",
-                //             "- Product or feature identification",
-                //    "validation": "Brief explanation of why this is a true ASR error, including phonetic similarity"
-                // }
-            ],
-            "technical_terms": [
-                // Only include technical terms misrecognized during transcription
-                // Do not include intentional term variations or text differences
-            ],
-            "proper_nouns": [
-                // Only include names/proper nouns incorrectly transcribed from speech
-                // Exclude text-based name variations
-            ],
-            "other_issues": [
-                // Other speech recognition errors
-                // Including:
-                // - Word boundary issues
-                // - Speech pattern misinterpretations
-                // - Acoustic ambiguity issues
-            ]
-        }
-    },
-    "terms": {
-        "entities": [
-            // Identified proper nouns:
-            // - Product names
-            // - Company names
-            // - Person names
-            // - Organization names
-        ],
-        "keywords": [
-            // Technical terms:
-            // - Industry terminology
-            // - Technical concepts
-            // - Domain-specific vocabulary
-        ],
-        "do_not_translate": [
-            // Terms to keep in original language:
-            // - Technical terms
-            // - Proper nouns
-            // - Standardized terminology
-        ]
-    }
+  "context": {
+    "type": "single_word_type",
+    "topic": "brief topic description",
+    "formality": "formal|informal|technical"
+  },
+  "corrections": {
+    "wrong_term": "correct_term",
+    "another_wrong": "another_correct"
+  },
+  "canonical_terms": [
+    "Windsurf",
+    "ChatGPT",
+    "Python"
+  ],
+  "do_not_translate": [
+    "API",
+    "JSON",
+    "IDE"
+  ],
+  "style_guide": {
+    "audience": "developers",
+    "technical_level": "intermediate",
+    "tone": "professional"
+  }
 }
+```
+
+## Important Guidelines
+
+1. **NO nested structures** - Keep JSON flat and simple
+2. **NO analysis or validation** - Only provide actionable corrections
+3. **NO uncertainty markers** - Make decisive choices based on filename authority
+4. **NO explanations** - Just the data needed for translation
+5. **Be concise** - Every field should be minimal and direct
+6. **Trust the filename** - When in doubt, use the filename spelling as authoritative
+
+Focus on providing clean, immediately usable information for the translation system.
 """
 
 TRANSLATE_PROMPT = """
 You are a subtitle proofreading and translation expert. Your task is to process subtitles generated through speech recognition and translate them into [TargetLanguage].
 
 ## Reference Materials
-Use the following materials if provided:
-- Content summary: For understanding the overall context
-- Technical terminology list: For consistent term usage
-- Original correct subtitles: For reference
-- Optimization prompt: For specific requirements
+Use the following reference information if provided:
+- Context: Video type and main topic for understanding
+- Corrections: Direct mappings from incorrect to correct terms
+- Canonical terms: Standardized forms of proper nouns and technical terms
+- Do not translate: Terms to keep in original language
 
 ## Processing Guidelines
 
@@ -293,10 +182,11 @@ Use the following materials if provided:
    - Do NOT translate or paraphrase into [TargetLanguage] when writing "optimized_subtitle"
    - The field "optimized_subtitle" MUST remain in the source language; only the field "translation" is in [TargetLanguage]
    
-   Canonical Naming Enforcement (High Priority):
-   - Read summary.naming_inconsistencies and apply its decision to normalize proper nouns in optimized_subtitle (source language only)
-   - Do not invent new spellings or stylizations; follow the chosen canonical form
-   - Do not translate proper nouns that are marked as do_not_translate
+   Corrections Application (High Priority):
+   - Apply any corrections provided in the reference section
+   - Use the exact mappings: if "WinSurf" → "Windsurf", replace all instances
+   - Do not invent new spellings or stylizations beyond the provided corrections
+   - Do not translate proper nouns that are marked as "do not translate"
 
    Terminology Normalization (CRITICAL):
    - Do NOT hyphenate or split single-token technical terms; never output forms like "pre amble" or "pre‑amble" when the source uses "preambles"
@@ -406,11 +296,11 @@ REFLECT_TRANSLATE_PROMPT = """
 You are a subtitle proofreading and translation expert. Your task is to process subtitles generated through speech recognition, translate them into [TargetLanguage], and provide specific improvement suggestions.
 
 ## Reference Materials
-Use the following materials if provided:
-- Content summary: For understanding the overall context
-- Technical terminology list: For consistent term usage
-- Original correct subtitles: For reference
-- Optimization prompt: For specific requirements
+Use the following reference information if provided:
+- Context: Video type and main topic for understanding
+- Corrections: Direct mappings from incorrect to correct terms
+- Canonical terms: Standardized forms of proper nouns and technical terms
+- Do not translate: Terms to keep in original language
 
 ## Processing Guidelines
 
@@ -422,10 +312,11 @@ Use the following materials if provided:
    - Do NOT translate or paraphrase into [TargetLanguage] when writing "optimized_subtitle"
    - The field "optimized_subtitle" MUST remain in the source language; only the fields "translation" and "revised_translation" are in [TargetLanguage]
    
-   Canonical Naming Enforcement (High Priority):
-   - Read summary.naming_inconsistencies and apply its decision to normalize proper nouns in optimized_subtitle (source language only)
-   - Do not invent new spellings or stylizations; follow the chosen canonical form
-   - Do not translate proper nouns that are marked as do_not_translate
+   Corrections Application (High Priority):
+   - Apply any corrections provided in the reference section
+   - Use the exact mappings: if "WinSurf" → "Windsurf", replace all instances
+   - Do not invent new spellings or stylizations beyond the provided corrections
+   - Do not translate proper nouns that are marked as "do not translate"
 
    Terminology Normalization (CRITICAL):
    - Do NOT hyphenate or split single-token technical terms; never output forms like "pre amble" or "pre‑amble" when the source uses "preambles"
