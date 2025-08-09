@@ -78,5 +78,6 @@ dmypy.json
 CLAUDE.md
 
 # TODO and development notes
+docs/development/
 TODO_OPTIMIZATION.md
 TODO_*.md

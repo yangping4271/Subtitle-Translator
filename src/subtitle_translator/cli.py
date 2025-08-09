@@ -13,7 +13,7 @@ from rich import print
 from .env_setup import setup_environment
 from .processor import process_single_file
 from .config_manager import init_config
-from .logger import setup_logger, get_log_file_path, get_log_mode_info
+from .logger import setup_logger, get_log_file_path, get_log_mode_info, configure_all_loggers
 from .transcription_core.utils import _find_cached_model, _check_network_connectivity, from_pretrained
 from .transcription_core import utils as transcription_utils
 
@@ -54,7 +54,10 @@ def main(
     if ctx.invoked_subcommand is not None:
         return
         
-    setup_environment()
+    # 立即配置所有logger的debug级别（在setup_environment之前）
+    configure_all_loggers(debug)
+        
+    setup_environment(debug_mode=debug)
     
     # 显示日志文件路径信息
     log_mode, log_location = get_log_mode_info()

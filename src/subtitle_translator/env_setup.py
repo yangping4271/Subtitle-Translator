@@ -14,7 +14,7 @@ _env_loaded = False
 logger = None
 
 
-def setup_environment(allow_missing_config=False):
+def setup_environment(allow_missing_config=False, debug_mode=False):
     """
     智能加载 .env 文件，解决在不同目录下运行命令的环境变量问题。
     加载顺序 (后者覆盖前者):
@@ -27,7 +27,10 @@ def setup_environment(allow_missing_config=False):
     
     Args:
         allow_missing_config: 是否允许缺少配置（用于init命令）
+        debug_mode: 是否启用调试模式（直接传入，无需检测sys.argv）
     """
+    # 临时调试输出已移除 - 使用传入的debug_mode参数
+    
     global _env_loaded, logger
     
     # 如果已经加载过环境配置，直接返回
@@ -72,9 +75,10 @@ def setup_environment(allow_missing_config=False):
     
     # 初始化logger（需要在环境变量加载后进行）
     if logger is None:
-        # 检测debug模式：检查命令行参数和环境变量
-        debug_mode = ('-d' in sys.argv or '--debug' in sys.argv or 
-                     os.environ.get('DEBUG', '').lower() in ('1', 'true', 'yes'))
+        # 优先使用传入的debug_mode参数，如果未传入则检查命令行和环境变量
+        if not debug_mode:
+            debug_mode = ('-d' in sys.argv or '--debug' in sys.argv or 
+                         os.environ.get('DEBUG', '').lower() in ('1', 'true', 'yes'))
         
         from .logger import setup_logger
         logger = setup_logger(__name__, debug_mode=debug_mode)

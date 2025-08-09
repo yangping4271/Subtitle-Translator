@@ -32,9 +32,35 @@ log_queue = queue.Queue()
 queue_handler = None
 _queue_listener = None
 
+# 全局debug状态管理
+_global_debug_mode = False
+_initialized_loggers = []  # 记录所有已创建的logger名称
+
 def get_log_file_path():
     """获取当前使用的日志文件路径"""
     return LOG_FILE
+
+def configure_all_loggers(debug_mode: bool):
+    """
+    全局配置所有已创建的logger的debug级别
+    
+    Args:
+        debug_mode: 是否启用debug模式
+    """
+    global _global_debug_mode, queue_handler
+    
+    # 更新全局debug状态
+    _global_debug_mode = debug_mode
+    
+    # 如果队列处理器已经存在，更新其级别
+    if queue_handler is not None:
+        target_level = logging.DEBUG if debug_mode else logging.INFO
+        queue_handler.update_level(target_level)
+        
+        # 同时更新所有已创建的logger
+        for logger_name in _initialized_loggers:
+            logger_instance = logging.getLogger(logger_name)
+            logger_instance.setLevel(target_level)
 
 def get_log_mode_info():
     """获取日志模式信息（开发模式或生产模式）"""
@@ -95,6 +121,26 @@ class ColoredFormatter(logging.Formatter):
             formatted_msg = f"{time_str} {emoji} [{color}{module_name}{reset}] {record.getMessage()}"
         else:
             formatted_msg = f"{time_str} {emoji} [{module_name}] {record.getMessage()}"
+        
+        # 为DEBUG信息添加缩进，提高可读性
+        if record.levelname == 'DEBUG':
+            # 检查消息是否以特定格式开头（如详细数据），如果是则添加缩进
+            message = record.getMessage()
+            if any(message.startswith(prefix) for prefix in ['   ', '  ID', '  原文:', '  译文:', '  优化:']):
+                # 已经有缩进的消息，保持原格式
+                pass
+            elif message.strip() and not any(message.startswith(emoji) for emoji in ['🔍', '📋', '⚠️', '❌', '🚨']):
+                # 为详细调试信息添加缩进
+                lines = formatted_msg.split('\n')
+                if len(lines) > 1:
+                    # 多行消息，从第二行开始缩进
+                    indented_lines = [lines[0]] + ['    ' + line for line in lines[1:]]
+                    formatted_msg = '\n'.join(indented_lines)
+                else:
+                    # 单行消息，检查是否需要缩进
+                    if not message.startswith(('🔍', '📤', '📥', '✅', '🔧')):
+                        # 不是主要步骤消息，添加缩进表示详细信息
+                        formatted_msg = formatted_msg.replace(f'] {message}', f']     {message}')
         
         return formatted_msg
     
@@ -158,11 +204,20 @@ class ProgressLogger:
 class QueueListenerHandler(logging.handlers.QueueHandler):
     """
     将日志记录放入队列的处理器
+    支持动态调整日志级别
     """
     def __init__(self, queue, level):
         super().__init__(queue)
         self._queue_listener = None
-        self.level = level # 添加level属性
+        self._file_handler = None
+        self._current_level = level
+        
+    def update_level(self, new_level):
+        """更新日志级别，如果级别发生变化则重新配置文件处理器"""
+        if new_level != self._current_level:
+            self._current_level = new_level
+            if self._file_handler:
+                self._file_handler.setLevel(new_level)
         
     def start_listener(self):
         if self._queue_listener is None:
@@ -177,33 +232,40 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
     def _create_handlers(self):
         # 只创建文件处理器，不创建控制台处理器以避免与print重复输出
         Path(LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(
+        self._file_handler = logging.FileHandler(
             LOG_FILE,
             mode='w',  # 使用写入模式，覆盖旧文件
             encoding='utf-8'
         )
         file_formatter = ColoredFormatter(use_color=False, use_emoji=True)
-        file_handler.setFormatter(file_formatter)
-        file_handler.setLevel(self.level)
+        self._file_handler.setFormatter(file_formatter)
+        self._file_handler.setLevel(self._current_level)
         
-        return [file_handler]
+        return [self._file_handler]
 
 def setup_logger(name: str, 
-                debug_mode: bool = False,
+                debug_mode: bool = None,
                 log_fmt: str = '%(asctime)s [%(name)s] %(levelname)s: %(message)s',
                 datefmt: str = '%Y-%m-%d %H:%M:%S') -> logging.Logger:
     """
     创建并配置一个日志记录器。
+    支持全局debug状态管理和延迟配置。
 
     参数：
     - name: 日志记录器的名称
-    - debug_mode: 是否启用调试模式
+    - debug_mode: 是否启用调试模式。如果为None，则使用全局debug状态
     - log_fmt: 日志格式字符串
     - datefmt: 时间格式字符串
     """
-    global queue_handler
+    global queue_handler, _global_debug_mode, _initialized_loggers
     
-    level = logging.DEBUG if debug_mode else logging.INFO
+    # 记录这个logger，以便后续全局配置
+    if name not in _initialized_loggers:
+        _initialized_loggers.append(name)
+    
+    # 决定使用的debug模式：优先使用传入参数，否则使用全局状态
+    effective_debug_mode = debug_mode if debug_mode is not None else _global_debug_mode
+    level = logging.DEBUG if effective_debug_mode else logging.INFO
     
     logger = logging.getLogger(name)
     logger.setLevel(level)
@@ -215,10 +277,15 @@ def setup_logger(name: str,
     if logger.handlers:
         return logger
     
-    # 创建队列处理器（如果还没有创建）
+    # 创建或更新队列处理器
     if queue_handler is None:
         queue_handler = QueueListenerHandler(log_queue, level)
         queue_handler.start_listener()
+    else:
+        # 如果队列处理器已存在，更新其级别以支持更细粒度的日志
+        # 使用更低的级别（DEBUG优先级更高）
+        if level < queue_handler._current_level:
+            queue_handler.update_level(level)
     
     logger.addHandler(queue_handler)
     
