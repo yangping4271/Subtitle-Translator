@@ -8,7 +8,7 @@ Subtitle Translator is a command-line tool that integrates English video transcr
 - `translate`: Full workflow from audio/video to bilingual subtitles  
 - `transcribe`: Transcription-only workflow
 
-The project is structured as a Python package using `uv` for dependency management and distribution via `uv tool install`. Current version: **0.2.7**.
+The project is structured as a Python package using `uv` for dependency management and distribution via `uv tool install`. Current version: **0.2.8**.
 
 ## Architecture
 
