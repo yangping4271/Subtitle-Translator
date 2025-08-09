@@ -76,3 +76,7 @@ dmypy.json
 
 # Claude Code configuration
 CLAUDE.md
+
+# TODO and development notes
+TODO_OPTIMIZATION.md
+TODO_*.md
