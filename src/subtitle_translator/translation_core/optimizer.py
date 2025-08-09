@@ -443,13 +443,52 @@ class SubtitleOptimizer:
     def _create_translate_message(self, original_subtitle: Dict[str, str], 
                                 summary_content: Dict, reflect=False):
         """创建翻译提示消息"""
-        input_content = (f"correct the original subtitles, and translate them into {self.config.target_language}:"
-                        f"\n<input_subtitle>{str(original_subtitle)}</input_subtitle>")
-
-        if summary_content:
-            input_content += (f"\nThe following is reference material related to subtitles, based on which "
-                            f"the subtitles will be corrected, optimized, and translated:"
-                            f"\n<prompt>{summary_content.get('summary', '')}</prompt>\n")
+        # 基础输入内容
+        input_content = (f"Correct and translate the following subtitles into {self.config.target_language}:\n"
+                        f"<subtitles>{str(original_subtitle)}</subtitles>")
+        
+        # 解析并构建结构化的参考信息
+        if summary_content and 'summary' in summary_content:
+            try:
+                # 解析总结JSON
+                summary_json = parse_llm_response(summary_content.get('summary', '{}'))
+                
+                # 构建简洁的参考信息
+                reference_parts = []
+                
+                # 添加上下文信息
+                if context := summary_json.get('context'):
+                    reference_parts.append(
+                        f"Context: {context.get('type', '')} - {context.get('topic', '')}"
+                    )
+                
+                # 添加纠错映射
+                if corrections := summary_json.get('corrections'):
+                    reference_parts.append(
+                        f"Apply corrections: {json.dumps(corrections, ensure_ascii=False)}"
+                    )
+                
+                # 添加不翻译列表
+                if do_not_translate := summary_json.get('do_not_translate'):
+                    reference_parts.append(
+                        f"Keep in original: {', '.join(do_not_translate)}"
+                    )
+                
+                # 添加规范术语
+                if canonical := summary_json.get('canonical_terms'):
+                    reference_parts.append(
+                        f"Use canonical forms: {', '.join(canonical[:10])}"  # 限制显示前10个
+                    )
+                
+                # 组合参考信息
+                if reference_parts:
+                    input_content += "\n\n<reference>\n" + "\n".join(reference_parts) + "\n</reference>"
+                    
+            except Exception as e:
+                logger.warning(f"Failed to parse summary content: {e}")
+                # 降级处理：使用原始方式
+                input_content += (f"\n\nReference information:\n"
+                                f"<reference>{summary_content.get('summary', '')}</reference>")
 
         prompt = REFLECT_TRANSLATE_PROMPT if reflect else TRANSLATE_PROMPT
         prompt = prompt.replace("[TargetLanguage]", self.config.target_language)
@@ -691,6 +730,11 @@ class SubtitleOptimizer:
         while current_try < max_retries:
             try:
                 message = self._create_translate_message(original_subtitle, summary_content, reflect=False)
+                
+                # 记录发送给模型的消息（调试用）
+                logger.debug(f"📤 {batch_info} 发送给翻译模型的消息:")
+                logger.debug(f"   User Content: {message[1]['content'][:500]}...")  # 只显示前500字符
+                
                 response = self.client.chat.completions.create(
                     model=self.config.translation_model,
                     stream=False,
@@ -709,7 +753,12 @@ class SubtitleOptimizer:
                 
                 response_content = parse_llm_response(response.choices[0].message.content)
 
-                logger.debug(f"API返回结果: \n{json.dumps(response_content, indent=4, ensure_ascii=False)}\n")
+                logger.debug(f"📥 {batch_info} API返回结果样例（前3条）:")
+                # 只显示前3条翻译结果作为样例
+                sample_keys = list(response_content.keys())[:3]
+                for k in sample_keys:
+                    if k in response_content:
+                        logger.debug(f"   ID {k}: {response_content[k]}")
 
                 # 如果完全没有返回结果，这是整批次的失败，需要重试
                 if not response_content:
@@ -758,6 +807,13 @@ class SubtitleOptimizer:
                             'original': translated_text['original'],
                             'optimized': translated_text['optimized']
                         })
+                
+                # 记录翻译示例（调试用）
+                if translated_subtitle:
+                    logger.debug(f"✅ {batch_info} 翻译完成示例:")
+                    for item in translated_subtitle[:2]:  # 显示前2个翻译结果
+                        logger.debug(f"   原文: {item['optimized']}")
+                        logger.debug(f"   译文: {item['translation']}")
 
                 return translated_subtitle
 
