@@ -30,25 +30,50 @@ class SubtitleSummarizer:
             Dict: 包含总结信息的字典
         """
         try:
-            # 使用 pathlib 处理文件名
+            # 使用 pathlib 处理文件名和路径
             path = Path(input_file)
+            
             # 获取不带扩展名的文件名
             readable_filename = path.stem.replace('_', ' ').replace('-', ' ')
+            
+            # 提取文件夹路径信息 - 获取最后几级父目录
+            parent_names = []
+            current_path = path.parent
+            # 最多获取3级父目录，避免过长的路径
+            for i in range(3):
+                if current_path.name and current_path.name not in ['/', '.', '..']:
+                    folder_name = current_path.name.replace('_', ' ').replace('-', ' ')
+                    parent_names.append(folder_name)
+                    current_path = current_path.parent
+                else:
+                    break
+            
+            # 构建上下文信息
+            context_parts = []
+            if parent_names:
+                context_parts.append(f"Folder path: {' / '.join(reversed(parent_names))}")
+            context_parts.append(f"Filename: {readable_filename}")
+            context_info = "\n".join(context_parts)
 
-            logger.info(f"📋 可读性文件名: {readable_filename}")            
-            # 更新提示词，强调文件名的权威性
+            logger.info(f"📋 可读性文件名: {readable_filename}")
+            if parent_names:
+                logger.info(f"📂 文件夹路径: {' / '.join(reversed(parent_names))}")
+            
+            # 更新提示词，强调文件名和路径的权威性
             message = [
                 {"role": "system", "content": (
                     "You are a precise subtitle summarizer. "
                     "When processing proper nouns and product names:"
-                    "1. Use the filename as reference for product names"
-                    "2. Only correct terms that appear to be ASR errors based on:"
+                    "1. Use BOTH the folder path AND filename as authoritative references for product names"
+                    "2. Folder names often contain the correct product/topic names"
+                    "3. Only correct terms that appear to be ASR errors based on:"
                     "   - Similar pronunciation"
                     "   - Context indicating they refer to the same thing"
-                    "3. Do not modify other technical terms or module names that are clearly different"
+                    "   - Mismatch with folder/filename context"
+                    "4. Do not modify other technical terms or module names that are clearly different"
                     f"{SUMMARIZER_PROMPT}"
                 )},
-                {"role": "user", "content": f"Filename: {readable_filename}\n\nContent:\n{subtitle_content}"}
+                {"role": "user", "content": f"{context_info}\n\nContent:\n{subtitle_content}"}
             ]
             
             response = self.client.chat.completions.create(
