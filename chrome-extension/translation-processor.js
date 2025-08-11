@@ -7,6 +7,21 @@ class SmartTranslationProcessor {
     this.isProcessing = false;
     this.processingProgress = 0;
     this.onProgressUpdate = null;
+
+    // 代理工具（从内容脚本注入）
+    this.needsProxy = (url) => {
+      try { const u = new URL(url); return u.hostname === 'ai-proxy.chatwise.app'; } catch { return false; }
+    };
+    this.proxyFetch = async (url, options) => {
+      return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: 'PROXY_FETCH', url, options }, (resp) => {
+          if (!resp) return reject(new Error('代理请求失败'));
+          if (!resp.ok) return reject(new Error(`代理响应失败: ${resp.status}${resp.error ? ' ' + resp.error : ''}`));
+          try { const data = JSON.parse(resp.bodyText); resolve({ json: async () => data, ok: resp.ok, status: resp.status }); }
+          catch (e) { resolve({ text: async () => resp.bodyText, ok: resp.ok, status: resp.status }); }
+        });
+      });
+    };
   }
 
   // 智能断句处理 (移植自Python spliter.py的逻辑)
@@ -295,7 +310,8 @@ class SmartTranslationProcessor {
 
 字幕内容：${sampleText.substring(0, 2000)}`;
 
-    const response = await fetch(this.settings.apiUrl + '/chat/completions', {
+    const url = this.settings.apiUrl + '/chat/completions';
+    const fetchOptions = {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.settings.apiKey}`,
@@ -309,7 +325,8 @@ class SmartTranslationProcessor {
         temperature: 0.3,
         max_tokens: 800
       })
-    });
+    };
+    const response = this.needsProxy(url) ? await this.proxyFetch(url, fetchOptions) : await fetch(url, fetchOptions);
 
     if (!response.ok) {
       throw new Error(`API调用失败: ${response.status}`);
@@ -415,7 +432,8 @@ class SmartTranslationProcessor {
 
       const prompt = this.createBatchTranslationPrompt(summary, batchText);
       
-      const response = await fetch(this.settings.apiUrl + '/chat/completions', {
+      const url = this.settings.apiUrl + '/chat/completions';
+      const fetchOptions = {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.settings.apiKey}`,
@@ -430,7 +448,8 @@ class SmartTranslationProcessor {
           temperature: 0.7,
           max_tokens: 2000
         })
-      });
+      };
+      const response = this.needsProxy(url) ? await this.proxyFetch(url, fetchOptions) : await fetch(url, fetchOptions);
 
       if (!response.ok) {
         throw new Error(`批次${batchIndex + 1}翻译失败: ${response.status}`);
@@ -468,6 +487,47 @@ class SmartTranslationProcessor {
           endTime: segment.endTime
         });
       });
+    }
+  }
+
+  // 翻译单个批次（返回列表，便于增量翻译）
+  async translateBatchReturnList(batch, batchIndex, summary) {
+    try {
+      this.logger.info(`📦(lazy) 翻译批次 ${batchIndex + 1}:`, batch.length + '个段落');
+
+      const batchText = batch.map((segment, index) => `[${index + 1}] ${segment.text}`).join('\n\n');
+      const prompt = this.createBatchTranslationPrompt(summary, batchText);
+
+      const url = this.settings.apiUrl + '/chat/completions';
+      const fetchOptions = {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.settings.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.settings.model,
+          messages: [
+            { role: 'system', content: prompt },
+            { role: 'user', content: `请翻译以下字幕段落：\n\n${batchText}` }
+          ],
+          temperature: 0.7,
+          max_tokens: 2000
+        })
+      };
+      const response = this.needsProxy(url) ? await this.proxyFetch(url, fetchOptions) : await fetch(url, fetchOptions);
+      if (!response.ok) {
+        throw new Error(`批次${batchIndex + 1}翻译失败: ${response.status}`);
+      }
+      const data = await response.json();
+      const translatedText = data.choices[0].message.content.trim();
+      const translations = this.parseBatchTranslations(translatedText);
+      this.logger.info(`✅(lazy) 批次 ${batchIndex + 1} 翻译完成`);
+      return translations;
+    } catch (error) {
+      this.logger.error(`❌(lazy) 批次 ${batchIndex + 1} 翻译失败:`, error.message);
+      // 返回等长的失败占位
+      return batch.map(() => '[翻译失败]');
     }
   }
 

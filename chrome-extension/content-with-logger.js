@@ -130,6 +130,30 @@ class YouTubeSubtitleTranslator {
     // 立即检查当前视频
     this.checkVideoChange();
   }
+
+  // 判断是否需要通过后台代理（避免CORS）
+  needsProxy(url) {
+    try {
+      const u = new URL(url);
+      return u.hostname === 'ai-proxy.chatwise.app';
+    } catch { return false; }
+  }
+
+  // 通过后台代理执行跨域请求
+  async proxyFetch(url, options) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ type: 'PROXY_FETCH', url, options }, (resp) => {
+        if (!resp) return reject(new Error('代理请求失败'));
+        if (!resp.ok) return reject(new Error(`代理响应失败: ${resp.status}${resp.error ? ' ' + resp.error : ''}`));
+        try {
+          const data = JSON.parse(resp.bodyText);
+          resolve({ json: async () => data, ok: resp.ok, status: resp.status });
+        } catch (e) {
+          resolve({ text: async () => resp.bodyText, ok: resp.ok, status: resp.status });
+        }
+      });
+    });
+  }
   
   async loadSettings() {
     return new Promise((resolve) => {
@@ -670,7 +694,8 @@ class YouTubeSubtitleTranslator {
 
 请翻译以下字幕：`;
     
-    const response = await fetch(this.settings.apiUrl + '/chat/completions', {
+    const url = this.settings.apiUrl + '/chat/completions';
+    const fetchOptions = {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.settings.apiKey}`,
@@ -685,7 +710,11 @@ class YouTubeSubtitleTranslator {
         temperature: 0.7,
         max_tokens: 500
       })
-    });
+    };
+
+    const response = this.needsProxy(url)
+      ? await this.proxyFetch(url, fetchOptions)
+      : await fetch(url, fetchOptions);
     
     if (!response.ok) {
       throw new Error(`API调用失败: ${response.status}`);

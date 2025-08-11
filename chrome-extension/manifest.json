@@ -13,8 +13,13 @@
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://m.youtube.com/*",
-    "https://api.openai.com/*"
+    "https://api.openai.com/*",
+    "https://ai-proxy.chatwise.app/*"
   ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   
   "content_scripts": [
     {
