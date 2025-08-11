@@ -4,6 +4,21 @@ class YouTubeSubtitleTranslator {
     this.initLogger();
     this.logger.info('🚀 YouTube双语字幕翻译器启动...');
     
+    // 检查依赖是否可用
+    if (typeof SmartTranslationProcessor === 'undefined') {
+      console.error('❌ SmartTranslationProcessor 未定义，请检查 translation-processor.js 是否加载');
+      this.logger.error('❌ SmartTranslationProcessor 未定义');
+      return;
+    }
+    
+    if (typeof SRTParser === 'undefined') {
+      console.error('❌ SRTParser 未定义，请检查 srt-parser.js 是否加载');
+      this.logger.error('❌ SRTParser 未定义');
+      return;
+    }
+    
+    console.log('✅ 所有依赖已加载');
+    
     this.settings = {
       apiUrl: 'https://api.openai.com/v1',
       apiKey: '',
@@ -124,7 +139,7 @@ class YouTubeSubtitleTranslator {
     
             this.logger.info('✅ 初始化完成');
         // 显示简洁的启动提示
-        this.showTemporaryMessage('🌐 YouTube双语字幕已启动 (Ctrl+D显示详细状态)', 3000);
+        this.showTemporaryMessage('🌐 YouTube双语字幕已启动 (Ctrl+B显示详细状态)', 3000);
     
     // 设置全局快捷键
     this.setupGlobalKeyboardShortcuts();
@@ -258,14 +273,14 @@ class YouTubeSubtitleTranslator {
         this.showTemporaryMessage('调试日志已导出到下载文件夹！');
       }
       
-      // Ctrl+D: 切换调试面板显示/隐藏
-      if (event.ctrlKey && event.key === 'd') {
+      // Ctrl+B: 切换调试面板显示/隐藏
+      if (event.ctrlKey && event.key === 'b') {
         event.preventDefault();
         this.toggleDebugPanel();
       }
     });
     
-    this.logger.info('⌨️ 全局快捷键已设置: Ctrl+L=导出日志, Ctrl+D=显示/隐藏调试面板');
+    this.logger.info('⌨️ 全局快捷键已设置: Ctrl+L=导出日志, Ctrl+B=显示/隐藏调试面板');
   }
   
   // 显示临时消息
@@ -305,7 +320,7 @@ class YouTubeSubtitleTranslator {
       
       if (!isVisible) {
         // 重新显示时更新状态
-        this.showStatusInfo('调试面板已显示 (按 Ctrl+D 再次隐藏)');
+        this.showStatusInfo('调试面板已显示 (按 Ctrl+B 再次隐藏)');
       }
     }
   }
@@ -1656,11 +1671,7 @@ class YouTubeSubtitleTranslator {
   }
 }
 
-// 初始化
-const initTranslator = () => {
-  window.debugLogger?.info('🎬 开始初始化翻译器...');
-  new YouTubeSubtitleTranslator();
-};
+// 初始化翻译器（移动到文件末尾避免重复定义）
 
 // 字幕位置管理器（支持智能定位和拖拽）
 class SubtitlePositionManager {
@@ -2154,13 +2165,25 @@ class SubtitlePositionManager {
 
 // 初始化翻译器
 const initTranslator = () => {
-  new YouTubeSubtitleTranslator();
+  try {
+    console.log('🎬 开始初始化YouTube双语字幕翻译器...');
+    new YouTubeSubtitleTranslator();
+    console.log('✅ 翻译器初始化完成');
+  } catch (error) {
+    console.error('❌ 翻译器初始化失败:', error);
+    console.error('错误堆栈:', error.stack);
+  }
 };
 
+console.log('📜 YouTube双语字幕脚本已加载');
+
 if (document.readyState === 'loading') {
+  console.log('⏳ 等待DOM加载完成...');
   document.addEventListener('DOMContentLoaded', () => {
+    console.log('✅ DOM加载完成，1秒后初始化翻译器');
     setTimeout(initTranslator, 1000);
   });
 } else {
+  console.log('✅ DOM已就绪，1秒后初始化翻译器');
   setTimeout(initTranslator, 1000);
 }
