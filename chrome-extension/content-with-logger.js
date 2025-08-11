@@ -2055,17 +2055,27 @@ class SubtitlePositionManager {
            document.querySelector('.html5-video-player.ytp-fullscreen') !== null;
   }
 
-  // 根据视频尺寸计算字体大小
+  // 根据视频尺寸计算字体大小（基于ASS样式：英文18px，中文11px）
   calculateFontSize(videoWidth) {
+    let baseEnglishSize;
+    
     if (videoWidth >= 1200) {
-      return { original: 20, translated: 18 };
+      baseEnglishSize = 20; // 大屏幕
     } else if (videoWidth >= 800) {
-      return { original: 18, translated: 16 };
+      baseEnglishSize = 18; // 中等屏幕（ASS基准）
     } else if (videoWidth >= 600) {
-      return { original: 16, translated: 14 };
+      baseEnglishSize = 16; // 小屏幕
     } else {
-      return { original: 14, translated: 12 };
+      baseEnglishSize = 14; // 移动设备
     }
+    
+    // 中文字体大小按ASS比例计算：11/18 ≈ 0.61
+    const chineseSize = Math.round(baseEnglishSize * 0.61);
+    
+    return { 
+      original: baseEnglishSize, 
+      translated: Math.max(10, chineseSize) // 最小10px
+    };
   }
 
   // 获取默认位置
@@ -2135,11 +2145,11 @@ class SubtitlePositionManager {
     }
 
     if (translatedElement) {
-      // ASS样式：翻译字幕（绿色）
+      // ASS样式：翻译字幕（绿色，宋体-简 黑体）
       translatedElement.style.color = '#00FF00';
       translatedElement.style.fontSize = `${fontSize.translated}px`;
-      translatedElement.style.fontFamily = '"Noto Sans CJK SC", "YouTube Noto", sans-serif';
-      translatedElement.style.fontWeight = '600';
+      translatedElement.style.fontFamily = '"宋体-简", "SimSun", "黑体", "SimHei", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
+      translatedElement.style.fontWeight = 'normal'; // 宋体通常用normal而不是600
       translatedElement.style.lineHeight = '1.4';
       translatedElement.style.textShadow = '2px 2px 4px rgba(0, 0, 0, 0.9)';
       translatedElement.style.textAlign = 'center';
