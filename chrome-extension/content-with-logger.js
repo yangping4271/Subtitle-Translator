@@ -385,12 +385,44 @@ class YouTubeSubtitleTranslator {
       this.hasSummary = true;
       this.logger.info('✅ 内容总结完成');
       
-      // 分批翻译
-      this.showStatusInfo('开始批量翻译...');
-      this.preloadedTranslations = await this.translationProcessor.processBatchTranslation(segments, summary);
-      
-      this.logger.info('✅ 预翻译完成:', this.preloadedTranslations.length + '条');
-      this.showStatusInfo('预翻译完成！开始实时显示...');
+      // 懒加载翻译：仅翻译首批，后续按需触发
+      this.batchSize = 30;
+      this.segments = segments;
+      this.summary = summary;
+
+      // 建立段落索引映射与批次元数据
+      this.segIndexMap = new Map();
+      segments.forEach((s, i) => this.segIndexMap.set(s, i));
+      this.batches = this.translationProcessor.createBatches(segments, this.batchSize);
+      this.segIndexToBatch = new Array(segments.length);
+      this.batchMeta = this.batches.map((batch, bi) => {
+        let start = Number.POSITIVE_INFINITY, end = 0;
+        batch.forEach(seg => {
+          const idx = this.segIndexMap.get(seg);
+          this.segIndexToBatch[idx] = bi;
+          start = Math.min(start, seg.startTime);
+          end = Math.max(end, seg.endTime);
+        });
+        return { startTime: start, endTime: end };
+      });
+      this.translatedBatch = new Set();
+      this.pendingBatch = new Set();
+
+      // 初始化可显示结构（翻译为空，待填充）
+      this.preloadedTranslations = segments.map((seg, i) => ({
+        index: i,
+        segIndex: i,
+        text: seg.text,
+        translation: null,
+        startTime: seg.startTime,
+        endTime: seg.endTime
+      }));
+
+      // 先翻译首批
+      this.showStatusInfo('翻译首批字幕...');
+      await this.translateAndFillBatch(0);
+      this.logger.info('✅ 首批翻译完成');
+      this.showStatusInfo('预翻译完成（首批）。开始实时显示...');
       
       // 启动实时显示监听
       this.startRealtimeDisplay();
@@ -398,6 +430,27 @@ class YouTubeSubtitleTranslator {
     } catch (error) {
       this.logger.error('❌ 预翻译处理失败:', error.message);
       throw error;
+    }
+  }
+
+  // 触发翻译一个批次并回填
+  async translateAndFillBatch(batchIndex) {
+    if (batchIndex < 0 || batchIndex >= this.batches.length) return;
+    if (this.translatedBatch.has(batchIndex) || this.pendingBatch.has(batchIndex)) return;
+    this.pendingBatch.add(batchIndex);
+    try {
+      const batch = this.batches[batchIndex];
+      const translations = await this.translationProcessor.translateBatchReturnList(batch, batchIndex, this.summary);
+      batch.forEach((seg, j) => {
+        const idx = this.segIndexMap.get(seg);
+        const t = translations[j] || '[翻译失败]';
+        this.preloadedTranslations[idx].translation = t;
+      });
+      this.translatedBatch.add(batchIndex);
+    } catch (e) {
+      this.logger.error('❌ 批次翻译失败:', e.message);
+    } finally {
+      this.pendingBatch.delete(batchIndex);
     }
   }
 
@@ -483,13 +536,38 @@ class YouTubeSubtitleTranslator {
       const text = `${currentSubtitle.text}`;
       if (text !== this.currentSubtitleText) {
         this.currentSubtitleText = text;
-        this.updateSubtitleDisplay(currentSubtitle.text, currentSubtitle.translation);
+        this.updateSubtitleDisplay(currentSubtitle.text, currentSubtitle.translation || '翻译中...');
       }
+
+      // 懒加载触发逻辑
+      this.maybeTriggerOnDemand(currentTime, currentSubtitle);
     } else {
       // 没有找到对应字幕，清空显示
       if (this.currentSubtitleText) {
         this.currentSubtitleText = '';
         this.updateSubtitleDisplay('', '');
+      }
+    }
+  }
+
+  // 按播放进度触发下一批翻译
+  maybeTriggerOnDemand(currentTime, currentSubtitle) {
+    const segIndex = currentSubtitle?.segIndex;
+    if (typeof segIndex !== 'number') return;
+    const currentBatch = this.segIndexToBatch?.[segIndex] ?? 0;
+
+    // 当前批未翻译则优先补齐
+    if (!this.translatedBatch.has(currentBatch)) {
+      this.translateAndFillBatch(currentBatch);
+      return;
+    }
+
+    // 预取下一批（距离开始时间≤8秒）
+    const nextBatch = currentBatch + 1;
+    if (nextBatch < (this.batches?.length || 0)) {
+      const nextStart = this.batchMeta[nextBatch].startTime;
+      if ((nextStart - currentTime) <= 8 && !this.translatedBatch.has(nextBatch) && !this.pendingBatch.has(nextBatch)) {
+        this.translateAndFillBatch(nextBatch);
       }
     }
   }
