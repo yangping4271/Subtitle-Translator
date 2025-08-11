@@ -85,6 +85,34 @@
 
 ---
 
+## ⚠️ 使用注意事项与兼容性
+
+### 广告/隐私拦截器干扰（重要）
+部分广告/隐私拦截扩展会拦截 YouTube 字幕接口（常见现象：`ERR_CONNECTION_CLOSED`、响应长度 0 字符、timedtext/json3 空响应）。
+
+- 解决办法：
+  - 优先在测试时临时关闭拦截器，或
+  - 将以下域名加入例外白名单：
+    - `https://www.youtube.com/api/timedtext`
+    - `https://www.youtube.com/youtubei/v1/player`
+    - `https://www.youtube.com/youtubei/v1/get_transcript`
+    - `https://i.ytimg.com`
+    - `https://*.googlevideo.com`
+
+### 翻译 API 跨域
+- 已默认代理以下主机，内容脚本会自动通过后台代理发起请求：
+  - `https://ai-proxy.chatwise.app/openrouter/api/v1`
+  - `https://openrouter.ai/api/v1`
+- 如使用其它主机，需要在 `manifest.json` 的 `host_permissions` 中新增对应域名。
+
+### 懒加载翻译策略
+- 仅预译首批（默认 `batchSize=30`），播放中当距离下一批开始 ≤ 8 秒时后台触发翻译，实时回填显示。
+
+### 总结（Summary）策略
+- 总结成功且非空才使用；失败或返回空时按“无总结”处理（不中断流程，翻译质量可能略降）。
+
+---
+
 ## 🎨 未来功能开发（优先级中等）
 
 ### 2. 字幕显示优化功能
