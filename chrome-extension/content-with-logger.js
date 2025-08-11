@@ -135,7 +135,9 @@ class YouTubeSubtitleTranslator {
   needsProxy(url) {
     try {
       const u = new URL(url);
-      return u.hostname === 'ai-proxy.chatwise.app';
+      const host = u.hostname;
+      // 这些主机默认通过后台代理，避免CORS
+      return host === 'ai-proxy.chatwise.app' || host === 'openrouter.ai';
     } catch { return false; }
   }
 
@@ -373,11 +375,16 @@ class YouTubeSubtitleTranslator {
       const subtitleTexts = this.subtitleFetcher.getAllSubtitleTexts();
       this.logger.info('📝 获取字幕文本数据:', subtitleTexts.length + '条');
 
-      // 智能断句
-      this.showStatusInfo('正在智能断句...');
+      // 智能断句（仅当检测为单词级时提示展示）
+      const typeInfoForUi = this.translationProcessor.detectSubtitleType(subtitleTexts);
+      if (typeInfoForUi.type !== 'paragraph') {
+        this.showStatusInfo('正在智能断句...');
+      }
       const segments = this.translationProcessor.smartSplit(subtitleTexts);
       this.splitSegmentCount = segments.length;
-      this.logger.info('✅ 断句完成:', this.splitSegmentCount + '段');
+      if (typeInfoForUi.type !== 'paragraph') {
+        this.logger.info('✅ 断句完成:', this.splitSegmentCount + '段');
+      }
       
       // 生成内容总结
       this.showStatusInfo('正在分析内容...');

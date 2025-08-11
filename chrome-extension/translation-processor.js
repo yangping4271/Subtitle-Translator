@@ -287,15 +287,17 @@ class SmartTranslationProcessor {
 
       // 调用API进行内容分析
       const summary = await this.callSummaryAPI(sampleText);
-      this.logger.info('✅ 内容总结分析完成', {
-        summaryLength: summary.length
-      });
-      
-      return summary;
+      if (summary && summary.trim().length > 0) {
+        this.logger.info('✅ 内容总结分析完成', { summaryLength: summary.length });
+        return summary;
+      }
+      this.logger.info('ℹ️ 内容总结为空，跳过使用总结');
+      return '';
       
     } catch (error) {
       this.logger.error('❌ 内容总结失败:', error.message);
-      return this.getDefaultSummary();
+      // 不再返回默认总结，按照“无总结”处理
+      return '';
     }
   }
 
@@ -333,7 +335,8 @@ class SmartTranslationProcessor {
     }
 
     const data = await response.json();
-    return data.choices[0].message.content.trim();
+    const content = data?.choices?.[0]?.message?.content ?? '';
+    return typeof content === 'string' ? content.trim() : '';
   }
 
   // 获取默认总结
