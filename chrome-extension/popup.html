@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      width: 350px;
+      padding: 20px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      color: #1a73e8;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    input[type="url"], input[type="password"], input[type="text"], select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      background-color: #1a73e8;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background-color: #1557b0;
+    }
+    .status {
+      margin-top: 10px;
+      padding: 8px;
+      border-radius: 4px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .success {
+      background-color: #e8f5e8;
+      color: #2e7d32;
+    }
+    .error {
+      background-color: #ffebee;
+      color: #c62828;
+    }
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #1a73e8;
+    }
+    input:checked + .slider:before {
+      transform: translateX(26px);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>🌐 YouTube双语字幕</h2>
+  </div>
+  
+  <form id="settingsForm">
+    <div class="form-group">
+      <label for="apiUrl">API Base URL:</label>
+      <input type="url" id="apiUrl" placeholder="https://api.openai.com/v1" required>
+    </div>
+    
+    <div class="form-group">
+      <label for="apiKey">API Key:</label>
+      <input type="password" id="apiKey" placeholder="sk-..." required>
+    </div>
+    
+    <div class="form-group">
+      <label for="targetLang">翻译目标语言:</label>
+      <select id="targetLang">
+        <option value="简体中文">简体中文</option>
+        <option value="繁体中文">繁体中文</option>
+        <option value="日文">日文</option>
+        <option value="韩文">韩文</option>
+        <option value="English">English</option>
+      </select>
+    </div>
+    
+    <div class="form-group">
+      <label for="model">翻译模型:</label>
+      <input type="text" id="model" placeholder="gpt-4o-mini" required>
+      <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+        常用模型：gpt-4o, gpt-4o-mini, gpt-4-turbo, claude-3-sonnet
+      </small>
+    </div>
+    
+    <div class="form-group toggle">
+      <label>启用自动翻译:</label>
+      <label class="switch">
+        <input type="checkbox" id="autoTranslate" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+    
+    <button type="submit">保存设置</button>
+  </form>
+  
+  <div id="status" class="status" style="display: none;"></div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

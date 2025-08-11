@@ -1,0 +1,44 @@
+/* YouTube双语字幕样式 */
+#youtube-bilingual-subtitles {
+  position: absolute !important;
+  bottom: 80px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  z-index: 1000 !important;
+  pointer-events: none !important;
+  font-family: 'Roboto', 'YouTube Noto', sans-serif !important;
+}
+
+#youtube-bilingual-subtitles .subtitle-container {
+  background: rgba(0, 0, 0, 0.8) !important;
+  border-radius: 4px !important;
+  padding: 8px 12px !important;
+  max-width: 80vw !important;
+  text-align: center !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+#youtube-bilingual-subtitles .original-subtitle {
+  color: #ffffff !important;
+  font-size: 18px !important;
+  line-height: 1.3 !important;
+  margin-bottom: 2px !important;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8) !important;
+}
+
+#youtube-bilingual-subtitles .translated-subtitle {
+  color: #ffeb3b !important;
+  font-size: 16px !important;
+  line-height: 1.3 !important;
+  font-weight: 500 !important;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8) !important;
+}
+
+#youtube-bilingual-subtitles:empty {
+  display: none !important;
+}
+
+/* 确保在全屏模式下也能正确显示 */
+.html5-video-player.ytp-fullscreen #youtube-bilingual-subtitles {
+  bottom: 60px !important;
+}

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>插件测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 YouTube双语字幕插件测试</h1>
+    
+    <div class="test-section">
+        <h2>📋 安装检查清单</h2>
+        <ul>
+            <li>✅ 所有插件文件已创建</li>
+            <li>⏳ 在Chrome扩展页面加载插件</li>
+            <li>⏳ 配置API密钥和设置</li>
+            <li>⏳ 在YouTube页面测试功能</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>🔧 插件配置步骤</h2>
+        <ol>
+            <li><strong>安装插件</strong>
+                <ul>
+                    <li>打开 <code>chrome://extensions/</code></li>
+                    <li>开启"开发者模式"</li>
+                    <li>点击"加载已解压的扩展程序"</li>
+                    <li>选择插件文件夹</li>
+                </ul>
+            </li>
+            <li><strong>配置API</strong>
+                <ul>
+                    <li>点击插件图标打开设置</li>
+                    <li>填入OpenAI API信息</li>
+                    <li>选择目标语言</li>
+                    <li>保存设置</li>
+                </ul>
+            </li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>🎯 测试建议</h2>
+        
+        <div class="status info">
+            <strong>推荐测试视频：</strong> 选择有英文字幕的技术讲解或教程视频
+        </div>
+        
+        <h3>测试步骤：</h3>
+        <ol>
+            <li>打开YouTube视频（确保有英文字幕）</li>
+            <li>开启字幕（CC按钮）</li>
+            <li>观察是否出现双语字幕</li>
+            <li>检查翻译质量和同步性</li>
+        </ol>
+        
+        <h3>预期效果：</h3>
+        <ul>
+            <li>原文字幕显示在上方（白色）</li>
+            <li>翻译字幕显示在下方（黄色）</li>
+            <li>背景为半透明黑色</li>
+            <li>位置居中显示</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>🐛 故障排除</h2>
+        
+        <div class="status error">
+            <strong>常见问题：</strong>
+        </div>
+        
+        <ul>
+            <li><strong>插件无反应</strong>：检查API密钥、刷新页面</li>
+            <li><strong>无法加载插件</strong>：检查manifest.json语法</li>
+            <li><strong>翻译失败</strong>：检查网络连接和API额度</li>
+            <li><strong>字幕不显示</strong>：确保YouTube字幕已开启</li>
+        </ul>
+        
+        <div class="status info">
+            <strong>调试提示：</strong> 按F12打开开发者工具，查看Console标签页的错误信息
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>📁 文件检查</h2>
+        <p>确保以下文件都已创建：</p>
+        <ul>
+            <li>✅ <code>manifest.json</code> - 插件配置</li>
+            <li>✅ <code>content.js</code> - 核心功能脚本</li>
+            <li>✅ <code>popup.html</code> - 设置界面</li>
+            <li>✅ <code>popup.js</code> - 设置逻辑</li>
+            <li>✅ <code>style.css</code> - 样式文件</li>
+            <li>✅ <code>README.md</code> - 使用说明</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>🚀 快速开始</h2>
+        <p>一切就绪！现在可以：</p>
+        <button class="btn-primary" onclick="window.open('chrome://extensions/', '_blank')">
+            打开扩展管理页面
+        </button>
+        <button class="btn-success" onclick="window.open('https://www.youtube.com/', '_blank')">
+            前往YouTube测试
+        </button>
+    </div>
+</body>
+</html>
