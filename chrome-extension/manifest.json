@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/watch*", "https://m.youtube.com/watch*"],
-      "js": ["logger.js", "content-with-logger.js"],
+      "js": ["logger.js", "subtitle-fetcher.js", "translation-processor.js", "content-with-logger.js"],
       "css": ["style.css"],
       "run_at": "document_start"
     }

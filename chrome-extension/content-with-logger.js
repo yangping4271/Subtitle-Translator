@@ -1,4 +1,4 @@
-// YouTube双语字幕翻译器 - 生产版
+// YouTube双语字幕翻译器 - 预加载版
 class YouTubeSubtitleTranslator {
   constructor() {
     this.initLogger();
@@ -9,12 +9,27 @@ class YouTubeSubtitleTranslator {
       apiKey: '',
       targetLang: '简体中文',
       model: 'gpt-4o-mini',
-      autoTranslate: true
+      autoTranslate: true,
+      usePreload: true // 启用预加载模式
     };
     
+    this.currentVideoId = null;
     this.currentSubtitleText = '';
-    this.translationCache = new Map();
     this.translationContainer = null;
+    
+    // 预加载相关
+    this.subtitleFetcher = new YouTubeSubtitleFetcher();
+    this.translationProcessor = new SmartTranslationProcessor(this.settings, this.logger);
+    this.preloadedTranslations = null;
+    this.isPreloading = false;
+    
+    // 状态追踪变量
+    this.splitSegmentCount = 0;
+    this.hasSummary = false;
+    this.processingProgress = 0;
+    
+    // 实时翻译相关（备用模式）
+    this.translationCache = new Map();
     this.isTranslating = false;
     
     this.init();
@@ -63,26 +78,322 @@ class YouTubeSubtitleTranslator {
     }
     
     this.createTranslationContainer();
-    this.startSubtitleMonitoring();
     this.setupMessageListener();
+    this.setupVideoChangeDetection();
+    
+    // 设置翻译进度回调
+    this.translationProcessor.setProgressCallback((progress) => {
+      this.processingProgress = progress;
+      this.showStatusInfo(`正在预翻译: ${progress.toFixed(1)}%`);
+    });
     
     this.logger.info('✅ 初始化完成');
-    this.showStatusInfo('插件已启动，等待检测字幕...');
+    this.showStatusInfo('插件已启动，等待检测视频...');
+    
+    // 立即检查当前视频
+    this.checkVideoChange();
   }
   
   async loadSettings() {
     return new Promise((resolve) => {
-      chrome.storage.sync.get(['apiUrl', 'apiKey', 'targetLang', 'model', 'autoTranslate'], (result) => {
+      chrome.storage.sync.get(['apiUrl', 'apiKey', 'targetLang', 'model', 'autoTranslate', 'usePreload'], (result) => {
         this.settings = {
           apiUrl: result.apiUrl || this.settings.apiUrl,
           apiKey: result.apiKey || '',
           targetLang: result.targetLang || this.settings.targetLang,
           model: result.model || this.settings.model,
-          autoTranslate: result.autoTranslate !== false
+          autoTranslate: result.autoTranslate !== false,
+          usePreload: result.usePreload !== false  // 确保预加载模式默认启用
         };
         resolve();
       });
     });
+  }
+  
+  // 设置视频变化检测
+  setupVideoChangeDetection() {
+    // 监听URL变化
+    let currentUrl = window.location.href;
+    
+    const checkUrlChange = () => {
+      if (window.location.href !== currentUrl) {
+        currentUrl = window.location.href;
+        this.checkVideoChange();
+      }
+    };
+    
+    // 监听History API变化
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+    
+    history.pushState = function(...args) {
+      originalPushState.apply(history, args);
+      setTimeout(checkUrlChange, 100);
+    };
+    
+    history.replaceState = function(...args) {
+      originalReplaceState.apply(history, args);
+      setTimeout(checkUrlChange, 100);
+    };
+    
+    // 监听popstate事件
+    window.addEventListener('popstate', checkUrlChange);
+    
+    // 定期检查视频变化
+    setInterval(() => {
+      this.checkVideoChange();
+    }, 3000);
+    
+    this.logger.info('👀 视频变化检测已启动');
+  }
+
+  // 检查视频变化
+  async checkVideoChange() {
+    const hasVideoChanged = this.subtitleFetcher.getCurrentVideoId();
+    
+    if (hasVideoChanged) {
+      this.currentVideoId = this.subtitleFetcher.videoId;
+      this.logger.info('🎬 检测到新视频:', this.currentVideoId);
+      
+      // 清理之前的数据
+      this.clearPreviousData();
+      
+      // 调试设置状态
+      this.logger.info('🔧 当前设置:', {
+        usePreload: this.settings.usePreload,
+        autoTranslate: this.settings.autoTranslate,
+        apiKey: this.settings.apiKey ? '***已设置***' : '未设置'
+      });
+      
+      // 如果启用预加载模式，开始预加载字幕
+      if (this.settings.usePreload && this.settings.autoTranslate) {
+        this.logger.info('🚀 启动预加载翻译模式...');
+        this.startSubtitlePreloading();
+      } else {
+        this.logger.info('🔄 启动实时翻译模式...', {
+          reason: !this.settings.usePreload ? '预加载已禁用' : '自动翻译已禁用'
+        });
+        // 否则启用实时翻译模式
+        this.startRealtimeMode();
+      }
+    }
+  }
+
+  // 清理之前的数据
+  clearPreviousData() {
+    this.preloadedTranslations = null;
+    this.isPreloading = false;
+    this.currentSubtitleText = '';
+    this.translationCache.clear();
+    this.subtitleFetcher.clearSubtitles();
+    this.updateSubtitleDisplay('', '');
+    
+    // 重置状态追踪变量
+    this.splitSegmentCount = 0;
+    this.hasSummary = false;
+    this.processingProgress = 0;
+    
+    this.logger.info('🧹 已清理之前数据和状态');
+  }
+
+  // 开始字幕预加载
+  async startSubtitlePreloading() {
+    if (this.isPreloading) return;
+    
+    this.isPreloading = true;
+    this.showStatusInfo('正在获取字幕数据...');
+    
+    try {
+      // 等待页面稳定
+      await this.waitForPageStable();
+      
+      // 使用增强的字幕获取方法
+      this.showStatusInfo('尝试多种方法获取完整字幕...');
+      this.logger.info('🚀 开始预加载字幕，尝试所有可用方法...');
+      
+      const subtitles = await this.subtitleFetcher.getSubtitlesWithEnhancedMethods();
+      
+      if (!subtitles || subtitles.length === 0) {
+        // 提供详细的失败原因
+        const failureReason = this.analyzeSubtitleFailure();
+        this.logger.warn('❌ 字幕获取失败，原因:', failureReason);
+        this.showStatusInfo(`字幕获取失败: ${failureReason}`);
+        throw new Error(`所有字幕获取方法都失败 - ${failureReason}`);
+      }
+      
+      const stats = this.subtitleFetcher.getSubtitleStats();
+      this.logger.info('📊 字幕统计:', stats);
+      this.showStatusInfo(`字幕已获取: ${stats.count}条，开始预翻译...`);
+      
+      // 开始智能翻译处理
+      await this.processPreloadedTranslation(subtitles);
+      
+    } catch (error) {
+      this.logger.error('❌ 预加载失败:', error.message);
+      this.showStatusInfo(`预加载失败: ${error.message}`);
+      
+      // 回退到实时翻译模式
+      this.startRealtimeMode();
+    } finally {
+      this.isPreloading = false;
+    }
+  }
+
+  // 处理预加载翻译
+  async processPreloadedTranslation(subtitles) {
+    try {
+      // 更新设置到处理器
+      this.translationProcessor.settings = this.settings;
+      
+      // 准备字幕文本数据
+      const subtitleTexts = this.subtitleFetcher.getAllSubtitleTexts();
+      this.logger.info('📝 获取字幕文本数据:', subtitleTexts.length + '条');
+
+      // 智能断句
+      this.showStatusInfo('正在智能断句...');
+      const segments = this.translationProcessor.smartSplit(subtitleTexts);
+      this.splitSegmentCount = segments.length;
+      this.logger.info('✅ 断句完成:', this.splitSegmentCount + '段');
+      
+      // 生成内容总结
+      this.showStatusInfo('正在分析内容...');
+      const summary = await this.translationProcessor.generateContentSummary(segments);
+      this.hasSummary = true;
+      this.logger.info('✅ 内容总结完成');
+      
+      // 分批翻译
+      this.showStatusInfo('开始批量翻译...');
+      this.preloadedTranslations = await this.translationProcessor.processBatchTranslation(segments, summary);
+      
+      this.logger.info('✅ 预翻译完成:', this.preloadedTranslations.length + '条');
+      this.showStatusInfo('预翻译完成！开始实时显示...');
+      
+      // 启动实时显示监听
+      this.startRealtimeDisplay();
+      
+    } catch (error) {
+      this.logger.error('❌ 预翻译处理失败:', error.message);
+      throw error;
+    }
+  }
+
+  // 等待页面稳定
+  waitForPageStable() {
+    return new Promise((resolve) => {
+      let stabilityCount = 0;
+      let checkCount = 0;
+      const maxChecks = 20; // 最多检查10秒
+      
+      this.logger.info('⏳ 等待页面稳定...');
+      
+      const checkStability = () => {
+        checkCount++;
+        
+        const hasPlayer = !!document.querySelector('#movie_player, .html5-video-player');
+        const hasScripts = document.querySelectorAll('script').length > 10;
+        const hasVideoId = !!this.subtitleFetcher.videoId;
+        const hasPlayerConfig = !!window.ytInitialPlayerResponse || 
+                               !!document.querySelector('script[src*="player"]') ||
+                               document.querySelectorAll('script').length > 50;
+        
+        this.logger.debug(`📊 稳定性检查 ${checkCount}/${maxChecks}:`, {
+          hasPlayer,
+          hasScripts,
+          hasVideoId,
+          hasPlayerConfig,
+          stabilityCount
+        });
+        
+        if (hasPlayer && hasScripts && hasVideoId && hasPlayerConfig) {
+          stabilityCount++;
+          if (stabilityCount >= 3) {
+            this.logger.info('✅ 页面稳定性检查通过');
+            resolve();
+            return;
+          }
+        } else {
+          stabilityCount = 0;
+        }
+        
+        if (checkCount >= maxChecks) {
+          this.logger.warn('⚠️ 页面稳定性检查超时，继续处理');
+          resolve();
+          return;
+        }
+        
+        setTimeout(checkStability, 500);
+      };
+      
+      setTimeout(checkStability, 1000);
+    });
+  }
+
+  // 启动实时显示监听
+  startRealtimeDisplay() {
+    if (this.displayInterval) {
+      clearInterval(this.displayInterval);
+    }
+    
+    // 每秒检查当前播放时间并显示对应字幕
+    this.displayInterval = setInterval(() => {
+      this.updateDisplayFromPreloaded();
+    }, 500);
+    
+    this.logger.info('⏰ 实时显示监听已启动');
+  }
+
+  // 从预加载数据更新显示
+  updateDisplayFromPreloaded() {
+    if (!this.preloadedTranslations || this.preloadedTranslations.length === 0) {
+      return;
+    }
+    
+    // 获取当前播放时间
+    const currentTime = this.getCurrentPlayTime();
+    if (currentTime === null) return;
+    
+    // 找到当前时间对应的字幕
+    const currentSubtitle = this.findSubtitleAtTime(currentTime);
+    
+    if (currentSubtitle) {
+      const text = `${currentSubtitle.text}`;
+      if (text !== this.currentSubtitleText) {
+        this.currentSubtitleText = text;
+        this.updateSubtitleDisplay(currentSubtitle.text, currentSubtitle.translation);
+      }
+    } else {
+      // 没有找到对应字幕，清空显示
+      if (this.currentSubtitleText) {
+        this.currentSubtitleText = '';
+        this.updateSubtitleDisplay('', '');
+      }
+    }
+  }
+
+  // 获取当前播放时间
+  getCurrentPlayTime() {
+    const videoElement = document.querySelector('video');
+    if (videoElement && !videoElement.paused) {
+      return videoElement.currentTime;
+    }
+    return null;
+  }
+
+  // 在预加载翻译中查找指定时间的字幕
+  findSubtitleAtTime(currentTime) {
+    for (const subtitle of this.preloadedTranslations) {
+      if (currentTime >= subtitle.startTime && currentTime <= subtitle.endTime) {
+        return subtitle;
+      }
+    }
+    return null;
+  }
+
+  // 启动实时翻译模式（备用）
+  startRealtimeMode() {
+    this.logger.info('🔄 启动实时翻译模式');
+    this.showStatusInfo('实时翻译模式已启动');
+    this.startSubtitleMonitoring();
   }
   
   setupMessageListener() {
@@ -90,10 +401,15 @@ class YouTubeSubtitleTranslator {
       if (message.type === 'SETTINGS_UPDATED') {
         this.settings = message.settings;
         this.logger.info('🔄 设置已更新');
+        
+        // 更新翻译处理器设置
+        if (this.translationProcessor) {
+          this.translationProcessor.settings = this.settings;
+        }
       }
     });
   }
-  
+
   createTranslationContainer() {
     // 移除现有容器
     const existingContainer = document.getElementById('youtube-bilingual-subtitles');
@@ -334,24 +650,91 @@ class YouTubeSubtitleTranslator {
         position: fixed;
         top: 10px;
         right: 10px;
-        background: rgba(0,0,0,0.8);
+        background: rgba(0,0,0,0.9);
         color: #fff;
-        padding: 8px 12px;
-        border-radius: 5px;
+        padding: 10px 15px;
+        border-radius: 8px;
         z-index: 10000;
-        font-size: 12px;
-        max-width: 300px;
+        font-size: 11px;
+        max-width: 350px;
+        font-family: monospace;
+        border: 1px solid #333;
       `;
       document.body.appendChild(statusDiv);
     }
     
+    // 收集详细状态信息
+    const debugInfo = this.getDebugStatus();
+    
     statusDiv.innerHTML = `
-      <div><strong>🔧 字幕翻译状态</strong></div>
-      <div>${message}</div>
-      <div style="margin-top: 5px; font-size: 10px; opacity: 0.7;">
+      <div style="color: #4CAF50; font-weight: bold; margin-bottom: 8px;">🔧 字幕翻译调试状态</div>
+      <div style="margin-bottom: 5px;"><strong>当前状态:</strong> ${message}</div>
+      <div style="margin-bottom: 5px;"><strong>翻译模式:</strong> ${debugInfo.mode}</div>
+      <div style="margin-bottom: 5px;"><strong>视频ID:</strong> ${debugInfo.videoId || '未检测'}</div>
+      <div style="margin-bottom: 5px;"><strong>字幕获取:</strong> ${debugInfo.subtitleStatus}</div>
+      <div style="margin-bottom: 5px;"><strong>断句状态:</strong> ${debugInfo.splitStatus}</div>
+      <div style="margin-bottom: 5px;"><strong>总结分析:</strong> ${debugInfo.summaryStatus}</div>
+      <div style="margin-bottom: 5px;"><strong>翻译进度:</strong> ${debugInfo.translationProgress}</div>
+      <div style="margin-bottom: 5px;"><strong>预翻译:</strong> ${debugInfo.preloadStatus}</div>
+      <div style="margin-bottom: 5px;"><strong>实时显示:</strong> ${debugInfo.displayStatus}</div>
+      <div style="margin-top: 8px; font-size: 9px; opacity: 0.6; border-top: 1px solid #444; padding-top: 5px;">
         ${new Date().toLocaleTimeString()}
       </div>
     `;
+  }
+
+  // 获取详细调试状态
+  getDebugStatus() {
+    const hasSubtitles = this.subtitleFetcher?.hasFullSubtitlesEnhanced();
+    const subtitleCount = hasSubtitles ? this.subtitleFetcher.fullSubtitles.length : 0;
+    const preloadedCount = this.preloadedTranslations?.length || 0;
+    
+    return {
+      mode: this.settings.usePreload ? '预加载模式 (增强版)' : '实时翻译模式',
+      videoId: this.currentVideoId || '未检测',
+      subtitleStatus: hasSubtitles ? `✅ 已获取 (${subtitleCount}条)` : '❌ 未获取',
+      splitStatus: this.splitSegmentCount ? `✅ 已处理 (${this.splitSegmentCount}段)` : '⏳ 待处理',
+      summaryStatus: this.hasSummary ? '✅ 已完成' : '⏳ 待处理',
+      translationProgress: this.isPreloading ? `🔄 ${this.processingProgress?.toFixed(1) || 0}%` : 
+                          (preloadedCount > 0 ? `✅ 完成 (${preloadedCount}条)` : '⏳ 待开始'),
+      preloadStatus: this.preloadedTranslations ? 
+                    `✅ 完成 (${preloadedCount}条翻译)` : 
+                    (this.isPreloading ? '🔄 处理中' : '❌ 未完成'),
+      displayStatus: this.displayInterval ? '✅ 运行中' : '❌ 未启动'
+    };
+  }
+
+  // 分析字幕获取失败的原因
+  analyzeSubtitleFailure() {
+    // 检查视频是否有字幕按钮
+    const subtitleButton = document.querySelector('.ytp-subtitles-button, button[data-tooltip-target-id*="caption"]');
+    if (subtitleButton) {
+      const isDisabled = subtitleButton.hasAttribute('disabled') || 
+                        subtitleButton.getAttribute('aria-pressed') === 'false' ||
+                        subtitleButton.textContent.includes('unavailable');
+      
+      if (isDisabled) {
+        return '视频没有提供字幕数据';
+      }
+    }
+    
+    // 检查网络连接
+    if (!navigator.onLine) {
+      return '网络连接问题';
+    }
+    
+    // 检查是否是受限视频
+    const errorElements = document.querySelectorAll('[class*="error"], [class*="unavailable"]');
+    if (errorElements.length > 0) {
+      return '视频不可用或受限';
+    }
+    
+    // 检查是否是直播
+    if (document.querySelector('.ytp-live')) {
+      return '直播视频可能没有预生成字幕';
+    }
+    
+    return '未知原因，可能是技术限制或YouTube API变化';
   }
 }
 
