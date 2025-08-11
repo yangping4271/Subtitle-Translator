@@ -1,11 +1,8 @@
-/* YouTube双语字幕样式 - 生产版 */
+/* YouTube双语字幕样式 - 智能定位版 */
 #youtube-bilingual-subtitles {
   position: fixed !important;
-  bottom: 120px !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
   z-index: 999999999 !important;
-  pointer-events: none !important;
+  pointer-events: auto !important; /* 允许拖拽交互 */
   font-family: 'Roboto', 'YouTube Noto', sans-serif !important;
   display: block !important;
   visibility: visible !important;
@@ -14,6 +11,7 @@
   height: auto !important;
   min-width: 200px !important;
   min-height: 50px !important;
+  transition: transform 0.2s ease !important;
 }
 
 #youtube-bilingual-subtitles .subtitle-container {
