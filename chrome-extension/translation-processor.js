@@ -10,7 +10,11 @@ class SmartTranslationProcessor {
 
     // 代理工具（从内容脚本注入）
     this.needsProxy = (url) => {
-      try { const u = new URL(url); return u.hostname === 'ai-proxy.chatwise.app'; } catch { return false; }
+      try { 
+        const u = new URL(url); 
+        const host = u.hostname;
+        return host === 'ai-proxy.chatwise.app' || host === 'openrouter.ai' || host === '127.0.0.1' || host === 'localhost';
+      } catch { return false; }
     };
     this.proxyFetch = async (url, options) => {
       return new Promise((resolve, reject) => {
@@ -498,6 +502,11 @@ class SmartTranslationProcessor {
     try {
       this.logger.info(`📦(lazy) 翻译批次 ${batchIndex + 1}:`, batch.length + '个段落');
 
+      // 验证设置
+      if (!this.settings.apiKey || !this.settings.apiUrl) {
+        throw new Error(`API配置不完整: apiKey=${!!this.settings.apiKey}, apiUrl=${!!this.settings.apiUrl}`);
+      }
+
       const batchText = batch.map((segment, index) => `[${index + 1}] ${segment.text}`).join('\n\n');
       const prompt = this.createBatchTranslationPrompt(summary, batchText);
 
@@ -518,9 +527,25 @@ class SmartTranslationProcessor {
           max_tokens: 2000
         })
       };
+      
+      this.logger.info(`🌐 API调用详情:`, {
+        url,
+        model: this.settings.model,
+        useProxy: this.needsProxy(url),
+        apiKeyLength: this.settings.apiKey?.length,
+        batchSize: batch.length
+      });
+      
       const response = this.needsProxy(url) ? await this.proxyFetch(url, fetchOptions) : await fetch(url, fetchOptions);
+      
+      this.logger.info(`📡 API响应:`, {
+        status: response.status,
+        ok: response.ok
+      });
+      
       if (!response.ok) {
-        throw new Error(`批次${batchIndex + 1}翻译失败: ${response.status}`);
+        const errorText = await response.text().catch(() => '无法读取错误信息');
+        throw new Error(`批次${batchIndex + 1}翻译失败: ${response.status} - ${errorText}`);
       }
       const data = await response.json();
       const translatedText = data.choices[0].message.content.trim();
