@@ -2132,11 +2132,11 @@ class SubtitlePositionManager {
     const translatedElement = this.container.querySelector('.translated-subtitle');
     
     if (originalElement) {
-      // ASS样式：英文字幕（青色）
+      // ASS样式：英文字幕（青色，Noto Serif，粗体）
       originalElement.style.color = '#00FFFF';
       originalElement.style.fontSize = `${fontSize.original}px`;
       originalElement.style.fontFamily = '"Noto Serif", "YouTube Noto", sans-serif';
-      originalElement.style.fontWeight = '500';
+      originalElement.style.fontWeight = 'bold'; // ASS中-1表示粗体
       originalElement.style.lineHeight = '1.4';
       originalElement.style.textShadow = '2px 2px 4px rgba(0, 0, 0, 0.9)';
       originalElement.style.marginBottom = '6px';
@@ -2145,11 +2145,11 @@ class SubtitlePositionManager {
     }
 
     if (translatedElement) {
-      // ASS样式：翻译字幕（绿色，宋体-简 黑体）
+      // ASS样式：翻译字幕（绿色，中文字体，粗体）
       translatedElement.style.color = '#00FF00';
       translatedElement.style.fontSize = `${fontSize.translated}px`;
       translatedElement.style.fontFamily = '"宋体-简", "SimSun", "黑体", "SimHei", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
-      translatedElement.style.fontWeight = 'normal'; // 宋体通常用normal而不是600
+      translatedElement.style.fontWeight = 'bold'; // ASS中-1表示粗体
       translatedElement.style.lineHeight = '1.4';
       translatedElement.style.textShadow = '2px 2px 4px rgba(0, 0, 0, 0.9)';
       translatedElement.style.textAlign = 'center';
