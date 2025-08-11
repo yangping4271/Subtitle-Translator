@@ -1226,8 +1226,19 @@ class YouTubeSubtitleTranslator {
       </div>
     `;
     
-    // 直接插入到body确保可见
-    document.body.appendChild(this.translationContainer);
+    // 智能选择容器的父元素：全屏时插入到播放器，否则插入到body
+    const isFullscreen = document.fullscreenElement !== null;
+    const player = document.querySelector('.html5-video-player');
+    
+    if (isFullscreen && player) {
+      // 全屏模式：插入到播放器容器内
+      player.appendChild(this.translationContainer);
+      this.logger.info('✅ 双语字幕容器已插入到播放器（全屏模式）');
+    } else {
+      // 普通模式：插入到body
+      document.body.appendChild(this.translationContainer);
+      this.logger.info('✅ 双语字幕容器已插入到body（普通模式）');
+    }
     
     // 初始化智能定位系统
     this.initializeSmartPositioning();
@@ -1282,7 +1293,7 @@ class YouTubeSubtitleTranslator {
   setupFullscreenObserver() {
     document.addEventListener('fullscreenchange', () => {
       setTimeout(() => {
-        this.positionManager?.updatePosition();
+        this.handleFullscreenChange();
       }, 100); // 延迟以确保全屏状态已完全应用
     });
 
@@ -1291,7 +1302,7 @@ class YouTubeSubtitleTranslator {
     if (player) {
       const observer = new MutationObserver(() => {
         setTimeout(() => {
-          this.positionManager?.updatePosition();
+          this.handleFullscreenChange();
         }, 100);
       });
       
@@ -1300,6 +1311,31 @@ class YouTubeSubtitleTranslator {
         attributeFilter: ['class']
       });
     }
+  }
+
+  // 处理全屏状态变化
+  handleFullscreenChange() {
+    if (!this.translationContainer) return;
+
+    const isFullscreen = document.fullscreenElement !== null || 
+                         document.querySelector('.html5-video-player.ytp-fullscreen') !== null;
+    const player = document.querySelector('.html5-video-player');
+
+    this.logger.debug('🔄 全屏状态变化', { isFullscreen });
+
+    // 根据全屏状态调整容器父元素
+    if (isFullscreen && player && !player.contains(this.translationContainer)) {
+      // 切换到全屏：移动到播放器内
+      player.appendChild(this.translationContainer);
+      this.logger.debug('📺 字幕容器移动到播放器（全屏模式）');
+    } else if (!isFullscreen && !document.body.contains(this.translationContainer)) {
+      // 切换到窗口：移动到body
+      document.body.appendChild(this.translationContainer);
+      this.logger.debug('🖥️ 字幕容器移动到body（窗口模式）');
+    }
+
+    // 更新位置
+    this.positionManager?.updatePosition();
   }
   
   startSubtitleMonitoring() {
@@ -1825,27 +1861,26 @@ class SubtitlePositionManager {
     const video = document.querySelector('video');
     const videoRect = video ? video.getBoundingClientRect() : null;
     
+    if (!videoRect) return;
+
     // 限制拖拽边界（仅垂直方向）
     const bounds = this.calculateVerticalDragBounds();
     const constrainedY = Math.max(bounds.minY, Math.min(bounds.maxY, y));
 
     // 计算相对于视频底部的距离
-    let bottomOffset = 100; // 默认值
-    if (videoRect) {
-      bottomOffset = window.innerHeight - constrainedY - this.container.offsetHeight;
-      // 确保不会拖到视频外面
-      const minBottomOffset = 20; // 最小距离视频底部20px
-      const maxBottomOffset = videoRect.height - 50; // 最大不超过视频高度减去字幕高度
-      bottomOffset = Math.max(minBottomOffset, Math.min(maxBottomOffset, bottomOffset));
-    }
+    const videoBottom = videoRect.bottom;
+    const bottomOffset = Math.max(20, videoBottom - constrainedY);
 
-    // 应用新位置：保持水平居中，只改变垂直位置
-    this.container.style.left = '50%';
+    // 计算视频中心位置
+    const videoCenterX = videoRect.left + videoRect.width / 2;
+
+    // 应用新位置：保持在视频水平居中，只改变垂直位置
+    this.container.style.left = `${videoCenterX}px`;
     this.container.style.top = 'auto';
-    this.container.style.bottom = `${bottomOffset}px`;
+    this.container.style.bottom = `${window.innerHeight - videoBottom + bottomOffset}px`;
     this.container.style.transform = 'translateX(-50%) scale(1.05)';
 
-    // 保存自定义位置
+    // 保存自定义位置（保存相对于视频的偏移）
     this.customPosition = {
       bottomOffset: bottomOffset,
       isCustom: true
@@ -1859,7 +1894,7 @@ class SubtitlePositionManager {
     this.isDragging = false;
     this.dragHandle.style.opacity = '0';
     
-    // 恢复缩放效果，保持居中
+    // 恢复缩放效果，保持视频居中
     this.container.style.transform = 'translateX(-50%) scale(1)';
     this.container.style.transition = 'transform 0.2s ease';
     
@@ -1954,55 +1989,63 @@ class SubtitlePositionManager {
 
   // 获取YouTube原生字幕位置
   getYouTubeSubtitlePosition() {
-    // 如果有自定义位置，优先使用
+    const video = document.querySelector('video');
+    const player = document.querySelector('.html5-video-player, #player-container');
+    const isFullscreen = this.isFullscreen();
+
+    if (!video) {
+      return this.getDefaultPosition();
+    }
+
+    const videoRect = video.getBoundingClientRect();
+    
+    // 如果有自定义位置，计算相对于视频的位置
     const savedPosition = this.loadCustomPosition();
     if (savedPosition && savedPosition.isCustom && savedPosition.bottomOffset !== undefined) {
+      // 计算相对于视频底部的位置
+      const videoBottom = videoRect.bottom;
+      const absoluteBottom = Math.max(20, videoBottom - savedPosition.bottomOffset);
+      
       return {
-        left: '50%',
+        left: `${videoRect.left + videoRect.width / 2}px`,
         top: 'auto',
-        bottom: `${savedPosition.bottomOffset}px`,
+        bottom: `${window.innerHeight - absoluteBottom}px`,
         transform: 'translateX(-50%)',
         isCustom: true,
-        videoWidth: 800,
-        videoHeight: 450,
-        isFullscreen: this.isFullscreen()
+        videoWidth: videoRect.width,
+        videoHeight: videoRect.height,
+        isFullscreen: isFullscreen
       };
     }
 
     // 查找YouTube原生字幕容器
     const nativeSubtitle = document.querySelector('.ytp-caption-window-container, .caption-window, .ytp-caption-segment');
-    const video = document.querySelector('video');
-    const player = document.querySelector('.html5-video-player, #player-container');
-
-    if (!video || !player) {
-      return this.getDefaultPosition();
-    }
-
-    const videoRect = video.getBoundingClientRect();
-    const playerRect = player.getBoundingClientRect();
     
-    // 基础位置：视频底部稍上方
-    let baseBottom = 80;
+    // 计算字幕位置：视频底部稍上方
+    let bottomOffset = 80;
     
     // 如果有原生字幕，在其上方留出空间
     if (nativeSubtitle) {
       const nativeRect = nativeSubtitle.getBoundingClientRect();
-      if (nativeRect.bottom > 0) {
-        const videoBottom = videoRect.bottom;
-        const nativeTop = nativeRect.top;
-        baseBottom = videoBottom - nativeTop + 60; // 在原生字幕上方60px
+      if (nativeRect.top > 0 && nativeRect.top < videoRect.bottom) {
+        // 在原生字幕上方60px
+        bottomOffset = videoRect.bottom - nativeRect.top + 60;
       }
     }
 
+    // 计算相对于视频中心的位置
+    const videoCenterX = videoRect.left + videoRect.width / 2;
+    const videoBottom = videoRect.bottom;
+    
     return {
-      bottom: `${baseBottom}px`,
-      left: '50%',
-      top: 'auto',
+      left: `${videoCenterX}px`,
+      top: 'auto', 
+      bottom: `${window.innerHeight - videoBottom + bottomOffset}px`,
       transform: 'translateX(-50%)',
       isCustom: false,
       videoWidth: videoRect.width,
       videoHeight: videoRect.height,
-      isFullscreen: this.isFullscreen()
+      isFullscreen: isFullscreen
     };
   }
 
@@ -2027,6 +2070,25 @@ class SubtitlePositionManager {
 
   // 获取默认位置
   getDefaultPosition() {
+    const video = document.querySelector('video');
+    if (video) {
+      const videoRect = video.getBoundingClientRect();
+      const videoCenterX = videoRect.left + videoRect.width / 2;
+      const videoBottom = videoRect.bottom;
+      
+      return {
+        left: `${videoCenterX}px`,
+        top: 'auto',
+        bottom: `${window.innerHeight - videoBottom + 100}px`,
+        transform: 'translateX(-50%)',
+        isCustom: false,
+        videoWidth: videoRect.width,
+        videoHeight: videoRect.height,
+        isFullscreen: this.isFullscreen()
+      };
+    }
+    
+    // 如果没有视频，使用页面居中
     return {
       bottom: '100px',
       left: '50%',
