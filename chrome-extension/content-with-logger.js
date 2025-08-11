@@ -146,6 +146,32 @@ class YouTubeSubtitleTranslator {
     
     // 立即检查当前视频
     this.checkVideoChange();
+    
+    // 处理页面刷新后的初始化延迟
+    setTimeout(() => {
+      this.ensureProperInitialization();
+    }, 1000);
+  }
+
+  // 确保正确初始化（处理页面刷新等边缘情况）
+  ensureProperInitialization() {
+    // 检查容器是否存在且位置正确
+    if (!this.translationContainer || !document.getElementById('youtube-bilingual-subtitles')) {
+      this.logger.debug('🔄 检测到容器丢失，重新创建');
+      this.createTranslationContainer();
+      return;
+    }
+    
+    // 检查位置管理器是否正常工作
+    if (!this.positionManager) {
+      this.logger.debug('🔄 检测到位置管理器丢失，重新初始化');
+      this.initializeSmartPositioning();
+      return;
+    }
+    
+    // 强制更新位置以处理可能的布局问题
+    this.positionManager.updatePosition();
+    this.logger.debug('✅ 初始化检查完成');
   }
 
   setupBackendTranscribe() {
@@ -215,8 +241,8 @@ class YouTubeSubtitleTranslator {
     try {
       const u = new URL(url);
       const host = u.hostname;
-      // 这些主机默认通过后台代理，避免CORS
-      return host === 'ai-proxy.chatwise.app' || host === 'openrouter.ai' || host === '127.0.0.1' || host === 'localhost';
+      // 只有远程API主机需要通过后台代理，本地服务直接访问
+      return host === 'ai-proxy.chatwise.app' || host === 'openrouter.ai';
     } catch { return false; }
   }
 
@@ -1226,8 +1252,14 @@ class YouTubeSubtitleTranslator {
       </div>
     `;
     
+    // 确保容器可见
+    this.translationContainer.style.display = 'block';
+    this.translationContainer.style.visibility = 'visible';
+    this.translationContainer.style.opacity = '1';
+    
     // 智能选择容器的父元素：全屏时插入到播放器，否则插入到body
-    const isFullscreen = document.fullscreenElement !== null;
+    const isFullscreen = document.fullscreenElement !== null || 
+                         document.querySelector('.html5-video-player.ytp-fullscreen') !== null;
     const player = document.querySelector('.html5-video-player');
     
     if (isFullscreen && player) {
@@ -1243,7 +1275,15 @@ class YouTubeSubtitleTranslator {
     // 初始化智能定位系统
     this.initializeSmartPositioning();
     
-    this.logger.info('✅ 双语字幕容器创建成功');
+    // 检查容器是否正确插入
+    const containerCheck = document.getElementById('youtube-bilingual-subtitles');
+    this.logger.info('✅ 双语字幕容器创建成功', {
+      containerExists: !!containerCheck,
+      containerVisible: containerCheck?.style.display,
+      containerOpacity: containerCheck?.style.opacity,
+      parentElement: containerCheck?.parentElement?.tagName,
+      hasChildren: containerCheck?.children?.length || 0
+    });
   }
 
   // 智能定位系统
@@ -1262,8 +1302,39 @@ class YouTubeSubtitleTranslator {
     
     // 立即应用初始定位
     setTimeout(() => {
+      // 强制重新初始化位置，特别是在页面刷新后
+      this.forcePositionReset();
       this.positionManager.updatePosition();
     }, 100);
+    
+    // 延迟再次确保位置正确（处理页面刷新情况）
+    setTimeout(() => {
+      this.positionManager.updatePosition();
+      this.logger.debug('🔄 延迟位置更新完成');
+    }, 500);
+  }
+
+  // 强制重置位置（特别是页面刷新后）
+  forcePositionReset() {
+    if (!this.translationContainer) return;
+    
+    // 清除所有可能的自定义位置
+    this.translationContainer.style.removeProperty('top');
+    this.translationContainer.style.removeProperty('bottom');
+    this.translationContainer.style.removeProperty('left');
+    this.translationContainer.style.removeProperty('right');
+    this.translationContainer.style.removeProperty('transform');
+    
+    // 重置为默认状态
+    this.translationContainer.style.position = 'fixed';
+    this.translationContainer.style.zIndex = '999999999';
+    
+    // 如果有位置管理器，也重置它的状态
+    if (this.positionManager) {
+      this.positionManager.resetToDefault();
+    }
+    
+    this.logger.debug('🔄 位置已强制重置');
   }
 
   // 监听视频尺寸变化
@@ -1328,14 +1399,57 @@ class YouTubeSubtitleTranslator {
       // 切换到全屏：移动到播放器内
       player.appendChild(this.translationContainer);
       this.logger.debug('📺 字幕容器移动到播放器（全屏模式）');
+      
+      // 重新初始化拖拽功能（关键修复）
+      setTimeout(() => {
+        this.positionManager?.cleanup();
+        this.positionManager = new SubtitlePositionManager(this.translationContainer, this.logger);
+        this.positionManager.addDoubleClickReset();
+        
+        // 切换到全屏时，重置位置以避免坐标系统混淆
+        this.positionManager.resetToDefault();
+        
+        // 详细检查容器状态
+        const containerCheck = {
+          exists: !!this.translationContainer,
+          inDOM: !!document.getElementById('youtube-bilingual-subtitles'),
+          parent: this.translationContainer?.parentElement?.tagName,
+          visible: this.translationContainer?.style.display,
+          opacity: this.translationContainer?.style.opacity,
+          hasSubtitleContainer: !!this.translationContainer?.querySelector('.subtitle-container'),
+          hasEventListeners: this.positionManager ? 'yes' : 'no'
+        };
+        
+        this.logger.info('🔄 全屏模式拖拽重新初始化完成', containerCheck);
+        console.log('🔄 全屏容器状态检查', containerCheck);
+      }, 200); // 延迟确保DOM完全更新
+      
     } else if (!isFullscreen && !document.body.contains(this.translationContainer)) {
       // 切换到窗口：移动到body
       document.body.appendChild(this.translationContainer);
       this.logger.debug('🖥️ 字幕容器移动到body（窗口模式）');
+      
+      // 重新初始化拖拽功能（关键修复）
+      setTimeout(() => {
+        this.positionManager?.cleanup();
+        this.positionManager = new SubtitlePositionManager(this.translationContainer, this.logger);
+        this.positionManager.addDoubleClickReset();
+        
+        // 切换到窗口模式时，重置位置以避免坐标系统混淆
+        this.positionManager.resetToDefault();
+        
+        this.logger.debug('🔄 窗口模式拖拽重新初始化完成');
+      }, 200); // 延迟确保DOM完全更新
     }
 
-    // 更新位置
-    this.positionManager?.updatePosition();
+    // 延迟更新位置，确保DOM完全稳定后再计算
+    setTimeout(() => {
+      this.positionManager?.updatePosition();
+      this.logger.debug('🔄 全屏状态变化后位置已更新', {
+        isFullscreen,
+        containerParent: this.translationContainer?.parentElement?.tagName
+      });
+    }, 300);
   }
   
   startSubtitleMonitoring() {
@@ -1538,6 +1652,43 @@ class YouTubeSubtitleTranslator {
     originalElement.textContent = displayOriginal;
     translatedElement.textContent = displayTranslated;
     
+    // 调试日志：检查内容更新
+    this.logger.debug('🔍 字幕内容更新', {
+      original: displayOriginal,
+      translated: displayTranslated,
+      originalLength: displayOriginal?.length || 0,
+      translatedLength: displayTranslated?.length || 0
+    });
+    
+    // 动态调整背景样式根据内容
+    if (displayOriginal) {
+      originalElement.style.background = 'rgba(0, 0, 0, 0.75)';
+      originalElement.style.padding = '3px 8px';
+      originalElement.style.display = 'inline-block';
+    } else {
+      originalElement.style.background = 'transparent';
+      originalElement.style.padding = '0';
+      originalElement.style.display = 'none';
+    }
+    
+    if (displayTranslated) {
+      if (displayTranslated === '翻译中...') {
+        // 翻译中状态：显示但无背景
+        translatedElement.style.background = 'transparent';
+        translatedElement.style.padding = '0';
+        translatedElement.style.display = 'inline-block';
+      } else {
+        // 正常翻译结果：显示背景
+        translatedElement.style.background = 'rgba(0, 0, 0, 0.75)';
+        translatedElement.style.padding = '3px 8px';
+        translatedElement.style.display = 'inline-block';
+      }
+    } else {
+      translatedElement.style.background = 'transparent';
+      translatedElement.style.padding = '0';
+      translatedElement.style.display = 'none';
+    }
+    
     // 调试日志
     if (displayOriginal && displayTranslated && displayTranslated !== '翻译中...') {
       this.logger.debug('🎬 双语字幕显示', {
@@ -1555,19 +1706,6 @@ class YouTubeSubtitleTranslator {
       this.translationContainer.style.visibility = 'visible';
       this.translationContainer.style.opacity = '1';
       this.translationContainer.classList.add('force-show');
-      
-      // 根据内容调整显示
-      if (displayOriginal) {
-        originalElement.style.display = 'block';
-      } else {
-        originalElement.style.display = 'none';
-      }
-      
-      if (displayTranslated && displayTranslated !== '翻译中...') {
-        translatedElement.style.display = 'block';
-      } else {
-        translatedElement.style.display = 'none';
-      }
     } else {
       // 隐藏容器
       this.translationContainer.style.display = 'none';
@@ -1727,71 +1865,144 @@ class SubtitlePositionManager {
   initializeDragFeature() {
     if (!this.container) return;
 
-    // 创建拖拽手柄
-    this.createDragHandle();
+    // 创建拖拽提示
+    this.createDragIndicator();
     
-    // 绑定拖拽事件
-    this.bindDragEvents();
+    // 绑定拖拽事件到整个容器
+    this.bindContainerDragEvents();
   }
 
-  // 创建拖拽手柄
-  createDragHandle() {
-    // 检查是否已经有拖拽手柄
-    if (this.container.querySelector('.drag-handle')) return;
+  // 创建拖拽提示
+  createDragIndicator() {
+    // 检查是否已经有拖拽提示
+    if (this.container.querySelector('.drag-indicator')) return;
 
-    const dragHandle = document.createElement('div');
-    dragHandle.className = 'drag-handle';
-    dragHandle.innerHTML = '⋮⋮'; // 双竖点图标，表示垂直拖拽
-    dragHandle.title = '拖拽调整字幕位置（上下移动）\n双击重置到默认位置';
-    dragHandle.style.cssText = `
+    const dragIndicator = document.createElement('div');
+    dragIndicator.className = 'drag-indicator';
+    dragIndicator.innerHTML = '⋮⋮⋮'; // 三竖点图标
+    dragIndicator.title = '鼠标悬停显示拖拽区域\n上下拖拽调整字幕位置\n双击重置到默认位置';
+    dragIndicator.style.cssText = `
       position: absolute;
-      top: -15px;
-      right: -15px;
-      width: 20px;
-      height: 20px;
-      background: rgba(255, 255, 255, 0.9);
-      border-radius: 50%;
-      cursor: ns-resize; /* 上下拖拽光标 */
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 30px;
+      height: 12px;
+      background: rgba(0, 255, 255, 0.6);
+      border-radius: 6px 6px 0 0;
+      cursor: ns-resize;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 10px;
-      color: #333;
+      font-size: 8px;
+      color: rgba(0, 0, 0, 0.8);
       opacity: 0;
-      transition: opacity 0.3s ease;
+      transition: all 0.3s ease;
       z-index: 1000000000;
       user-select: none;
       pointer-events: auto;
-      border: 2px solid rgba(0, 255, 255, 0.5); /* 青色边框，呼应字幕颜色 */
+      font-weight: bold;
     `;
 
-    // 鼠标悬停显示拖拽手柄
+    // 插入拖拽提示
+    const subtitleContainer = this.container.querySelector('.subtitle-container');
+    if (subtitleContainer) {
+      subtitleContainer.style.position = 'relative';
+      subtitleContainer.appendChild(dragIndicator);
+    }
+
+    this.dragIndicator = dragIndicator;
+  }
+
+  // 绑定拖拽事件到整个容器
+  bindContainerDragEvents() {
+    if (!this.container) return;
+
+    const subtitleContainer = this.container.querySelector('.subtitle-container');
+    if (!subtitleContainer) return;
+    
+    // 调试：记录绑定信息
+    const isFullscreen = document.fullscreenElement !== null || 
+                         document.querySelector('.html5-video-player.ytp-fullscreen') !== null;
+    this.logger.info('🔗 绑定拖拽事件', {
+      isFullscreen,
+      containerParent: this.container?.parentElement?.tagName,
+      containerInDOM: !!document.getElementById('youtube-bilingual-subtitles'),
+      subtitleContainerExists: !!subtitleContainer
+    });
+
+    // 添加简单的点击测试
+    this.container.addEventListener('click', (e) => {
+      console.log('🖱️ 字幕容器被点击', {
+        target: e.target.className,
+        isFullscreen: document.fullscreenElement !== null || 
+                     document.querySelector('.html5-video-player.ytp-fullscreen') !== null
+      });
+      this.logger.info('🖱️ 字幕容器被点击', {
+        target: e.target.className,
+        isFullscreen: document.fullscreenElement !== null || 
+                     document.querySelector('.html5-video-player.ytp-fullscreen') !== null
+      });
+    });
+
+    // 显示/隐藏拖拽提示和拖拽区域
     this.container.addEventListener('mouseenter', () => {
-      dragHandle.style.opacity = '1';
+      if (this.dragIndicator) {
+        this.dragIndicator.style.opacity = '0.8';
+      }
+      // 为整个容器添加拖拽区域样式
+      subtitleContainer.style.boxShadow = '0 0 0 2px rgba(0, 255, 255, 0.3)';
+      subtitleContainer.style.borderRadius = '6px';
+      
+      // 调试：记录鼠标进入事件
+      const isFullscreen = document.fullscreenElement !== null || 
+                          document.querySelector('.html5-video-player.ytp-fullscreen') !== null;
+      this.logger.info('🖱️ 鼠标进入字幕区域', {
+        isFullscreen,
+        containerParent: this.container?.parentElement?.tagName,
+        hasSubtitleContainer: !!subtitleContainer,
+        dragIndicatorVisible: this.dragIndicator?.style.opacity,
+        containerVisible: this.container.style.display,
+        containerOpacity: this.container.style.opacity
+      });
     });
 
     this.container.addEventListener('mouseleave', () => {
       if (!this.isDragging) {
-        dragHandle.style.opacity = '0';
+        if (this.dragIndicator) {
+          this.dragIndicator.style.opacity = '0';
+        }
+        subtitleContainer.style.boxShadow = 'none';
       }
     });
 
-    // 插入拖拽手柄
-    const subtitleContainer = this.container.querySelector('.subtitle-container');
-    if (subtitleContainer) {
-      subtitleContainer.style.position = 'relative';
-      subtitleContainer.appendChild(dragHandle);
-    }
-
-    this.dragHandle = dragHandle;
-  }
-
-  // 绑定拖拽事件
-  bindDragEvents() {
-    if (!this.dragHandle) return;
-
-    // 鼠标按下开始拖拽
-    this.dragHandle.addEventListener('mousedown', (e) => {
+    // 鼠标按下开始拖拽（整个容器可拖拽）
+    subtitleContainer.addEventListener('mousedown', (e) => {
+      // 强制记录所有鼠标按下事件
+      console.log('🎯 鼠标按下事件触发', e);
+      
+      // 检查是否点击在文字上（避免选中文字）
+      const target = e.target;
+      if (target.classList.contains('original-subtitle') || target.classList.contains('translated-subtitle')) {
+        this.logger.info('🚫 点击在文字上，跳过拖拽');
+        return; // 点击文字本身时不启动拖拽
+      }
+      
+      const isFullscreen = document.fullscreenElement !== null || 
+                          document.querySelector('.html5-video-player.ytp-fullscreen') !== null;
+      
+      this.logger.info('🎯 拖拽事件触发', {
+        isFullscreen: isFullscreen,
+        containerParent: this.container?.parentElement?.tagName,
+        eventTarget: target.className,
+        playerElement: !!document.querySelector('.html5-video-player'),
+        fullscreenElement: !!document.fullscreenElement,
+        mouseButton: e.button,
+        clientX: e.clientX,
+        clientY: e.clientY
+      });
+      
+      console.log('🎯 开始拖拽逻辑');
       e.preventDefault();
       e.stopPropagation();
       this.startDragging(e);
@@ -1812,7 +2023,7 @@ class SubtitlePositionManager {
     });
 
     // 触摸事件支持
-    this.dragHandle.addEventListener('touchstart', (e) => {
+    subtitleContainer.addEventListener('touchstart', (e) => {
       e.preventDefault();
       const touch = e.touches[0];
       this.startDragging(touch);
@@ -1836,26 +2047,35 @@ class SubtitlePositionManager {
   // 开始拖拽
   startDragging(event) {
     this.isDragging = true;
-    this.dragHandle.style.opacity = '1';
     
-    const containerRect = this.container.getBoundingClientRect();
-    this.dragOffset = {
-      x: event.clientX - containerRect.left,
-      y: event.clientY - containerRect.top
-    };
+    // 记录初始鼠标位置（简化偏移计算）
+    this.initialMouseY = event.clientY;
 
     // 添加拖拽时的视觉效果
-    this.container.style.transform = 'scale(1.05)';
-    this.container.style.transition = 'transform 0.1s ease';
+    this.container.style.transition = 'none'; // 拖拽时关闭过渡动画
     
-    this.logger.debug('🎯 开始拖拽字幕');
+    // 显示拖拽状态
+    if (this.dragIndicator) {
+      this.dragIndicator.style.opacity = '1';
+      this.dragIndicator.style.background = 'rgba(0, 255, 255, 0.9)';
+    }
+    
+    const subtitleContainer = this.container.querySelector('.subtitle-container');
+    if (subtitleContainer) {
+      subtitleContainer.style.boxShadow = '0 0 0 3px rgba(0, 255, 255, 0.6)';
+    }
+    
+    this.logger.debug('🎯 开始拖拽字幕', {
+      initialMouseY: this.initialMouseY
+    });
   }
 
   // 处理拖拽移动（仅垂直方向，保持水平居中）
   handleDragging(event) {
     if (!this.isDragging) return;
 
-    const y = event.clientY - this.dragOffset.y;
+    // 获取当前鼠标位置
+    const currentY = event.clientY;
 
     // 获取视频容器信息来保持居中
     const video = document.querySelector('video');
@@ -1863,13 +2083,35 @@ class SubtitlePositionManager {
     
     if (!videoRect) return;
 
-    // 限制拖拽边界（仅垂直方向）
-    const bounds = this.calculateVerticalDragBounds();
-    const constrainedY = Math.max(bounds.minY, Math.min(bounds.maxY, y));
+    // 检查全屏模式
+    const isFullscreen = document.fullscreenElement !== null || 
+                         document.querySelector('.html5-video-player.ytp-fullscreen') !== null;
 
-    // 计算相对于视频底部的距离
+    // 计算新的底部偏移量
     const videoBottom = videoRect.bottom;
-    const bottomOffset = Math.max(20, videoBottom - constrainedY);
+    const containerHeight = this.container.offsetHeight || 60;
+    
+    // 根据全屏状态使用不同的坐标系统
+    let newBottomOffset;
+    let finalBottom;
+    let screenHeight;
+
+    if (isFullscreen) {
+      // 全屏模式：使用屏幕高度
+      screenHeight = screen.height;
+      newBottomOffset = Math.max(20, videoBottom - currentY + containerHeight/2);
+      finalBottom = screenHeight - videoBottom + newBottomOffset;
+    } else {
+      // 窗口模式：使用窗口高度
+      screenHeight = window.innerHeight;
+      newBottomOffset = Math.max(20, videoBottom - currentY + containerHeight/2);
+      finalBottom = screenHeight - videoBottom + newBottomOffset;
+    }
+    
+    // 限制在合理范围内
+    const maxOffset = videoRect.height + 100; // 不能超出视频高度太多
+    const minOffset = 20; // 最少20px距离
+    const constrainedBottomOffset = Math.max(minOffset, Math.min(maxOffset, newBottomOffset));
 
     // 计算视频中心位置
     const videoCenterX = videoRect.left + videoRect.width / 2;
@@ -1877,14 +2119,26 @@ class SubtitlePositionManager {
     // 应用新位置：保持在视频水平居中，只改变垂直位置
     this.container.style.left = `${videoCenterX}px`;
     this.container.style.top = 'auto';
-    this.container.style.bottom = `${window.innerHeight - videoBottom + bottomOffset}px`;
-    this.container.style.transform = 'translateX(-50%) scale(1.05)';
+    this.container.style.bottom = `${screenHeight - videoBottom + constrainedBottomOffset}px`;
+    this.container.style.transform = 'translateX(-50%) scale(1.02)';
+    this.container.style.position = 'fixed';
 
     // 保存自定义位置（保存相对于视频的偏移）
     this.customPosition = {
-      bottomOffset: bottomOffset,
+      bottomOffset: constrainedBottomOffset,
       isCustom: true
     };
+    
+    // 调试日志
+    this.logger.debug('🔄 拖拽中', {
+      mouseY: currentY,
+      videoBottom: videoBottom,
+      bottomOffset: constrainedBottomOffset,
+      finalBottom: screenHeight - videoBottom + constrainedBottomOffset,
+      isFullscreen: isFullscreen,
+      screenHeight: screenHeight,
+      windowHeight: window.innerHeight
+    });
   }
 
   // 结束拖拽
@@ -1892,11 +2146,22 @@ class SubtitlePositionManager {
     if (!this.isDragging) return;
 
     this.isDragging = false;
-    this.dragHandle.style.opacity = '0';
+    
+    // 恢复拖拽提示样式
+    if (this.dragIndicator) {
+      this.dragIndicator.style.opacity = '0';
+      this.dragIndicator.style.background = 'rgba(0, 255, 255, 0.6)';
+    }
     
     // 恢复缩放效果，保持视频居中
     this.container.style.transform = 'translateX(-50%) scale(1)';
     this.container.style.transition = 'transform 0.2s ease';
+    
+    // 恢复容器样式
+    const subtitleContainer = this.container.querySelector('.subtitle-container');
+    if (subtitleContainer) {
+      subtitleContainer.style.boxShadow = 'none';
+    }
     
     // 保存位置到localStorage
     if (this.customPosition) {
@@ -1990,7 +2255,7 @@ class SubtitlePositionManager {
   // 获取YouTube原生字幕位置
   getYouTubeSubtitlePosition() {
     const video = document.querySelector('video');
-    const player = document.querySelector('.html5-video-player, #player-container');
+    const playerContainer = document.querySelector('#player-container, .html5-video-player');
     const isFullscreen = this.isFullscreen();
 
     if (!video) {
@@ -1999,6 +2264,15 @@ class SubtitlePositionManager {
 
     const videoRect = video.getBoundingClientRect();
     
+    // 检查视频是否有效显示
+    if (videoRect.width === 0 || videoRect.height === 0) {
+      this.logger.debug('⚠️ 视频尺寸无效，使用默认位置');
+      return this.getDefaultPosition();
+    }
+    
+    // 获取播放器容器信息（更精确的参考）
+    const playerRect = playerContainer ? playerContainer.getBoundingClientRect() : null;
+    
     // 如果有自定义位置，计算相对于视频的位置
     const savedPosition = this.loadCustomPosition();
     if (savedPosition && savedPosition.isCustom && savedPosition.bottomOffset !== undefined) {
@@ -2006,10 +2280,13 @@ class SubtitlePositionManager {
       const videoBottom = videoRect.bottom;
       const absoluteBottom = Math.max(20, videoBottom - savedPosition.bottomOffset);
       
+      // 根据全屏状态使用不同的高度计算
+      const screenHeight = isFullscreen ? screen.height : window.innerHeight;
+      
       return {
         left: `${videoRect.left + videoRect.width / 2}px`,
         top: 'auto',
-        bottom: `${window.innerHeight - absoluteBottom}px`,
+        bottom: `${screenHeight - absoluteBottom}px`,
         transform: 'translateX(-50%)',
         isCustom: true,
         videoWidth: videoRect.width,
@@ -2018,18 +2295,79 @@ class SubtitlePositionManager {
       };
     }
 
-    // 查找YouTube原生字幕容器
+    // 精确的YouTube字幕位置计算
+    // 基于视频容器和播放器容器的相对位置
+    let bottomOffset;
+    
+    if (isFullscreen) {
+      // 全屏模式：使用视频高度的8%
+      bottomOffset = Math.max(40, videoRect.height * 0.08);
+    } else {
+      // 窗口模式：根据视频大小调整计算策略
+      if (videoRect.width <= 700) {
+        // 小视频窗口（≤700px）：使用更小的偏移
+        bottomOffset = Math.max(40, Math.min(80, videoRect.height * 0.12));
+      } else if (videoRect.width <= 1000) {
+        // 中等视频窗口：使用中等偏移
+        bottomOffset = Math.max(60, Math.min(100, videoRect.height * 0.13));
+      } else {
+        // 大视频窗口：使用标准偏移
+        bottomOffset = Math.max(80, Math.min(120, videoRect.height * 0.15));
+      }
+      
+      // 如果有播放器容器，做微调
+      if (playerRect) {
+        const playerBottom = playerRect.bottom;
+        const videoBottom = videoRect.bottom;
+        const controlBarHeight = playerBottom - videoBottom;
+        
+        // 对于小视频，控制栏处理更保守
+        if (videoRect.width <= 700) {
+          // 小视频：控制栏影响较小
+          if (controlBarHeight > 40) {
+            bottomOffset = Math.max(bottomOffset, controlBarHeight + 20);
+          }
+        } else {
+          // 大视频：标准控制栏处理
+          if (controlBarHeight > 60) {
+            bottomOffset = Math.max(bottomOffset, controlBarHeight + 30);
+          }
+        }
+        
+        this.logger.debug('🎯 窗口模式位置计算', {
+          videoSize: `${videoRect.width}x${videoRect.height}`,
+          videoCategory: videoRect.width <= 700 ? '小视频' : (videoRect.width <= 1000 ? '中等视频' : '大视频'),
+          videoBottom,
+          playerBottom,
+          controlBarHeight,
+          calculatedBottomOffset: bottomOffset,
+          finalBottomOffset: bottomOffset
+        });
+      } else {
+        this.logger.debug('🎯 窗口模式位置计算（无播放器容器）', {
+          videoSize: `${videoRect.width}x${videoRect.height}`,
+          videoCategory: videoRect.width <= 700 ? '小视频' : (videoRect.width <= 1000 ? '中等视频' : '大视频'),
+          bottomOffset
+        });
+      }
+    }
+    
+    // 检查是否有原生字幕显示（仅用于微调位置，避免重叠）
     const nativeSubtitle = document.querySelector('.ytp-caption-window-container, .caption-window, .ytp-caption-segment');
-    
-    // 计算字幕位置：视频底部稍上方
-    let bottomOffset = 80;
-    
-    // 如果有原生字幕，在其上方留出空间
     if (nativeSubtitle) {
       const nativeRect = nativeSubtitle.getBoundingClientRect();
-      if (nativeRect.top > 0 && nativeRect.top < videoRect.bottom) {
-        // 在原生字幕上方60px
-        bottomOffset = videoRect.bottom - nativeRect.top + 60;
+      if (nativeRect.bottom > 0 && nativeRect.bottom <= videoRect.bottom) {
+        // 根据视频大小调整原生字幕避让空间
+        const avoidanceSpace = videoRect.width <= 700 ? 30 : 50; // 小视频用较小的避让空间
+        const nativeOffset = videoRect.bottom - nativeRect.bottom + avoidanceSpace;
+        bottomOffset = Math.max(bottomOffset, nativeOffset);
+        this.logger.debug('🎯 调整位置避开原生字幕', {
+          videoCategory: videoRect.width <= 700 ? '小视频' : '大视频',
+          calculatedOffset: bottomOffset,
+          nativeOffset: nativeOffset,
+          avoidanceSpace: avoidanceSpace,
+          finalOffset: bottomOffset
+        });
       }
     }
 
@@ -2037,10 +2375,36 @@ class SubtitlePositionManager {
     const videoCenterX = videoRect.left + videoRect.width / 2;
     const videoBottom = videoRect.bottom;
     
+    // 根据全屏状态使用不同的高度计算
+    const screenHeight = isFullscreen ? screen.height : window.innerHeight;
+    const finalBottom = screenHeight - videoBottom + bottomOffset;
+    
+    this.logger.info('🎯 字幕位置计算结果', {
+      mode: isFullscreen ? '全屏' : '窗口',
+      videoSize: `${videoRect.width}x${videoRect.height}`,
+      videoPosition: {
+        top: videoRect.top,
+        bottom: videoBottom,
+        left: videoRect.left,
+        right: videoRect.right
+      },
+      playerRect: playerRect ? {
+        bottom: playerRect.bottom,
+        height: playerRect.height
+      } : null,
+      calculation: {
+        bottomOffset: bottomOffset,
+        windowHeight: window.innerHeight,
+        screenHeight: screenHeight,
+        finalBottom: finalBottom,
+        subtitleY: finalBottom
+      }
+    });
+    
     return {
       left: `${videoCenterX}px`,
       top: 'auto', 
-      bottom: `${window.innerHeight - videoBottom + bottomOffset}px`,
+      bottom: `${finalBottom}px`,
       transform: 'translateX(-50%)',
       isCustom: false,
       videoWidth: videoRect.width,
@@ -2051,30 +2415,63 @@ class SubtitlePositionManager {
 
   // 检查是否为全屏模式
   isFullscreen() {
-    return document.fullscreenElement !== null || 
-           document.querySelector('.html5-video-player.ytp-fullscreen') !== null;
+    const hasFullscreenElement = document.fullscreenElement !== null;
+    const hasFullscreenClass = document.querySelector('.html5-video-player.ytp-fullscreen') !== null;
+    const result = hasFullscreenElement || hasFullscreenClass;
+    
+    // 详细的全屏检测日志
+    this.logger.debug('🔍 全屏状态检测', {
+      fullscreenElement: !!document.fullscreenElement,
+      fullscreenClass: hasFullscreenClass,
+      finalResult: result
+    });
+    
+    return result;
   }
 
-  // 根据视频尺寸计算字体大小（基于ASS样式：英文18px，中文11px）
+  // 根据视频尺寸计算字体大小（优化版，更大更协调）
   calculateFontSize(videoWidth) {
-    let baseEnglishSize;
+    // 检查是否为全屏模式
+    const isFullscreen = document.fullscreenElement !== null || 
+                         document.querySelector('.html5-video-player.ytp-fullscreen') !== null;
     
-    if (videoWidth >= 1200) {
-      baseEnglishSize = 20; // 大屏幕
-    } else if (videoWidth >= 800) {
-      baseEnglishSize = 18; // 中等屏幕（ASS基准）
-    } else if (videoWidth >= 600) {
-      baseEnglishSize = 16; // 小屏幕
+    let fontSize;
+    
+    if (isFullscreen) {
+      // 全屏模式：字体适中大小
+      if (videoWidth >= 1400) {
+        fontSize = 26; // 超大屏幕：26px
+      } else if (videoWidth >= 1200) {
+        fontSize = 24; // 大屏幕：24px
+      } else if (videoWidth >= 800) {
+        fontSize = 22; // 中等屏幕：22px
+      } else {
+        fontSize = 20; // 小屏幕：20px
+      }
     } else {
-      baseEnglishSize = 14; // 移动设备
+      // 窗口模式：根据视频大小合理调整
+      if (videoWidth >= 1200) {
+        fontSize = 22; // 大屏幕：22px
+      } else if (videoWidth >= 800) {
+        fontSize = 20; // 中等屏幕：20px
+      } else if (videoWidth >= 600) {
+        fontSize = 18; // 小屏幕：18px
+      } else {
+        fontSize = 16; // 很小屏幕：16px
+      }
     }
     
-    // 中文字体大小按ASS比例计算：11/18 ≈ 0.61
-    const chineseSize = Math.round(baseEnglishSize * 0.61);
+    this.logger.debug('📏 字体大小计算', {
+      videoWidth,
+      isFullscreen,
+      fontSize,
+      fullscreenElement: document.fullscreenElement,
+      hasFullscreenClass: document.querySelector('.html5-video-player.ytp-fullscreen') !== null
+    });
     
     return { 
-      original: baseEnglishSize, 
-      translated: Math.max(10, chineseSize) // 最小10px
+      original: fontSize,
+      translated: fontSize // 中英文使用相同大小
     };
   }
 
@@ -2083,24 +2480,44 @@ class SubtitlePositionManager {
     const video = document.querySelector('video');
     if (video) {
       const videoRect = video.getBoundingClientRect();
-      const videoCenterX = videoRect.left + videoRect.width / 2;
-      const videoBottom = videoRect.bottom;
       
-      return {
-        left: `${videoCenterX}px`,
-        top: 'auto',
-        bottom: `${window.innerHeight - videoBottom + 100}px`,
-        transform: 'translateX(-50%)',
-        isCustom: false,
-        videoWidth: videoRect.width,
-        videoHeight: videoRect.height,
-        isFullscreen: this.isFullscreen()
-      };
+      // 确保视频矩形有效
+      if (videoRect.width > 0 && videoRect.height > 0) {
+        const videoCenterX = videoRect.left + videoRect.width / 2;
+        const videoBottom = videoRect.bottom;
+        const isFullscreen = this.isFullscreen();
+        
+        // 使用与主要位置算法相同的逻辑
+        let bottomOffset;
+        if (isFullscreen) {
+          bottomOffset = Math.max(40, videoRect.height * 0.08);
+        } else {
+          // 根据视频大小调整
+          if (videoRect.width <= 700) {
+            bottomOffset = Math.max(40, Math.min(80, videoRect.height * 0.12));
+          } else if (videoRect.width <= 1000) {
+            bottomOffset = Math.max(60, Math.min(100, videoRect.height * 0.13));
+          } else {
+            bottomOffset = Math.max(80, Math.min(120, videoRect.height * 0.15));
+          }
+        }
+        
+        return {
+          left: `${videoCenterX}px`,
+          top: 'auto',
+          bottom: `${(isFullscreen ? screen.height : window.innerHeight) - videoBottom + bottomOffset}px`,
+          transform: 'translateX(-50%)',
+          isCustom: false,
+          videoWidth: videoRect.width,
+          videoHeight: videoRect.height,
+          isFullscreen: isFullscreen
+        };
+      }
     }
     
-    // 如果没有视频，使用页面居中
+    // 如果没有有效的视频，使用安全的默认位置
     return {
-      bottom: '100px',
+      bottom: '120px',
       left: '50%',
       top: 'auto',
       transform: 'translateX(-50%)',
@@ -2134,37 +2551,135 @@ class SubtitlePositionManager {
     if (originalElement) {
       // ASS样式：英文字幕（青色，Noto Serif，粗体）
       originalElement.style.color = '#00FFFF';
+      // 多重方式确保字体大小生效
       originalElement.style.fontSize = `${fontSize.original}px`;
+      originalElement.style.setProperty('font-size', `${fontSize.original}px`, 'important');
+      originalElement.setAttribute('style', originalElement.getAttribute('style') + `; font-size: ${fontSize.original}px !important;`);
       originalElement.style.fontFamily = '"Noto Serif", "YouTube Noto", sans-serif';
-      originalElement.style.fontWeight = 'bold'; // ASS中-1表示粗体
+      originalElement.style.fontWeight = '900'; // 最粗字体
       originalElement.style.lineHeight = '1.4';
-      originalElement.style.textShadow = '2px 2px 4px rgba(0, 0, 0, 0.9)';
-      originalElement.style.marginBottom = '6px';
+      originalElement.style.textShadow = '2px 2px 6px rgba(0, 0, 0, 0.9), 1px 1px 2px rgba(0, 0, 0, 0.8)';
+      originalElement.style.marginBottom = '4px';
       originalElement.style.textAlign = 'center';
       originalElement.style.pointerEvents = 'none'; // 文字不干扰拖拽
+      // 独立背景样式 - 根据文字宽度自适应
+      originalElement.style.background = originalElement.textContent.trim() ? 'rgba(0, 0, 0, 0.75)' : 'transparent';
+      originalElement.style.borderRadius = '4px';
+      originalElement.style.padding = originalElement.textContent.trim() ? '3px 8px' : '0';
+      originalElement.style.display = 'inline-block';
+      originalElement.style.maxWidth = 'fit-content';
+      originalElement.style.wordWrap = 'break-word';
+      originalElement.style.whiteSpace = 'pre-wrap';
+      originalElement.style.margin = '0 auto 4px auto';
+      
+      // 延迟检查字体大小是否真正应用
+      setTimeout(() => {
+        const computedSize = window.getComputedStyle(originalElement).fontSize;
+        this.logger.debug('📝 英文字幕样式应用', {
+          setFontSize: `${fontSize.original}px`,
+          computedFontSize: computedSize,
+          textContent: originalElement.textContent.substring(0, 30),
+          styleAttribute: originalElement.getAttribute('style')
+        });
+        
+        // 如果计算出的字体大小不匹配，强制重新设置
+        if (computedSize !== `${fontSize.original}px`) {
+          this.logger.warn('⚠️ 字体大小未正确应用，强制重设', {
+            expected: `${fontSize.original}px`,
+            actual: computedSize
+          });
+          originalElement.style.cssText += `; font-size: ${fontSize.original}px !important;`;
+        }
+      }, 100);
     }
 
     if (translatedElement) {
       // ASS样式：翻译字幕（绿色，中文字体，粗体）
       translatedElement.style.color = '#00FF00';
+      // 多重方式确保字体大小生效
       translatedElement.style.fontSize = `${fontSize.translated}px`;
-      translatedElement.style.fontFamily = '"宋体-简", "SimSun", "黑体", "SimHei", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
-      translatedElement.style.fontWeight = 'bold'; // ASS中-1表示粗体
+      translatedElement.style.setProperty('font-size', `${fontSize.translated}px`, 'important');
+      translatedElement.setAttribute('style', translatedElement.getAttribute('style') + `; font-size: ${fontSize.translated}px !important;`);
+      // 设置中文字体，优先使用您安装的宋体黑体
+      translatedElement.style.fontFamily = '"Songti SC Black", "Songti SC", "STSongti-SC-Black", "宋体-简", "SimSun", "宋体", "黑体", "SimHei", "Heiti SC", "Microsoft YaHei", "微软雅黑", "Noto Sans CJK SC", sans-serif';
+      // 强制应用字体设置
+      translatedElement.style.setProperty('font-family', '"Songti SC Black", "Songti SC", "STSongti-SC-Black", "宋体-简", "SimSun", "宋体", "黑体", "SimHei", "Heiti SC", "Microsoft YaHei", "微软雅黑", "Noto Sans CJK SC", sans-serif', 'important');
+      translatedElement.style.fontWeight = '900'; // 最粗字体
+      translatedElement.style.fontStretch = 'condensed'; // 字体拉伸
+      // 通过transform创造人工粗体效果
+      translatedElement.style.filter = 'contrast(1.2) brightness(1.1)';
+      // 使用强制粗体属性
+      translatedElement.style.setProperty('font-weight', 'bolder', 'important');
+      // 添加文字描边效果（webkit引擎支持）
+      translatedElement.style.webkitTextStroke = '0.5px rgba(0, 0, 0, 0.8)';
+      translatedElement.style.textStroke = '0.5px rgba(0, 0, 0, 0.8)';
       translatedElement.style.lineHeight = '1.4';
-      translatedElement.style.textShadow = '2px 2px 4px rgba(0, 0, 0, 0.9)';
+      // 增强文字阴影效果，创造更粗重的视觉效果
+      translatedElement.style.textShadow = `
+        2px 2px 6px rgba(0, 0, 0, 0.9), 
+        1px 1px 2px rgba(0, 0, 0, 0.8),
+        -1px -1px 2px rgba(0, 0, 0, 0.5),
+        1px -1px 2px rgba(0, 0, 0, 0.5),
+        -1px 1px 2px rgba(0, 0, 0, 0.5),
+        0 0 3px rgba(0, 0, 0, 0.7)
+      `;
       translatedElement.style.textAlign = 'center';
       translatedElement.style.pointerEvents = 'none'; // 文字不干扰拖拽
+      // 独立背景样式 - 根据文字宽度自适应
+      translatedElement.style.background = translatedElement.textContent.trim() && translatedElement.textContent.trim() !== '翻译中...' ? 'rgba(0, 0, 0, 0.75)' : 'transparent';
+      translatedElement.style.borderRadius = '4px';
+      translatedElement.style.padding = translatedElement.textContent.trim() && translatedElement.textContent.trim() !== '翻译中...' ? '3px 8px' : '0';
+      translatedElement.style.display = 'inline-block';
+      translatedElement.style.maxWidth = 'fit-content';
+      translatedElement.style.wordWrap = 'break-word';
+      translatedElement.style.whiteSpace = 'pre-wrap';
+      translatedElement.style.margin = '0 auto';
+      
+      // 延迟检查字体大小是否真正应用
+      setTimeout(() => {
+        const computedSize = window.getComputedStyle(translatedElement).fontSize;
+        const computedFamily = window.getComputedStyle(translatedElement).fontFamily;
+        
+        // 检测字体是否被正确应用
+        const targetFonts = ['Songti SC Black', 'Songti SC', 'STSongti-SC-Black', '宋体-简', 'SimSun', '宋体', '黑体', 'SimHei', 'Heiti SC'];
+        const isTargetFontApplied = targetFonts.some(font => computedFamily.includes(font));
+        
+        this.logger.debug('📝 中文字幕样式应用', {
+          setFontSize: `${fontSize.translated}px`,
+          computedFontSize: computedSize,
+          setFontFamily: '"Songti SC Black", "Songti SC", "STSongti-SC-Black", "宋体-简", "SimSun", "宋体", "黑体", "SimHei", "Heiti SC", "Microsoft YaHei", "微软雅黑", "Noto Sans CJK SC", sans-serif',
+          computedFontFamily: computedFamily,
+          isTargetFontApplied: isTargetFontApplied,
+          detectedFont: computedFamily.split(',')[0].replace(/['"]/g, ''),
+          textContent: translatedElement.textContent.substring(0, 30),
+          styleAttribute: translatedElement.getAttribute('style')
+        });
+        
+        // 如果计算出的字体大小不匹配，强制重新设置
+        if (computedSize !== `${fontSize.translated}px`) {
+          this.logger.warn('⚠️ 中文字体大小未正确应用，强制重设', {
+            expected: `${fontSize.translated}px`,
+            actual: computedSize
+          });
+          translatedElement.style.cssText += `; font-size: ${fontSize.translated}px !important;`;
+        }
+      }, 100);
     }
 
-    // 应用容器样式
+    // 应用容器样式 - 移除背景，让每行文字有独立背景
     const subtitleContainer = this.container.querySelector('.subtitle-container');
     if (subtitleContainer) {
-      subtitleContainer.style.background = 'rgba(0, 0, 0, 0.8)';
-      subtitleContainer.style.borderRadius = '4px';
-      subtitleContainer.style.padding = '8px 12px';
+      subtitleContainer.style.background = 'transparent'; // 移除容器背景
+      subtitleContainer.style.borderRadius = '0';
+      subtitleContainer.style.padding = '8px 0'; // 仅保持上下间距
       subtitleContainer.style.maxWidth = position.isFullscreen ? '90vw' : '80vw';
-      subtitleContainer.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.6)';
+      subtitleContainer.style.boxShadow = 'none'; // 移除容器阴影
       subtitleContainer.style.position = 'relative';
+      subtitleContainer.style.display = 'flex';
+      subtitleContainer.style.flexDirection = 'column';
+      subtitleContainer.style.alignItems = 'center';
+      subtitleContainer.style.gap = '4px'; // 英文和中文之间的间距
+      subtitleContainer.style.cursor = 'ns-resize'; // 整个区域显示拖拽光标
     }
 
     // 记录位置变化
@@ -2225,8 +2740,8 @@ class SubtitlePositionManager {
 
   // 清理资源
   cleanup() {
-    if (this.dragHandle) {
-      this.dragHandle.remove();
+    if (this.dragIndicator) {
+      this.dragIndicator.remove();
     }
     this.container = null;
     this.logger = null;

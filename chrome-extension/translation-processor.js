@@ -13,7 +13,8 @@ class SmartTranslationProcessor {
       try { 
         const u = new URL(url); 
         const host = u.hostname;
-        return host === 'ai-proxy.chatwise.app' || host === 'openrouter.ai' || host === '127.0.0.1' || host === 'localhost';
+        // 只有远程API主机需要通过后台代理，本地服务直接访问
+        return host === 'ai-proxy.chatwise.app' || host === 'openrouter.ai';
       } catch { return false; }
     };
     this.proxyFetch = async (url, options) => {
