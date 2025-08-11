@@ -2,6 +2,7 @@
 class YouTubeSubtitleFetcher {
   constructor() {
     this.videoId = null;
+    this.videoDurationSec = null;
     this.captionTracks = [];
     this.fullSubtitles = null;
     this.logger = window.debugLogger;
@@ -159,6 +160,15 @@ class YouTubeSubtitleFetcher {
         hasCaptions: !!playerResponse.captions,
         captionTracks: playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks?.length || 0
       });
+
+      // 记录视频总时长用于完整性校验
+      if (playerResponse.videoDetails?.lengthSeconds) {
+        const len = parseInt(playerResponse.videoDetails.lengthSeconds, 10);
+        if (!Number.isNaN(len) && len > 0) {
+          this.videoDurationSec = len;
+          this.logger.debug('⏱️ 视频总时长(秒):', this.videoDurationSec);
+        }
+      }
 
       // 分析字幕轨道详情
       if (playerResponse.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
@@ -586,15 +596,15 @@ class YouTubeSubtitleFetcher {
     
     const methods = [
       {
-        name: 'yt-dlp风格字幕获取（最可靠）',
-        method: async () => {
-          return await this.getSubtitlesWithYTDLP();
-        }
-      },
-      {
         name: '经过验证的完整字幕获取',
         method: async () => {
           return await this.getVerifiedCompleteSubtitles();
+        }
+      },
+      {
+        name: 'yt-dlp风格字幕获取（回退方案）',
+        method: async () => {
+          return await this.getSubtitlesWithYTDLP();
         }
       }
     ];
@@ -647,72 +657,71 @@ class YouTubeSubtitleFetcher {
         isAsr: bestTrack.kind === 'asr'
       });
 
-      // 第三步：尝试多种格式获取完整字幕 - 优先SRT格式
-      const formats = ['srt', 'vtt', 'srv3', 'ttml'];
-      
-      for (const format of formats) {
+      // 第三步：并行尝试多种URL与格式组合，选取最佳
+      const candidateUrls = this.buildCandidateUrls(bestTrack.baseUrl);
+      this.logger.info(`🔎 生成候选URL ${candidateUrls.length} 个，开始并行请求`);
+
+      const fetchHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://www.youtube.com/'
+      };
+
+      const results = await Promise.allSettled(candidateUrls.map(async (info) => {
         try {
-          this.logger.info(`📡 尝试${format.toUpperCase()}格式获取...`);
-          
-          const subtitleUrl = bestTrack.baseUrl.replace(/fmt=[^&]*/, `fmt=${format}`);
-          const response = await fetch(subtitleUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'text/vtt, text/plain, */*',
-              'Accept-Language': 'en-US,en;q=0.9',
-              'Referer': 'https://www.youtube.com/',
-              'Sec-Fetch-Dest': 'empty',
-              'Sec-Fetch-Mode': 'cors',
-              'Sec-Fetch-Site': 'same-origin'
-            }
-          });
+          const res = await fetch(info.url, { headers: fetchHeaders });
+          if (!res.ok) throw new Error(String(res.status));
+          const text = await res.text();
+          if (!text || text.trim().length < 50) throw new Error('响应过短');
 
-          if (!response.ok) {
-            this.logger.warn(`❌ ${format}请求失败:`, response.status);
-            continue;
+          let subs = [];
+          switch (info.format) {
+            case 'srt':
+              subs = this.parseSRTFormat(text); break;
+            case 'vtt':
+              subs = this.parseVTTFormat(text); break;
+            case 'json3':
+              try {
+                const data = JSON.parse(text);
+                subs = data?.events ? this.parseSubtitleEvents(data.events) : [];
+              } catch { subs = []; }
+              break;
+            case 'ttml':
+            case 'srv3':
+              try { subs = await this.parseXMLSubtitles(text).then(d => this.parseSubtitleEvents(d.events)); }
+              catch { subs = []; }
+              break;
+            default:
+              subs = [];
           }
 
-          const text = await response.text();
-          this.logger.debug(`📄 ${format}响应长度:`, text.length + '字符');
+          const normalized = this.ensureContinuityAndSort(subs);
+          const quality = this.validateSubtitleQuality(normalized);
+          return { ok: true, info, subs: normalized, quality };
+        } catch (e) {
+          return { ok: false, info, error: e?.message || String(e) };
+        }
+      }));
 
-          if (!text || text.trim().length < 500) {
-            this.logger.warn(`❌ ${format}响应内容太短:`, text.length);
-            continue;
+      // 选取质量最佳的字幕
+      let best = null;
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.ok && r.value.quality.isValid) {
+          if (!best) best = r.value; else {
+            const better = (parseFloat((r.value.quality.coverageRatio||'0%')) > parseFloat((best.quality.coverageRatio||'0%')))
+                        || (r.value.subs.length > best.subs.length);
+            if (better) best = r.value;
           }
-
-          // 解析字幕
-          let subtitles = [];
-          if (format === 'vtt') {
-            subtitles = this.parseVTTFormat(text);
-          } else if (format === 'srv3') {
-            subtitles = this.parseSRV3Format(text);
-          } else if (format === 'ttml') {
-            subtitles = this.parseXMLSubtitles(text);
-          }
-
-          if (subtitles && subtitles.length > 10) {
-            this.logger.info(`✅ ${format}格式成功:`, subtitles.length + '条字幕');
-            
-            // 验证字幕质量
-            const quality = this.validateSubtitleQuality(subtitles);
-            if (quality.isValid) {
-              this.logger.info('✅ 字幕质量验证通过:', quality);
-              return subtitles;
-            } else {
-              this.logger.warn('⚠️ 字幕质量不佳:', quality);
-              continue;
-            }
-          } else {
-            this.logger.warn(`❌ ${format}解析结果太少:`, subtitles?.length || 0);
-          }
-
-        } catch (formatError) {
-          this.logger.warn(`❌ ${format}格式处理失败:`, formatError.message);
-          continue;
         }
       }
 
-      throw new Error('所有格式都无法获取到足够的字幕数据');
+      if (best) {
+        this.logger.info('✅ 选取最佳字幕来源:', { format: best.info.format, url: best.info.url.substring(0, 120) + '...', quality: best.quality });
+        return best.subs;
+      }
+
+      throw new Error('所有候选URL均未获得可用字幕');
 
     } catch (error) {
       this.logger.error('❌ 经过验证的字幕获取失败:', error.message);
@@ -781,7 +790,18 @@ class YouTubeSubtitleFetcher {
     const textValidRatio = textValidCount / subtitles.length;
     const avgDuration = totalDuration / validTimeCount || 0;
 
-    const isValid = timeValidRatio >= 0.9 && textValidRatio >= 0.9 && avgDuration > 0.5;
+    // 覆盖率估算：总字幕跨度时间/视频总时长（粗略，但能过滤不完整数据）
+    let coverageRatio = null;
+    if (this.videoDurationSec && this.videoDurationSec > 0) {
+      coverageRatio = Math.min(1, totalDuration / this.videoDurationSec);
+    }
+
+    const isValid = (
+      timeValidRatio >= 0.9 &&
+      textValidRatio >= 0.9 &&
+      avgDuration > 0.5 &&
+      (coverageRatio === null || coverageRatio >= 0.6)
+    );
 
     return {
       isValid,
@@ -789,7 +809,9 @@ class YouTubeSubtitleFetcher {
       timeValidRatio: (timeValidRatio * 100).toFixed(1) + '%',
       textValidRatio: (textValidRatio * 100).toFixed(1) + '%',
       avgDuration: avgDuration.toFixed(2) + 's',
-      totalDuration: totalDuration.toFixed(1) + 's'
+      totalDuration: totalDuration.toFixed(1) + 's',
+      videoDurationSec: this.videoDurationSec || undefined,
+      coverageRatio: coverageRatio !== null ? (coverageRatio * 100).toFixed(1) + '%' : '未知'
     };
   }
 
@@ -1147,7 +1169,14 @@ class YouTubeSubtitleFetcher {
       } else if (format === 'ttml') {
         return this.parseXMLSubtitles(text);
       } else if (format === 'srv3') {
-        return this.parseSRV3Format(text);
+        // 优先走通用XML解析，SRV3是XML子集
+        try {
+          const parsed = await this.parseXMLSubtitles(text);
+          return this.parseSubtitleEvents(parsed.events);
+        } catch (e) {
+          // 回退到旧的SRV3解析器
+          return this.parseSRV3Format(text);
+        }
       }
       
       // 默认尝试XML解析
@@ -1358,35 +1387,59 @@ class YouTubeSubtitleFetcher {
           name: 'YouTube Auto-Generated JSON3',
           url: `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=json3&lang=en&kind=asr`,
           format: 'json3'
+        },
+        {
+          name: 'YouTube WebVTT',
+          url: `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=vtt&lang=en`,
+          format: 'vtt'
+        },
+        {
+          name: 'YouTube SRV3 (XML)',
+          url: `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srv3&lang=en`,
+          format: 'srv3'
+        },
+        {
+          name: 'YouTube English (auto a.en)',
+          url: `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srt&lang=a.en`,
+          format: 'srt'
         }
       ];
       
-      for (const urlInfo of ytdlpUrls) {
+      const ytdlpResults = await Promise.allSettled(ytdlpUrls.map(async (urlInfo) => {
         try {
           this.logger.info(`🔍 尝试${urlInfo.name}`);
-          
           const response = await fetch(urlInfo.url, {
             headers: {
               'User-Agent': 'yt-dlp/2023.12.30',
               'Accept': 'application/json, text/plain, */*'
             }
           });
-          
-          if (response.ok) {
-            const data = await response.text();
-            
-            if (data && data.trim()) {
-              const parsed = await this.parseYTDLPResponse(data, urlInfo.format);
-              if (parsed && parsed.length > 0) {
-                this.logger.info(`✅ ${urlInfo.name}解析成功:`, parsed.length + '条字幕');
-                return parsed;
-              }
-            }
-          }
-        } catch (error) {
-          this.logger.debug(`⚠️ ${urlInfo.name}失败:`, error.message);
-          continue;
+          if (!response.ok) throw new Error(String(response.status));
+          const data = await response.text();
+          if (!data || !data.trim()) throw new Error('空响应');
+          const parsed = await this.parseYTDLPResponse(data, urlInfo.format);
+          const normalized = this.ensureContinuityAndSort(parsed || []);
+          const quality = this.validateSubtitleQuality(normalized);
+          return { ok: true, urlInfo, subs: normalized, quality };
+        } catch (e) {
+          return { ok: false, urlInfo, error: e?.message || String(e) };
         }
+      }));
+
+      let best = null;
+      for (const r of ytdlpResults) {
+        if (r.status === 'fulfilled' && r.value.ok && r.value.quality.isValid) {
+          if (!best) best = r.value; else {
+            const better = (parseFloat((r.value.quality.coverageRatio||'0%')) > parseFloat((best.quality.coverageRatio||'0%')))
+                        || (r.value.subs.length > best.subs.length);
+            if (better) best = r.value;
+          }
+        }
+      }
+
+      if (best) {
+        this.logger.info('✅ yt-dlp风格最佳字幕:', { name: best.urlInfo.name, quality: best.quality });
+        return best.subs;
       }
       
       // 备用方案: YouTube内部API
@@ -1437,12 +1490,74 @@ class YouTubeSubtitleFetcher {
         if (jsonData.events) {
           return this.parseSubtitleEvents(jsonData.events);
         }
+      } else if (format === 'vtt') {
+        return this.parseVTTFormat(data);
+      } else if (format === 'srv3' || format === 'ttml') {
+        try {
+          const parsed = await this.parseXMLSubtitles(data);
+          return this.parseSubtitleEvents(parsed.events);
+        } catch {
+          return [];
+        }
       }
     } catch (error) {
       this.logger.debug('yt-dlp解析响应失败:', error.message);
     }
     
     return null;
+  }
+
+  // 生成候选URL（基于baseUrl增强组合）
+  buildCandidateUrls(baseUrl) {
+    const hasFmt = /[?&]fmt=/.test(baseUrl);
+    const ensureFmt = (fmt) => hasFmt ? baseUrl.replace(/fmt=[^&]*/, `fmt=${fmt}`) : (baseUrl + (baseUrl.includes('?') ? '&' : '?') + `fmt=${fmt}`);
+    const addParam = (url, key, val) => url + (url.includes('?') ? '&' : '?') + `${key}=${val}`;
+
+    const fmts = [
+      { fmt: 'srt', format: 'srt' },
+      { fmt: 'vtt', format: 'vtt' },
+      { fmt: 'json3', format: 'json3' },
+      { fmt: 'srv3', format: 'srv3' },
+      { fmt: 'ttml', format: 'ttml' }
+    ];
+
+    const urls = [];
+    for (const f of fmts) {
+      let u = ensureFmt(f.fmt);
+      urls.push({ url: u, format: f.format });
+      urls.push({ url: addParam(u, 'kind', 'asr'), format: f.format });
+      urls.push({ url: addParam(u, 'lang', 'en'), format: f.format });
+      urls.push({ url: addParam(u, 'lang', 'en-US'), format: f.format });
+      urls.push({ url: addParam(u, 'lang', 'a.en'), format: f.format });
+    }
+    return urls;
+  }
+
+  // 规范化与排序，去重/修复小问题，提升完整性
+  ensureContinuityAndSort(subtitles) {
+    if (!Array.isArray(subtitles)) return [];
+    const sorted = subtitles
+      .filter(s => s && typeof s.startTime === 'number' && typeof s.endTime === 'number' && s.endTime > s.startTime && typeof s.text === 'string')
+      .map(s => ({ startTime: s.startTime, endTime: s.endTime, text: (s.text || '').trim() }))
+      .sort((a, b) => a.startTime - b.startTime || a.endTime - b.endTime);
+
+    const merged = [];
+    const EPS = 0.04; // 40ms 容差
+    for (const s of sorted) {
+      const last = merged[merged.length - 1];
+      if (last && Math.abs(s.startTime - last.startTime) < EPS && Math.abs(s.endTime - last.endTime) < EPS && s.text === last.text) {
+        // 完全重复，跳过
+        continue;
+      }
+      // 修复极小重叠
+      if (last && s.startTime < last.endTime && (last.endTime - s.startTime) < 0.2) {
+        last.endTime = Math.max(last.endTime, s.endTime);
+        last.text = last.text === s.text ? last.text : (last.text + ' ' + s.text).trim();
+      } else {
+        merged.push(s);
+      }
+    }
+    return merged;
   }
 
   // YouTube内部API (yt-dlp风格)

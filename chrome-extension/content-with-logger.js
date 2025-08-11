@@ -50,9 +50,40 @@ class YouTubeSubtitleTranslator {
         error: function(message, data) { this.log('ERROR', message, data); },
         debug: function(message, data) { this.log('DEBUG', message, data); },
         exportLogs: function() {
-          const logText = this.logs.map(log => 
-            `[${log.timestamp}] [${log.level}] ${log.message}${log.data ? '\\n' + JSON.stringify(log.data, null, 2) : ''}`
-          ).join('\\n\\n');
+          // 收集系统信息
+          const systemInfo = {
+            timestamp: new Date().toISOString(),
+            userAgent: navigator.userAgent,
+            url: window.location.href,
+            viewport: `${window.innerWidth}x${window.innerHeight}`,
+            language: navigator.language
+          };
+          
+          const logText = [
+            '=== YouTube双语字幕翻译器 - 调试日志 ===',
+            `导出时间: ${systemInfo.timestamp}`,
+            `当前页面: ${systemInfo.url}`,
+            `浏览器: ${systemInfo.userAgent}`,
+            `视口大小: ${systemInfo.viewport}`,
+            `语言: ${systemInfo.language}`,
+            '',
+            '=== 应用日志 ===',
+            this.logs.map(log => 
+              `[${log.timestamp}] [${log.level}] ${log.message}${log.data ? '\n' + JSON.stringify(log.data, null, 2) : ''}`
+            ).join('\n\n'),
+            '',
+            '=== 系统状态 ===',
+            `总日志条数: ${this.logs.length}`,
+            `错误日志: ${this.logs.filter(log => log.level === 'ERROR').length}条`,
+            `警告日志: ${this.logs.filter(log => log.level === 'WARN').length}条`,
+            `调试日志: ${this.logs.filter(log => log.level === 'DEBUG').length}条`,
+            '',
+            '=== 扩展状态 ===',
+            `Chrome版本: ${navigator.appVersion}`,
+            `内存使用: ${performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1024 / 1024) + 'MB' : '未知'}`,
+            ''
+          ].join('\n');
+          
           const blob = new Blob([logText], { type: 'text/plain' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -62,6 +93,9 @@ class YouTubeSubtitleTranslator {
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
+          
+          // 记录导出操作
+          this.info(`📥 调试日志已导出: ${this.logs.length}条日志, ${this.logs.filter(log => log.level === 'ERROR').length}个错误`);
         }
       };
     }
@@ -90,6 +124,9 @@ class YouTubeSubtitleTranslator {
     this.logger.info('✅ 初始化完成');
     this.showStatusInfo('插件已启动，等待检测视频...');
     
+    // 设置全局快捷键
+    this.setupGlobalKeyboardShortcuts();
+    
     // 立即检查当前视频
     this.checkVideoChange();
   }
@@ -108,6 +145,69 @@ class YouTubeSubtitleTranslator {
         resolve();
       });
     });
+  }
+  
+  // 设置全局快捷键
+  setupGlobalKeyboardShortcuts() {
+    document.addEventListener('keydown', (event) => {
+      // Ctrl+L: 导出日志
+      if (event.ctrlKey && event.key === 'l') {
+        event.preventDefault();
+        this.logger.exportLogs();
+        this.logger.info('🔄 通过快捷键导出调试日志');
+        this.showTemporaryMessage('调试日志已导出到下载文件夹！');
+      }
+      
+      // Ctrl+D: 切换调试面板显示/隐藏
+      if (event.ctrlKey && event.key === 'd') {
+        event.preventDefault();
+        this.toggleDebugPanel();
+      }
+    });
+    
+    this.logger.info('⌨️ 全局快捷键已设置: Ctrl+L=导出日志, Ctrl+D=切换调试面板');
+  }
+  
+  // 显示临时消息
+  showTemporaryMessage(message, duration = 3000) {
+    const messageDiv = document.createElement('div');
+    messageDiv.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(76, 175, 80, 0.9);
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      z-index: 10001;
+      font-size: 14px;
+      font-family: Arial, sans-serif;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    `;
+    messageDiv.textContent = message;
+    document.body.appendChild(messageDiv);
+    
+    setTimeout(() => {
+      if (messageDiv.parentNode) {
+        messageDiv.parentNode.removeChild(messageDiv);
+      }
+    }, duration);
+  }
+  
+  // 切换调试面板显示/隐藏
+  toggleDebugPanel() {
+    const statusDiv = document.getElementById('subtitle-status-info');
+    if (statusDiv) {
+      const isVisible = statusDiv.style.display !== 'none';
+      statusDiv.style.display = isVisible ? 'none' : 'block';
+      this.logger.info(`🔧 调试面板${isVisible ? '隐藏' : '显示'}`);
+      
+      if (!isVisible) {
+        // 重新显示时更新状态
+        this.showStatusInfo('调试面板已重新显示');
+      }
+    }
   }
   
   // 设置视频变化检测
@@ -677,10 +777,37 @@ class YouTubeSubtitleTranslator {
       <div style="margin-bottom: 5px;"><strong>翻译进度:</strong> ${debugInfo.translationProgress}</div>
       <div style="margin-bottom: 5px;"><strong>预翻译:</strong> ${debugInfo.preloadStatus}</div>
       <div style="margin-bottom: 5px;"><strong>实时显示:</strong> ${debugInfo.displayStatus}</div>
-      <div style="margin-top: 8px; font-size: 9px; opacity: 0.6; border-top: 1px solid #444; padding-top: 5px;">
-        ${new Date().toLocaleTimeString()}
+      <div style="margin-bottom: 5px; ${debugInfo.errorCount > 0 ? 'color: #FF5722;' : ''}">
+        <strong>错误统计:</strong> ${debugInfo.errorCount}个错误, ${debugInfo.warnCount}个警告
+      </div>
+      <div style="margin-top: 8px; border-top: 1px solid #444; padding-top: 5px;">
+        <button id="export-logs-btn" style="
+          background: #4CAF50; 
+          color: white; 
+          border: none; 
+          padding: 4px 8px; 
+          border-radius: 4px; 
+          font-size: 9px; 
+          cursor: pointer;
+          margin-right: 8px;
+        ">导出日志 (Ctrl+L)</button>
+        <span style="font-size: 9px; opacity: 0.6;">${new Date().toLocaleTimeString()}</span>
       </div>
     `;
+    
+    // 添加导出按钮事件监听
+    const exportBtn = statusDiv.querySelector('#export-logs-btn');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => {
+        this.logger.exportLogs();
+        exportBtn.textContent = '已导出 ✓';
+        exportBtn.style.background = '#2196F3';
+        setTimeout(() => {
+          exportBtn.textContent = '导出日志 (Ctrl+L)';
+          exportBtn.style.background = '#4CAF50';
+        }, 2000);
+      });
+    }
   }
 
   // 获取详细调试状态
@@ -688,6 +815,10 @@ class YouTubeSubtitleTranslator {
     const hasSubtitles = this.subtitleFetcher?.hasFullSubtitlesEnhanced();
     const subtitleCount = hasSubtitles ? this.subtitleFetcher.fullSubtitles.length : 0;
     const preloadedCount = this.preloadedTranslations?.length || 0;
+    
+    // 统计日志中的错误和警告
+    const errorCount = this.logger.logs.filter(log => log.level === 'ERROR').length;
+    const warnCount = this.logger.logs.filter(log => log.level === 'WARN').length;
     
     return {
       mode: this.settings.usePreload ? '预加载模式 (增强版)' : '实时翻译模式',
@@ -700,7 +831,9 @@ class YouTubeSubtitleTranslator {
       preloadStatus: this.preloadedTranslations ? 
                     `✅ 完成 (${preloadedCount}条翻译)` : 
                     (this.isPreloading ? '🔄 处理中' : '❌ 未完成'),
-      displayStatus: this.displayInterval ? '✅ 运行中' : '❌ 未启动'
+      displayStatus: this.displayInterval ? '✅ 运行中' : '❌ 未启动',
+      errorCount: errorCount,
+      warnCount: warnCount
     };
   }
 

@@ -16,6 +16,23 @@ class SmartTranslationProcessor {
       avgLength: subtitleTexts.reduce((sum, s) => sum + s.text.length, 0) / subtitleTexts.length
     });
     
+    // 检测字幕类型：段落字幕 vs 单词级字幕
+    const subtitleType = this.detectSubtitleType(subtitleTexts);
+    this.logger.info(`🔍 字幕类型检测: ${subtitleType.type}`, subtitleType.analysis);
+    
+    if (subtitleType.type === 'paragraph') {
+      this.logger.info('📖 检测到段落字幕，跳过断句处理，直接用于翻译');
+      return subtitleTexts.map((sub, index) => ({
+        index: index,
+        text: sub.text,
+        startTime: sub.startTime,
+        endTime: sub.endTime,
+        originalIndices: [sub.index]
+      }));
+    }
+    
+    this.logger.info('🔤 检测到单词级字幕，执行智能断句...');
+    
     // 合并相邻的短字幕，避免过度分割
     const mergedTexts = this.mergeShortSubtitles(subtitleTexts);
     this.logger.info('🔗 短字幕合并完成:', {
@@ -29,7 +46,90 @@ class SmartTranslationProcessor {
     this.logger.info(`✅ 断句处理完成: ${subtitleTexts.length} → ${segments.length} 段`, {
       reductionRate: ((subtitleTexts.length - segments.length) / subtitleTexts.length * 100).toFixed(1) + '%'
     });
+    
     return segments;
+  }
+  
+  // 检测字幕类型（段落 vs 单词级）
+  detectSubtitleType(subtitleTexts) {
+    if (!subtitleTexts || subtitleTexts.length === 0) {
+      return { type: 'unknown', analysis: { reason: '无字幕数据' } };
+    }
+    
+    const sample = subtitleTexts.slice(0, Math.min(20, subtitleTexts.length));
+    let indicators = {
+      avgWordsPerSubtitle: 0,
+      avgDuration: 0,
+      shortSubtitles: 0,  // ≤3个词
+      longSubtitles: 0,   // ≥8个词
+      hasCompleteSentences: 0,
+      hasPunctuation: 0
+    };
+    
+    for (const sub of sample) {
+      const words = sub.text.trim().split(/\s+/).filter(w => w.length > 0);
+      const wordCount = words.length;
+      const duration = sub.endTime - sub.startTime;
+      
+      indicators.avgWordsPerSubtitle += wordCount;
+      indicators.avgDuration += duration;
+      
+      if (wordCount <= 3) indicators.shortSubtitles++;
+      if (wordCount >= 8) indicators.longSubtitles++;
+      
+      // 检查是否有完整句子（以句号、问号、感叹号结尾）
+      if (/[.!?]$/.test(sub.text.trim())) {
+        indicators.hasCompleteSentences++;
+      }
+      
+      // 检查是否有标点符号
+      if (/[,.!?;:]/.test(sub.text)) {
+        indicators.hasPunctuation++;
+      }
+    }
+    
+    indicators.avgWordsPerSubtitle /= sample.length;
+    indicators.avgDuration /= sample.length;
+    
+    // 判断规则
+    const isWordLevel = (
+      indicators.avgWordsPerSubtitle <= 4 &&      // 平均每条字幕≤4个词
+      indicators.shortSubtitles >= sample.length * 0.7 && // 70%以上是短字幕
+      indicators.hasCompleteSentences <= sample.length * 0.3 // 30%以下有完整句子
+    );
+    
+    const isParagraph = (
+      indicators.avgWordsPerSubtitle >= 6 &&      // 平均每条字幕≥6个词  
+      indicators.longSubtitles >= sample.length * 0.4 && // 40%以上是长字幕
+      indicators.hasCompleteSentences >= sample.length * 0.5 // 50%以上有完整句子
+    );
+    
+    let type, confidence;
+    if (isParagraph && !isWordLevel) {
+      type = 'paragraph';
+      confidence = 'high';
+    } else if (isWordLevel && !isParagraph) {
+      type = 'word-level';  
+      confidence = 'high';
+    } else {
+      // 边界情况，使用更保守的判断
+      type = indicators.avgWordsPerSubtitle >= 5 ? 'paragraph' : 'word-level';
+      confidence = 'medium';
+    }
+    
+    return {
+      type,
+      confidence,
+      analysis: {
+        sampleSize: sample.length,
+        avgWordsPerSubtitle: indicators.avgWordsPerSubtitle.toFixed(1),
+        avgDuration: indicators.avgDuration.toFixed(1) + 's',
+        shortSubtitlesRatio: (indicators.shortSubtitles / sample.length * 100).toFixed(1) + '%',
+        longSubtitlesRatio: (indicators.longSubtitles / sample.length * 100).toFixed(1) + '%',
+        completeSentencesRatio: (indicators.hasCompleteSentences / sample.length * 100).toFixed(1) + '%',
+        punctuationRatio: (indicators.hasPunctuation / sample.length * 100).toFixed(1) + '%'
+      }
+    };
   }
 
   // 合并短字幕
