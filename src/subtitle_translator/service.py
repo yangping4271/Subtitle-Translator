@@ -144,7 +144,7 @@ class SubtitleTranslatorService:
             
             # 获取字幕摘要
             summary_start_time = time.time()
-            summarize_result = self._get_subtitle_summary(asr_data, str(input_srt_path))
+            summarize_result = self._get_subtitle_summary(asr_data, str(input_srt_path.resolve()))
             summary_time = time.time() - summary_start_time
             stage_times["🔍 内容分析"] = summary_time
             

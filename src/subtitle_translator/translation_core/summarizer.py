@@ -51,7 +51,9 @@ class SubtitleSummarizer:
             # 构建上下文信息
             context_parts = []
             if parent_names:
-                context_parts.append(f"Folder path: {' / '.join(reversed(parent_names))}")
+                folder_path_str = ' / '.join(reversed(parent_names))
+                context_parts.append(f"Folder path: {folder_path_str}")
+                
             context_parts.append(f"Filename: {readable_filename}")
             context_info = "\n".join(context_parts)
 
