@@ -114,6 +114,7 @@ class YouTubeSubtitleTranslator {
     this.createTranslationContainer();
     this.setupMessageListener();
     this.setupVideoChangeDetection();
+    this.setupBackendTranscribe();
     
     // 设置翻译进度回调
     this.translationProcessor.setProgressCallback((progress) => {
@@ -129,6 +130,15 @@ class YouTubeSubtitleTranslator {
     
     // 立即检查当前视频
     this.checkVideoChange();
+  }
+
+  setupBackendTranscribe() {
+    // 后端配置（可改造成从 storage 读取）
+    this.backend = {
+      baseUrl: this.settings.transcribeBaseUrl || 'http://127.0.0.1:9009',
+      alwaysTranscribe: true,
+      prefetchAheadSec: 30
+    };
   }
 
   // 判断是否需要通过后台代理（避免CORS）
@@ -294,6 +304,8 @@ class YouTubeSubtitleTranslator {
       // 如果启用预加载模式，开始预加载字幕
       if (this.settings.usePreload && this.settings.autoTranslate) {
         this.logger.info('🚀 启动预加载翻译模式...');
+        // 启动后端转录（始终转录）
+        this.startBackendTranscription();
         this.startSubtitlePreloading();
       } else {
         this.logger.info('🔄 启动实时翻译模式...', {
@@ -303,6 +315,38 @@ class YouTubeSubtitleTranslator {
         this.startRealtimeMode();
       }
     }
+  }
+
+  async startBackendTranscription() {
+    try {
+      const url = `${this.backend.baseUrl}/transcribe`;
+      const body = { youtube_url: window.location.href, chunk_ms: 20000, overlap_ms: 500 };
+      const resp = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      if (!resp.ok) throw new Error(`transcribe: ${resp.status}`);
+      const data = await resp.json();
+      this.currentJobId = data.job_id;
+      this.logger.info('🧠 后端转录任务已提交', { jobId: this.currentJobId });
+      this.pollBackendState();
+    } catch (e) {
+      this.logger.warn('⚠️ 后端转录任务启动失败', e.message);
+    }
+  }
+
+  async pollBackendState() {
+    if (!this.currentJobId) return;
+    const url = `${this.backend.baseUrl}/jobs/${this.currentJobId}/state`;
+    try {
+      const resp = await fetch(url);
+      if (resp.ok) {
+        const state = await resp.json();
+        this.backendState = state;
+        // 可在调试面板显示进度
+      }
+    } catch {}
+    // 周期轮询
+    setTimeout(() => this.pollBackendState(), 1000);
   }
 
   // 清理之前的数据
