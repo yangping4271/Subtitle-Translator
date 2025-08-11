@@ -2,17 +2,35 @@
 
 [English](./README.md) | [中文](./README_zh.md)
 
-A command-line tool that integrates English video transcription, subtitle translation. It transcribes English audio/video into subtitles, translates them into multiple languages, and generates bilingual ASS subtitle files.
+A comprehensive subtitle translation system with both **command-line tools** and **Chrome extension** for YouTube. It transcribes English audio/video into subtitles, translates them into multiple languages, and provides bilingual subtitle display.
 
 > ⚠️ **Important**: The transcription function only supports English audio/video. If your video is in another language, please prepare an English SRT subtitle file first.
 
+## 🎯 Two Usage Modes
+
+### 1. Command-Line Tools
+Perfect for local file processing with professional-grade quality.
+
+### 2. Chrome Extension for YouTube 🆕
+Real-time bilingual subtitles for any YouTube video, with intelligent caching system.
+
 ## Features
 
+### Core Subtitle Processing
 - **English Video Transcription**: Transcribes English audio/video to SRT subtitles using the Parakeet MLX model.
 - **AI-Powered Translation**: Supports various LLM models for translation into multiple languages.
+- **Three-Stage Translation**: Smart segmentation → content summarization → batch translation.
 - **Bilingual Subtitles**: Automatically generates bilingual ASS subtitle files.
 - **Batch Processing**: Supports processing multiple files at once.
-- **Modular Configuration**: Allows configuring different models for sentence splitting, translation, and summarization.
+- **Intermediate File Preservation**: `--preserve-intermediate` option to keep English and translated SRT files.
+
+### Chrome Extension Features 🆕
+- **Universal YouTube Support**: Works with any YouTube video, regardless of original subtitle availability.
+- **Intelligent Caching**: Three-tier caching system (audio, subtitles, translation) for fast re-processing.
+- **Real-time Display**: Seamless bilingual subtitle overlay with zero-delay synchronization.
+- **Smart Fallback**: Automatic fallback from cache to real-time processing.
+- **Manual Audio Upload**: Support for manual audio upload when auto-download fails.
+- **Debug Tools**: Comprehensive logging and status monitoring (Ctrl+D to toggle debug panel).
 
 ## Quick Start
 
@@ -61,19 +79,31 @@ transcribe video.mp4 --output-format all
 
 ## Workflow
 
-### Full Workflow (translate command)
+### Command-Line Workflow
+#### Full Workflow (translate command)
 ```
 Audio/Video → Transcribe → English SRT → Translate → Bilingual ASS Subtitles
 ```
 
-### Translation-Only Workflow (with existing English subtitles)
+#### Translation-Only Workflow (with existing English subtitles)
 ```
 English SRT → Translate → Bilingual ASS Subtitles
 ```
 
-### Transcription-Only Workflow (transcribe command)
+#### Transcription-Only Workflow (transcribe command)
 ```
 Audio/Video → Transcribe → Multiple Output Formats
+```
+
+### Chrome Extension Workflow 🆕
+#### First-time Processing
+```
+YouTube Video → Audio Download → Transcribe → Translate → Cache → Real-time Display
+```
+
+#### Cache Hit (Subsequent Access)
+```
+YouTube Video → Cache Lookup → Instant Load → Real-time Display
 ```
 
 ## Supported Formats
@@ -149,7 +179,8 @@ Supports translation into multiple languages. Common language codes: `zh` (Chine
 
 ## Configuration
 
-### Quick Configuration
+### Command-Line Configuration
+#### Quick Configuration
 ```bash
 translate init
 ```
@@ -158,6 +189,33 @@ The interactive configuration includes:
 - API key setup for LLM services
 - Model configuration for different tasks
 - **Hugging Face mirror configuration** (for improved model download speeds)
+
+### Chrome Extension Setup 🆕
+#### 1. Install Chrome Extension
+1. Open `chrome://extensions/`
+2. Enable "Developer mode"
+3. Click "Load unpacked" and select the `chrome-extension` folder
+4. Pin the extension to toolbar for easy access
+
+#### 2. Start Backend Service
+```bash
+# Start the backend server (required for Chrome extension)
+python backend/server.py
+# Server runs on http://127.0.0.1:9009
+```
+
+#### 3. Configure Extension
+1. Click the extension icon in Chrome toolbar
+2. Enter your OpenAI API key and base URL
+3. Save configuration
+4. Visit any YouTube video - the extension will automatically start processing
+
+#### 4. Usage Tips
+- **First-time processing**: Takes 5-15 minutes (downloads + transcribes + translates)
+- **Cached videos**: Load in seconds with high-quality bilingual subtitles
+- **Debug panel**: Press `Ctrl+D` to toggle debug information
+- **Export logs**: Press `Ctrl+L` to export logs for troubleshooting
+- **Manual upload**: If auto-download fails, manually upload audio via API
 
 ### Manual Configuration
 Create a `.env` file:

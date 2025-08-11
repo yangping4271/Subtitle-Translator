@@ -17,6 +17,10 @@ dependencies = [
     "typer>=0.15.3",
     "httpx[socks]",
     "rich>=13.0.0",
+    "fastapi>=0.116.1",
+    "uvicorn>=0.35.0",
+    "yt-dlp>=2025.8.11",
+    "python-multipart>=0.0.20",
 ]
 
 [project.scripts]
