@@ -10,6 +10,15 @@ class YouTubeSubtitleFetcher {
     // 第三方工具已精简整合到主方法中
   }
 
+  // 统一的YouTube请求头
+  getYouTubeHeaders() {
+    return {
+      'sec-ch-ua': '"Chromium";v="126", "Not.A/Brand";v="24"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"macOS"'
+    };
+  }
+
   // 获取当前视频ID
   getCurrentVideoId() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -234,7 +243,7 @@ class YouTubeSubtitleFetcher {
       for (const script of scripts) {
         if (script.src) {
           try {
-            const response = await fetch(script.src);
+            const response = await fetch(script.src, { credentials: 'include', mode: 'cors' });
             const content = await response.text();
             
             if (content.includes('timedtext') || content.includes('captions')) {
@@ -280,7 +289,11 @@ class YouTubeSubtitleFetcher {
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'Mozilla/5.0 (compatible; YouTube-API-Client)',
+          ...this.getYouTubeHeaders()
         },
+        credentials: 'include',
+        mode: 'cors',
+        referrer: `https://www.youtube.com/watch?v=${this.videoId}`,
         body: JSON.stringify(payload)
       });
 
@@ -322,7 +335,10 @@ class YouTubeSubtitleFetcher {
       while ((match = pattern.exec(content)) !== null) {
         const url = match[1] || match[0];
         if (url && !urls.includes(url)) {
-          urls.push(url.replace(/\\u0026/g, '&'));
+          let fixed = url.replace(/\\u0026/g, '&');
+          // 强制附加语言为英文尝试，提高可用性
+          if (!/[?&]lang=/.test(fixed)) fixed += (fixed.includes('?') ? '&' : '?') + 'lang=en';
+          urls.push(fixed);
         }
       }
     }
@@ -336,7 +352,14 @@ class YouTubeSubtitleFetcher {
       try {
         this.logger.info('🌐 尝试获取字幕:', url.substring(0, 80) + '...');
         
-        const response = await fetch(url);
+        const response = await fetch(url, {
+          headers: {
+            ...this.getYouTubeHeaders()
+          },
+          credentials: 'include',
+          mode: 'cors',
+          referrer: `https://www.youtube.com/watch?v=${this.videoId}`
+        });
         if (response.ok) {
           const text = await response.text();
           
@@ -376,7 +399,14 @@ class YouTubeSubtitleFetcher {
       const subtitleUrl = captionTrack.baseUrl + '&fmt=json3';
       this.logger.info('📡 开始下载字幕数据:', subtitleUrl);
 
-      const response = await fetch(subtitleUrl);
+      const response = await fetch(subtitleUrl, {
+        headers: {
+          ...this.getYouTubeHeaders()
+        },
+        credentials: 'include',
+        mode: 'cors',
+        referrer: `https://www.youtube.com/watch?v=${this.videoId}`
+      });
       if (!response.ok) {
         throw new Error(`字幕下载失败: ${response.status}`);
       }
@@ -927,7 +957,9 @@ class YouTubeSubtitleFetcher {
         `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=vtt&lang=en`,
         `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srt&lang=en`,
         `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=vtt&lang=en&kind=asr`,
-        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srt&lang=en&kind=asr`
+        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srt&lang=en&kind=asr`,
+        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srv3&lang=en`,
+        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=json3&lang=en`
       ];
       
       for (const apiUrl of apiUrls) {
@@ -938,8 +970,14 @@ class YouTubeSubtitleFetcher {
             headers: {
               'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
               'Accept': 'text/plain, */*',
-              'Referer': 'https://www.youtube.com/'
-            }
+              'Referer': 'https://www.youtube.com/',
+              ...this.getYouTubeHeaders(),
+              // 尝试伪装为文本字幕下载
+              'Accept-Language': 'en-US,en;q=0.9'
+            },
+            credentials: 'include',
+            mode: 'cors',
+            referrer: `https://www.youtube.com/watch?v=${this.videoId}`
           });
           
           if (response.ok) {
@@ -953,6 +991,10 @@ class YouTubeSubtitleFetcher {
                 subtitles = this.parseVTTFormat(text);
               } else if (apiUrl.includes('fmt=srt')) {
                 subtitles = this.parseSRTFormat(text);
+              } else if (apiUrl.includes('fmt=srv3')) {
+                try { const parsed = await this.parseXMLSubtitles(text); subtitles = this.parseSubtitleEvents(parsed.events); } catch { subtitles = []; }
+              } else if (apiUrl.includes('fmt=json3')) {
+                try { const data = JSON.parse(text); subtitles = data?.events ? this.parseSubtitleEvents(data.events) : []; } catch { subtitles = []; }
               }
               
               if (subtitles && subtitles.length > 5) {
@@ -1522,13 +1564,34 @@ class YouTubeSubtitleFetcher {
     ];
 
     const urls = [];
+    const tuningCombos = [
+      {},
+      { xorb: '2' },
+      { xobt: '3' },
+      { xoaf: '5' },
+      { xorb: '2', xobt: '3' },
+      { xorb: '2', xoaf: '5' },
+      { xobt: '3', xoaf: '5' },
+      { xorb: '2', xobt: '3', xoaf: '5' }
+    ];
     for (const f of fmts) {
       let u = ensureFmt(f.fmt);
-      urls.push({ url: u, format: f.format });
-      urls.push({ url: addParam(u, 'kind', 'asr'), format: f.format });
-      urls.push({ url: addParam(u, 'lang', 'en'), format: f.format });
-      urls.push({ url: addParam(u, 'lang', 'en-US'), format: f.format });
-      urls.push({ url: addParam(u, 'lang', 'a.en'), format: f.format });
+      const bases = [
+        { url: u },
+        { url: addParam(u, 'kind', 'asr') },
+        { url: addParam(u, 'lang', 'en') },
+        { url: addParam(u, 'lang', 'en-US') },
+        { url: addParam(u, 'lang', 'a.en') }
+      ];
+      for (const b of bases) {
+        for (const t of tuningCombos) {
+          let u2 = b.url;
+          for (const [k, v] of Object.entries(t)) {
+            u2 = addParam(u2, k, v);
+          }
+          urls.push({ url: u2, format: f.format });
+        }
+      }
     }
     return urls;
   }
