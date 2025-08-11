@@ -122,8 +122,9 @@ class YouTubeSubtitleTranslator {
       this.showStatusInfo(`正在预翻译: ${progress.toFixed(1)}%`);
     });
     
-    this.logger.info('✅ 初始化完成');
-    this.showStatusInfo('插件已启动，等待检测视频...');
+            this.logger.info('✅ 初始化完成');
+        // 显示简洁的启动提示
+        this.showTemporaryMessage('🌐 YouTube双语字幕已启动 (Ctrl+D显示详细状态)', 3000);
     
     // 设置全局快捷键
     this.setupGlobalKeyboardShortcuts();
@@ -139,6 +140,59 @@ class YouTubeSubtitleTranslator {
       alwaysTranscribe: true,
       prefetchAheadSec: 30
     };
+    
+    // 测试后端连接
+    this.testBackendConnection();
+  }
+  
+  async testBackendConnection() {
+    try {
+      const url = `${this.backend.baseUrl}/health`;
+      const useProxy = this.needsProxy(url);
+      const resp = useProxy ? await this.proxyFetch(url, { method: 'GET' }) : await fetch(url);
+      
+      if (resp.ok) {
+        const health = await resp.json();
+        this.logger.info('✅ 后端连接正常', { 
+          health,
+          baseUrl: this.backend.baseUrl 
+        });
+        this.showStatusInfo(`后端服务正常 (Python ${health.python || 'unknown'})`);
+      } else {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+    } catch (e) {
+      this.logger.error('❌ 后端连接失败', { 
+        error: e.message,
+        baseUrl: this.backend.baseUrl 
+      });
+      this.showStatusInfo(`后端连接失败: ${e.message}`);
+    }
+  }
+  
+  async testBackendDownload() {
+    try {
+      this.logger.info('🧪 测试后端下载功能...');
+      const url = `${this.backend.baseUrl}/test_download`;
+      const useProxy = this.needsProxy(url);
+      const resp = useProxy ? await this.proxyFetch(url, { method: 'POST' }) : await fetch(url, { method: 'POST' });
+      
+      if (resp.ok) {
+        const result = await resp.json();
+        this.logger.info('📋 下载测试结果', result);
+        
+        if (result.success) {
+          this.logger.info('✅ 后端下载功能正常');
+        } else {
+          this.logger.warn('⚠️ 后端下载测试失败', { 
+            returncode: result.returncode,
+            stderr: result.stderr 
+          });
+        }
+      }
+    } catch (e) {
+      this.logger.debug('下载测试失败 (这是正常的):', e.message);
+    }
   }
 
   // 判断是否需要通过后台代理（避免CORS）
@@ -147,7 +201,7 @@ class YouTubeSubtitleTranslator {
       const u = new URL(url);
       const host = u.hostname;
       // 这些主机默认通过后台代理，避免CORS
-      return host === 'ai-proxy.chatwise.app' || host === 'openrouter.ai';
+      return host === 'ai-proxy.chatwise.app' || host === 'openrouter.ai' || host === '127.0.0.1' || host === 'localhost';
     } catch { return false; }
   }
 
@@ -157,12 +211,22 @@ class YouTubeSubtitleTranslator {
       chrome.runtime.sendMessage({ type: 'PROXY_FETCH', url, options }, (resp) => {
         if (!resp) return reject(new Error('代理请求失败'));
         if (!resp.ok) return reject(new Error(`代理响应失败: ${resp.status}${resp.error ? ' ' + resp.error : ''}`));
-        try {
-          const data = JSON.parse(resp.bodyText);
-          resolve({ json: async () => data, ok: resp.ok, status: resp.status });
-        } catch (e) {
-          resolve({ text: async () => resp.bodyText, ok: resp.ok, status: resp.status });
-        }
+        
+        // 创建标准化的Response接口
+        const mockResponse = {
+          ok: resp.ok,
+          status: resp.status,
+          headers: resp.headers,
+          json: async () => {
+            try {
+              return JSON.parse(resp.bodyText);
+            } catch (e) {
+              throw new Error(`JSON解析失败: ${e.message}`);
+            }
+          },
+          text: async () => resp.bodyText
+        };
+        resolve(mockResponse);
       });
     });
   }
@@ -201,7 +265,7 @@ class YouTubeSubtitleTranslator {
       }
     });
     
-    this.logger.info('⌨️ 全局快捷键已设置: Ctrl+L=导出日志, Ctrl+D=切换调试面板');
+    this.logger.info('⌨️ 全局快捷键已设置: Ctrl+L=导出日志, Ctrl+D=显示/隐藏调试面板');
   }
   
   // 显示临时消息
@@ -241,7 +305,7 @@ class YouTubeSubtitleTranslator {
       
       if (!isVisible) {
         // 重新显示时更新状态
-        this.showStatusInfo('调试面板已重新显示');
+        this.showStatusInfo('调试面板已显示 (按 Ctrl+D 再次隐藏)');
       }
     }
   }
@@ -285,10 +349,10 @@ class YouTubeSubtitleTranslator {
 
   // 检查视频变化
   async checkVideoChange() {
-    const hasVideoChanged = this.subtitleFetcher.getCurrentVideoId();
-    
+    const v = new URLSearchParams(window.location.search).get('v');
+    const hasVideoChanged = v && v !== this.currentVideoId;
     if (hasVideoChanged) {
-      this.currentVideoId = this.subtitleFetcher.videoId;
+      this.currentVideoId = v;
       this.logger.info('🎬 检测到新视频:', this.currentVideoId);
       
       // 清理之前的数据
@@ -319,34 +383,128 @@ class YouTubeSubtitleTranslator {
 
   async startBackendTranscription() {
     try {
-      const url = `${this.backend.baseUrl}/transcribe`;
-      const body = { youtube_url: window.location.href, chunk_ms: 20000, overlap_ms: 500 };
-      const resp = await fetch(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-      });
-      if (!resp.ok) throw new Error(`transcribe: ${resp.status}`);
-      const data = await resp.json();
+      const url = `${this.backend.baseUrl}/translate_youtube`;
+      const body = { url: window.location.href, target_lang: "zh" };
+      const options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+      const resp = this.needsProxy(url) ? await this.proxyFetch(url, options) : await fetch(url, options);
+      if (!resp.ok) throw new Error(`translate_youtube: ${resp.status}`);
+      const data = this.needsProxy(url) ? await resp.json() : await resp.json();
       this.currentJobId = data.job_id;
-      this.logger.info('🧠 后端转录任务已提交', { jobId: this.currentJobId });
+      this.logger.info('✅ 完整翻译任务已提交', { jobId: this.currentJobId });
       this.pollBackendState();
     } catch (e) {
-      this.logger.warn('⚠️ 后端转录任务启动失败', e.message);
+      this.logger.error('❌ 完整翻译任务启动失败', { error: e.message, stack: e.stack });
+      this.showStatusInfo(`翻译任务失败: ${e.message}`);
     }
   }
 
   async pollBackendState() {
     if (!this.currentJobId) return;
-    const url = `${this.backend.baseUrl}/jobs/${this.currentJobId}/state`;
+    
+    // 检查超时 (10分钟)
+    if (!this.pollStartTime) {
+      this.pollStartTime = Date.now();
+    }
+    const elapsed = Date.now() - this.pollStartTime;
+    const timeoutMs = 10 * 60 * 1000; // 10分钟超时
+    
+    if (elapsed > timeoutMs) {
+      this.logger.error('❌ 后端处理超时', { 
+        jobId: this.currentJobId, 
+        elapsedMs: elapsed,
+        timeoutMs: timeoutMs
+      });
+      this.showStatusInfo('后端处理超时，请重试');
+      return;
+    }
+    
+    const url = `${this.backend.baseUrl}/job_status/${this.currentJobId}`;
     try {
-      const resp = await fetch(url);
+      const useProxy = this.needsProxy(url);
+      const resp = useProxy ? await this.proxyFetch(url, { method: 'GET' }) : await fetch(url);
       if (resp.ok) {
         const state = await resp.json();
+        const oldStatus = this.backendState?.status;
         this.backendState = state;
-        // 可在调试面板显示进度
+        
+        // 详细的进度更新
+        if (state.progress?.stage) {
+          const stage = state.progress.stage;
+          const message = state.progress.message || '';
+          this.showStatusInfo(`${this.getStageDisplayName(stage)}: ${message}`);
+        }
+        
+        // 状态变化时记录日志
+        if (oldStatus !== state.status) {
+          this.logger.info('📡 后端状态更新', { 
+            oldStatus, 
+            newStatus: state.status, 
+            jobId: this.currentJobId,
+            progress: state.progress,
+            eventsCount: state.events_count || 0
+          });
+          
+          if (state.status === 'done') {
+            this.logger.info('✅ 后端转录完成', { 
+              eventsCount: state.events_count,
+              elapsedMs: elapsed
+            });
+            this.showStatusInfo(`后端转录完成，生成${state.events_count || 0}个字幕段`);
+            
+            // 重置轮询时间
+            this.pollStartTime = null;
+            
+            // 优先尝试获取SRT文件
+            const srtLoaded = await this.tryLoadSRTFiles();
+            if (!srtLoaded) {
+              // SRT文件不可用，回退到segments方式
+              this.logger.info('📄 SRT文件不可用，使用segments方式');
+              this.maybeFetchBackendSegments(this.getCurrentPlayTime() || 0);
+            }
+            
+          } else if (state.status === 'error') {
+            this.logger.error('❌ 后端转录出错', { 
+              error: state.error,
+              traceback: state.traceback,
+              progress: state.progress
+            });
+            this.showStatusInfo(`后端转录出错: ${state.error || '未知错误'}`);
+            this.pollStartTime = null; // 停止轮询
+            return;
+          }
+        }
+        
+        // 如果已完成，停止轮询
+        if (state.status === 'done' || state.status === 'error') {
+          this.pollStartTime = null;
+          return;
+        }
+      } else {
+        this.logger.warn('⚠️ 后端状态查询失败', { 
+          status: resp.status, 
+          url: url 
+        });
       }
-    } catch {}
-    // 周期轮询
-    setTimeout(() => this.pollBackendState(), 1000);
+    } catch (e) {
+      this.logger.debug('后端状态查询失败:', e.message);
+    }
+    
+    // 继续轮询（增加间隔到2秒减少服务器压力）
+    setTimeout(() => this.pollBackendState(), 2000);
+  }
+  
+  getStageDisplayName(stage) {
+    const stageNames = {
+      'initializing': '初始化',
+      'translation_cache_hit': '翻译缓存命中',
+      'downloading': '下载音频',
+      'checking_files': '检查文件',
+      'fallback_download': '备用下载',
+      'transcribing': '转录处理',
+      'completed': '处理完成',
+      'error': '处理出错'
+    };
+    return stageNames[stage] || stage;
   }
 
   // 清理之前的数据
@@ -366,37 +524,22 @@ class YouTubeSubtitleTranslator {
     this.logger.info('🧹 已清理之前数据和状态');
   }
 
-  // 开始字幕预加载
+  // 开始字幕预加载（改为从后端获取）
   async startSubtitlePreloading() {
     if (this.isPreloading) return;
     
     this.isPreloading = true;
-    this.showStatusInfo('正在获取字幕数据...');
+    this.showStatusInfo('等待后端转录...');
     
     try {
-      // 等待页面稳定
-      await this.waitForPageStable();
+      this.logger.info('🚀 开始预加载字幕（后端模式）...');
       
-      // 使用增强的字幕获取方法
-      this.showStatusInfo('尝试多种方法获取完整字幕...');
-      this.logger.info('🚀 开始预加载字幕，尝试所有可用方法...');
-      
-      const subtitles = await this.subtitleFetcher.getSubtitlesWithEnhancedMethods();
-      
-      if (!subtitles || subtitles.length === 0) {
-        // 提供详细的失败原因
-        const failureReason = this.analyzeSubtitleFailure();
-        this.logger.warn('❌ 字幕获取失败，原因:', failureReason);
-        this.showStatusInfo(`字幕获取失败: ${failureReason}`);
-        throw new Error(`所有字幕获取方法都失败 - ${failureReason}`);
-      }
-      
-      const stats = this.subtitleFetcher.getSubtitleStats();
-      this.logger.info('📊 字幕统计:', stats);
-      this.showStatusInfo(`字幕已获取: ${stats.count}条，开始预翻译...`);
-      
-      // 开始智能翻译处理
-      await this.processPreloadedTranslation(subtitles);
+      // 简化：直接启动实时显示，等待后端完整翻译完成
+      this.logger.info('🚀 启动实时显示模式，等待后端完整翻译...');
+      this.segments = [];
+      this.preloadedTranslations = [];
+      this.showStatusInfo('等待后端完成音频下载和翻译...');
+      this.startRealtimeDisplay();
       
     } catch (error) {
       this.logger.error('❌ 预加载失败:', error.message);
@@ -420,6 +563,15 @@ class YouTubeSubtitleTranslator {
       await this.maybeFetchBackendSegments(now);
       const subtitleTexts = (this.segments || []).map((s, i) => ({ index: i, text: s.text, startTime: s.startTime, endTime: s.endTime }));
       this.logger.info('📝 获取字幕文本数据(后端):', subtitleTexts.length + '条');
+
+      // 若后端尚未返回任何段落，先启动实时显示并等待后端
+      if (subtitleTexts.length === 0) {
+        this.segments = [];
+        this.preloadedTranslations = [];
+        this.showStatusInfo('等待后端转录...');
+        this.startRealtimeDisplay();
+        return;
+      }
 
       // 智能断句（仅当检测为单词级时提示展示）
       const typeInfoForUi = this.translationProcessor.detectSubtitleType(subtitleTexts);
@@ -497,9 +649,25 @@ class YouTubeSubtitleTranslator {
       batch.forEach((seg, j) => {
         const idx = this.segIndexMap.get(seg);
         const t = translations[j] || '[翻译失败]';
-        this.preloadedTranslations[idx].translation = t;
+        
+        // 确保preloadedTranslations数组和对象存在
+        if (this.preloadedTranslations && this.preloadedTranslations[idx]) {
+          // 只更新翻译，不要覆盖原文
+          this.preloadedTranslations[idx].translation = t;
+          // 确保原文不被覆盖
+          if (!this.preloadedTranslations[idx].originalText) {
+            this.preloadedTranslations[idx].originalText = this.preloadedTranslations[idx].text;
+          }
+          this.logger.debug(`✅ 批次${batchIndex + 1}第${j + 1}项翻译完成`, {
+            original: this.preloadedTranslations[idx].text?.substring(0, 30) + '...',
+            translation: t.substring(0, 30) + '...'
+          });
+        } else {
+          this.logger.warn(`⚠️ 无法设置翻译结果，索引${idx}不存在`, { batchIndex, j, totalTranslations: this.preloadedTranslations?.length });
+        }
       });
       this.translatedBatch.add(batchIndex);
+      this.logger.info(`✅ 批次${batchIndex + 1}翻译完成`);
     } catch (e) {
       this.logger.error('❌ 批次翻译失败:', e.message);
     } finally {
@@ -575,17 +743,22 @@ class YouTubeSubtitleTranslator {
   // 从预加载数据更新显示
   updateDisplayFromPreloaded() {
     if (!this.preloadedTranslations || this.preloadedTranslations.length === 0) {
-      // 若后端存在，尝试按需拉取首批段落
-      const now = this.getCurrentPlayTime();
-      if (now !== null) this.maybeFetchBackendSegments(now);
+      // 若后端存在且不在SRT模式，尝试按需拉取首批段落
+      if (!this.usingSRTMode) {
+        const now = this.getCurrentPlayTime();
+        if (now !== null) this.maybeFetchBackendSegments(now);
+      }
       return;
     }
     
     // 获取当前播放时间
     const currentTime = this.getCurrentPlayTime();
     if (currentTime === null) return;
-    // 后端按需拉取
-    this.maybeFetchBackendSegments(currentTime);
+    
+    // 仅在非SRT模式下进行后端按需拉取
+    if (!this.usingSRTMode) {
+      this.maybeFetchBackendSegments(currentTime);
+    }
     
     // 找到当前时间对应的字幕
     const currentSubtitle = this.findSubtitleAtTime(currentTime);
@@ -594,11 +767,38 @@ class YouTubeSubtitleTranslator {
       const text = `${currentSubtitle.text}`;
       if (text !== this.currentSubtitleText) {
         this.currentSubtitleText = text;
-        this.updateSubtitleDisplay(currentSubtitle.text, currentSubtitle.translation || '翻译中...');
+        
+        // 确保使用正确的原文和翻译
+        let original = '';
+        let translation = '';
+        
+        if (this.usingSRTMode) {
+          // SRT模式：originalText是英文，translation是翻译
+          original = currentSubtitle.originalText || currentSubtitle.text || '';
+          translation = currentSubtitle.translation || '';
+        } else {
+          // segments模式：text是原文，translation是翻译
+          original = currentSubtitle.text || '';
+          translation = currentSubtitle.translation || '翻译中...';
+        }
+        
+        // 调试日志：检查数据结构
+        this.logger.debug('🔍 字幕数据检查', {
+          mode: this.usingSRTMode ? 'SRT' : 'segments',
+          hasOriginalText: !!currentSubtitle.originalText,
+          hasText: !!currentSubtitle.text,
+          hasTranslation: !!currentSubtitle.translation,
+          originalPreview: original?.substring(0, 30),
+          translationPreview: translation?.substring(0, 30)
+        });
+        
+        this.updateSubtitleDisplay(original, translation);
       }
 
-      // 懒加载触发逻辑
-      this.maybeTriggerOnDemand(currentTime, currentSubtitle);
+      // 懒加载触发逻辑（仅在非SRT模式下）
+      if (!this.usingSRTMode) {
+        this.maybeTriggerOnDemand(currentTime, currentSubtitle);
+      }
     } else {
       // 没有找到对应字幕，清空显示
       if (this.currentSubtitleText) {
@@ -633,17 +833,217 @@ class YouTubeSubtitleTranslator {
   // 限流并按窗口从后端拉取 segments（首版实现）
   maybeFetchBackendSegments(currentTimeSec) {
     if (!this.currentJobId || !this.backend?.baseUrl) return;
+    
+    // 如果已经在使用SRT模式，跳过segments获取
+    if (this.usingSRTMode) {
+      return;
+    }
     const now = Date.now();
     if (this._lastSegFetchTs && (now - this._lastSegFetchTs) < 800) return; // 800ms 限流
     this._lastSegFetchTs = now;
     const ahead = this.backend.prefetchAheadSec || 30;
     const fromMs = Math.max(0, Math.floor((currentTimeSec - 2) * 1000));
     const toMs = Math.floor((currentTimeSec + ahead) * 1000);
-    const url = `${this.backend.baseUrl}/segments?job_id=${encodeURIComponent(this.currentJobId)}&from_ms=${fromMs}&to_ms=${toMs}&include_translation=1`;
-    fetch(url).then(r => r.ok ? r.json() : null).then(data => {
+    const url = `${this.backend.baseUrl}/segments/${this.currentJobId}?start=${Math.floor(currentTimeSec)}&window=60`;
+    const useProxy = this.needsProxy(url);
+    const p = useProxy ? this.proxyFetch(url, { method: 'GET' }) : fetch(url);
+    p.then(r => r.ok ? (useProxy ? r.json() : r.json()) : null).then(data => {
       if (!data || !Array.isArray(data.events) || data.events.length === 0) return;
-      this.incorporateBackendSegments(data.events);
+      this.incorporateBackendSegments(data.events, true); // 标记为翻译数据
     }).catch(() => {});
+    
+    // 同时获取原始字幕作为原文（如果还没获取过）
+    if (!this.originalSubtitlesFetched) {
+      this.fetchOriginalSubtitles();
+    }
+  }
+  
+  // 获取原始字幕作为原文
+  async fetchOriginalSubtitles() {
+    if (this.originalSubtitlesFetched) return;
+    
+    try {
+      const vid = this.currentVideoId;
+      if (!vid) return;
+      
+      // 尝试从缓存获取原始字幕
+      const cacheUrl = `${this.backend.baseUrl}/cache/check/${vid}`;
+      const useProxy = this.needsProxy(cacheUrl);
+      const resp = useProxy ? await this.proxyFetch(cacheUrl, { method: 'GET' }) : await fetch(cacheUrl);
+      
+      if (resp.ok) {
+        const cacheInfo = await resp.json();
+        if (cacheInfo.has_subtitle_cache) {
+          this.logger.info('📖 发现原始字幕缓存，将用作双语显示的原文');
+          this.originalSubtitlesFetched = true;
+          // 这里可以进一步获取原始字幕内容，但目前先用转录结果作为原文
+        }
+      }
+    } catch (e) {
+      this.logger.debug('获取原始字幕失败:', e.message);
+    }
+  }
+
+  // 获取和处理SRT文件
+  async tryLoadSRTFiles() {
+    if (!this.currentJobId) return false;
+    
+    try {
+      this.logger.info('📄 尝试获取SRT文件...');
+      const url = `${this.backend.baseUrl}/srt_files/${this.currentJobId}`;
+      const useProxy = this.needsProxy(url);
+      const resp = useProxy ? await this.proxyFetch(url, { method: 'GET' }) : await fetch(url);
+      
+      if (!resp.ok) {
+        this.logger.debug('SRT文件获取失败:', resp.status);
+        return false;
+      }
+      
+      const data = await resp.json();
+      this.logger.info('📄 SRT文件获取结果:', {
+        hasEnglish: data.has_english_srt,
+        hasTranslated: data.has_translated_srt,
+        videoId: data.video_id,
+        source: data.source
+      });
+      
+      // 关键调试：检查返回的SRT内容前几行
+      if (data.english_srt) {
+        const englishPreview = data.english_srt.split('\n').slice(0, 8).join('\n');
+        this.logger.debug('🔍 英文SRT内容预览:', englishPreview);
+      }
+      
+      if (data.translated_srt) {
+        const translatedPreview = data.translated_srt.split('\n').slice(0, 8).join('\n');
+        this.logger.debug('🔍 翻译SRT内容预览:', translatedPreview);
+      }
+      
+      if (data.has_english_srt && data.has_translated_srt) {
+        this.logger.info('✅ 发现完整的双语SRT文件，开始处理...');
+        // 注意参数顺序：第一个应该是英文，第二个应该是翻译
+        this.logger.debug('🔄 开始加载双语SRT，参数顺序：english_srt, translated_srt');
+        this.loadBillingualSRTFiles(data.english_srt, data.translated_srt);
+        return true;
+      } else if (data.has_english_srt || data.has_translated_srt) {
+        this.logger.info('⚠️ 仅发现部分SRT文件，继续使用segments方式');
+        return false;
+      }
+      
+      return false;
+      
+    } catch (e) {
+      this.logger.debug('SRT文件获取失败:', e.message);
+      return false;
+    }
+  }
+  
+  // 处理双语SRT文件
+  loadBillingualSRTFiles(englishSRT, translatedSRT) {
+    try {
+      this.logger.info('🔄 解析双语SRT文件...');
+      this.logger.debug('🔍 参数验证:', {
+        englishSRTLength: englishSRT?.length || 0,
+        translatedSRTLength: translatedSRT?.length || 0,
+        englishSRTFirst50: englishSRT?.substring(0, 50),
+        translatedSRTFirst50: translatedSRT?.substring(0, 50)
+      });
+      
+      // 解析SRT文件
+      const englishSubtitles = SRTParser.parse(englishSRT);
+      const translatedSubtitles = SRTParser.parse(translatedSRT);
+      
+      this.logger.info('📊 SRT解析结果:', {
+        englishCount: englishSubtitles.length,
+        translatedCount: translatedSubtitles.length
+      });
+      
+      // 调试：检查解析后的内容
+      if (englishSubtitles.length > 0) {
+        this.logger.debug('🔍 英文SRT首条内容:', {
+          text: englishSubtitles[0].text?.substring(0, 50),
+          startTime: englishSubtitles[0].startTime,
+          endTime: englishSubtitles[0].endTime
+        });
+      }
+      
+      if (translatedSubtitles.length > 0) {
+        this.logger.debug('🔍 翻译SRT首条内容:', {
+          text: translatedSubtitles[0].text?.substring(0, 50),
+          startTime: translatedSubtitles[0].startTime,
+          endTime: translatedSubtitles[0].endTime
+        });
+      }
+      
+      // 验证SRT文件质量
+      const englishStats = SRTParser.getStats(englishSubtitles);
+      const translatedStats = SRTParser.getStats(translatedSubtitles);
+      
+      this.logger.info('📈 SRT文件统计:', {
+        english: englishStats,
+        translated: translatedStats
+      });
+      
+      // 合并双语字幕
+      const bilingualSubtitles = SRTParser.mergeBilingualSubtitles(englishSubtitles, translatedSubtitles);
+      
+      this.logger.info('🔀 双语字幕合并完成:', {
+        totalCount: bilingualSubtitles.length,
+        withTranslation: bilingualSubtitles.filter(s => s.hasTranslation).length
+      });
+      
+      // 调试：检查合并后的首条数据
+      if (bilingualSubtitles.length > 0) {
+        const first = bilingualSubtitles[0];
+        this.logger.debug('🔍 合并后首条数据:', {
+          originalText: first.originalText?.substring(0, 50),
+          translation: first.translation?.substring(0, 50),
+          hasTranslation: first.hasTranslation,
+          text: first.text?.substring(0, 50)
+        });
+        
+        // 检查前3条数据
+        for (let i = 0; i < Math.min(3, bilingualSubtitles.length); i++) {
+          const item = bilingualSubtitles[i];
+          this.logger.debug(`🔍 第${i+1}条合并数据:`, {
+            originalText: item.originalText?.substring(0, 30),
+            translation: item.translation?.substring(0, 30),
+            textField: item.text?.substring(0, 30),
+            startTime: item.startTime,
+            endTime: item.endTime
+          });
+        }
+      }
+      
+      // 更新preloadedTranslations结构
+      this.preloadedTranslations = bilingualSubtitles.map((subtitle, index) => ({
+        index: index,
+        segIndex: index,
+        text: subtitle.originalText || subtitle.text, // 确保使用原始英文文本
+        originalText: subtitle.originalText || subtitle.text, // 英文原文
+        translation: subtitle.translation, // 中文翻译
+        startTime: subtitle.startTime,
+        endTime: subtitle.endTime,
+        hasTranslation: subtitle.hasTranslation
+      }));
+      
+      this.logger.info('✅ SRT双语字幕加载完成', {
+        totalSubtitles: this.preloadedTranslations.length,
+        withTranslations: this.preloadedTranslations.filter(s => s.hasTranslation).length
+      });
+      
+      // 标记为SRT模式，跳过segments处理
+      this.usingSRTMode = true;
+      this.showStatusInfo(`SRT双语字幕加载完成 (${this.preloadedTranslations.length}条)`);
+      
+      // 启动实时显示
+      this.startRealtimeDisplay();
+      
+    } catch (e) {
+      this.logger.error('❌ SRT文件处理失败:', e.message);
+      this.showStatusInfo(`SRT处理失败: ${e.message}`);
+      // 回退到segments模式
+      this.usingSRTMode = false;
+    }
   }
 
   // 将后端 events 合并为前端 segments，并建立/更新懒加载翻译结构
@@ -664,11 +1064,24 @@ class YouTubeSubtitleTranslator {
     const existing = this.segments || [];
     const seen = new Set(existing.map(keyOf));
     const merged = existing.slice();
+    let newSegmentsAdded = 0;
+    
     for (const s of backendSegments) {
       const k = keyOf(s);
-      if (!seen.has(k)) { merged.push(s); seen.add(k); }
+      if (!seen.has(k)) { 
+        merged.push(s); 
+        seen.add(k); 
+        newSegmentsAdded++;
+      }
     }
+    
+    // 如果没有新段落，跳过重建
+    if (newSegmentsAdded === 0) {
+      return;
+    }
+    
     merged.sort((a,b)=> (a.startTime - b.startTime) || (a.endTime - b.endTime));
+    this.logger.info(`📝 合并新段落: ${newSegmentsAdded}个新段落，总计${merged.length}个`);
 
     // 3) 生成/更新懒加载翻译结构
     const oldTranslations = new Map();
@@ -679,10 +1092,11 @@ class YouTubeSubtitleTranslator {
     }
 
     // 智能断句：段落字幕检测为 paragraph 时，smartSplit 会直接透传
+    // 只对新段落进行断句处理，避免重复
     const segments = this.translationProcessor.smartSplit(merged.map((s, i) => ({ index: i, text: s.text, startTime: s.startTime, endTime: s.endTime })));
     this.segments = segments;
 
-    // 重新构建批次与索引
+    // 重新构建批次与索引（仅在有新段落时）
     this.batchSize = this.batchSize || 30;
     this.segIndexMap = new Map();
     segments.forEach((s, i) => this.segIndexMap.set(s, i));
@@ -705,11 +1119,23 @@ class YouTubeSubtitleTranslator {
     this.preloadedTranslations = segments.map((seg, i) => ({
       index: i,
       segIndex: i,
-      text: seg.text,
-      translation: oldTranslations.get(seg.text) || null,
+      text: seg.text,  // 确保这是原文
+      translation: oldTranslations.get(seg.text) || null,  // 这是翻译
       startTime: seg.startTime,
-      endTime: seg.endTime
+      endTime: seg.endTime,
+      originalText: seg.text  // 额外保存原文，防止被覆盖
     }));
+    
+    // 确保翻译处理器有最新的设置（只在初次设置时记录日志）
+    if (this.translationProcessor && !this.translationProcessorConfigured) {
+      this.translationProcessor.settings = this.settings;
+      this.translationProcessorConfigured = true;
+      this.logger.info('🔧 初始化翻译处理器设置', {
+        hasApiKey: !!this.settings.apiKey,
+        apiUrl: this.settings.apiUrl,
+        model: this.settings.model
+      });
+    }
 
     // 若首批尚未翻译，触发首批
     if (!this.translatedBatch.has(0) && !this.pendingBatch.has(0)) {
@@ -750,11 +1176,22 @@ class YouTubeSubtitleTranslator {
         this.logger.info('🔄 设置已更新');
         
         // 更新翻译处理器设置
-        if (this.translationProcessor) {
-          this.translationProcessor.settings = this.settings;
-        }
+        this.updateTranslationProcessorSettings();
       }
     });
+  }
+  
+  updateTranslationProcessorSettings() {
+    if (this.translationProcessor) {
+      this.translationProcessor.settings = this.settings;
+      this.logger.info('🔧 翻译处理器设置已更新', {
+        hasApiKey: !!this.settings.apiKey,
+        apiKeyLength: this.settings.apiKey?.length || 0,
+        apiUrl: this.settings.apiUrl,
+        model: this.settings.model,
+        targetLang: this.settings.targetLang
+      });
+    }
   }
 
   createTranslationContainer() {
@@ -972,12 +1409,24 @@ class YouTubeSubtitleTranslator {
       return;
     }
     
+    // 确保内容不为空
+    const displayOriginal = original && original.trim() ? original.trim() : '';
+    const displayTranslated = translated && translated.trim() ? translated.trim() : '';
+    
     // 更新文本内容
-    originalElement.textContent = original;
-    translatedElement.textContent = translated;
+    originalElement.textContent = displayOriginal;
+    translatedElement.textContent = displayTranslated;
+    
+    // 调试日志
+    if (displayOriginal && displayTranslated && displayTranslated !== '翻译中...') {
+      this.logger.debug('🎬 双语字幕显示', {
+        original: displayOriginal.substring(0, 50) + '...',
+        translated: displayTranslated.substring(0, 50) + '...'
+      });
+    }
     
     // 显示/隐藏逻辑
-    const shouldShow = (original && original.trim()) || (translated && translated.trim());
+    const shouldShow = displayOriginal || displayTranslated;
     
     if (shouldShow) {
       // 强制显示容器
@@ -985,6 +1434,19 @@ class YouTubeSubtitleTranslator {
       this.translationContainer.style.visibility = 'visible';
       this.translationContainer.style.opacity = '1';
       this.translationContainer.classList.add('force-show');
+      
+      // 根据内容调整显示
+      if (displayOriginal) {
+        originalElement.style.display = 'block';
+      } else {
+        originalElement.style.display = 'none';
+      }
+      
+      if (displayTranslated && displayTranslated !== '翻译中...') {
+        translatedElement.style.display = 'block';
+      } else {
+        translatedElement.style.display = 'none';
+      }
     } else {
       // 隐藏容器
       this.translationContainer.style.display = 'none';
@@ -993,7 +1455,7 @@ class YouTubeSubtitleTranslator {
   }
   
   showStatusInfo(message) {
-    // 显示状态信息
+    // 显示状态信息（默认隐藏，可通过 Ctrl+D 切换）
     let statusDiv = document.getElementById('subtitle-status-info');
     if (!statusDiv) {
       statusDiv = document.createElement('div');
@@ -1011,6 +1473,7 @@ class YouTubeSubtitleTranslator {
         max-width: 350px;
         font-family: monospace;
         border: 1px solid #333;
+        display: none;
       `;
       document.body.appendChild(statusDiv);
     }
@@ -1064,8 +1527,7 @@ class YouTubeSubtitleTranslator {
 
   // 获取详细调试状态
   getDebugStatus() {
-    const hasSubtitles = this.subtitleFetcher?.hasFullSubtitlesEnhanced();
-    const subtitleCount = hasSubtitles ? this.subtitleFetcher.fullSubtitles.length : 0;
+    const subtitleCount = this.preloadedTranslations?.length || 0;
     const preloadedCount = this.preloadedTranslations?.length || 0;
     
     // 统计日志中的错误和警告
@@ -1073,9 +1535,10 @@ class YouTubeSubtitleTranslator {
     const warnCount = this.logger.logs.filter(log => log.level === 'WARN').length;
     
     return {
-      mode: this.settings.usePreload ? '预加载模式 (增强版)' : '实时翻译模式',
+      mode: this.usingSRTMode ? 'SRT双语模式' : 
+            (this.settings.usePreload ? '预加载模式 (增强版)' : '实时翻译模式'),
       videoId: this.currentVideoId || '未检测',
-      subtitleStatus: hasSubtitles ? `✅ 已获取 (${subtitleCount}条)` : '❌ 未获取',
+      subtitleStatus: subtitleCount > 0 ? `✅ 已获取 (${subtitleCount}条)` : '⏳ 等待后端',
       splitStatus: this.splitSegmentCount ? `✅ 已处理 (${this.splitSegmentCount}段)` : '⏳ 待处理',
       summaryStatus: this.hasSummary ? '✅ 已完成' : '⏳ 待处理',
       translationProgress: this.isPreloading ? `🔄 ${this.processingProgress?.toFixed(1) || 0}%` : 

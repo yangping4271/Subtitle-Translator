@@ -68,7 +68,8 @@ def process_single_file(
     input_file: Path, target_lang: str, output_dir: Path, 
     model: str, llm_model: Optional[str], reflect: bool, debug: bool,
     model_precheck_passed: Optional[bool] = None,
-    batch_mode: bool = False, translator_service = None
+    batch_mode: bool = False, translator_service = None,
+    preserve_intermediate: bool = False
 ):
     """处理单个文件的核心逻辑"""
 
@@ -219,19 +220,32 @@ def process_single_file(
             raise RuntimeError(f"处理失败: {e}")
     finally:
         # --- 清理中间翻译文件，保留原始转录文件 ---
-        logger.info(">>> 正在清理中间翻译文件...")
-        cleaned_files = 0
-        if final_target_lang_path and final_target_lang_path.exists():
-            os.remove(final_target_lang_path)
-            logger.info(f"已删除中间文件: {final_target_lang_path}")
-            cleaned_files += 1
-        if final_english_path and final_english_path.exists():
-            os.remove(final_english_path)
-            logger.info(f"已删除中间文件: {final_english_path}")
-            cleaned_files += 1
-        
-        if cleaned_files > 0:
-            print(f"🧹 已清理 {cleaned_files} 个中间文件")
+        if preserve_intermediate:
+            logger.info(">>> 保留中间翻译文件...")
+            preserved_files = []
+            if final_target_lang_path and final_target_lang_path.exists():
+                preserved_files.append(f"{target_lang} SRT")
+                logger.info(f"保留中间文件: {final_target_lang_path}")
+            if final_english_path and final_english_path.exists():
+                preserved_files.append("英文 SRT")
+                logger.info(f"保留中间文件: {final_english_path}")
+            
+            if preserved_files:
+                print(f"💾 [bold green]已保留中间文件:[/bold green] {', '.join(preserved_files)}")
+        else:
+            logger.info(">>> 正在清理中间翻译文件...")
+            cleaned_files = 0
+            if final_target_lang_path and final_target_lang_path.exists():
+                os.remove(final_target_lang_path)
+                logger.info(f"已删除中间文件: {final_target_lang_path}")
+                cleaned_files += 1
+            if final_english_path and final_english_path.exists():
+                os.remove(final_english_path)
+                logger.info(f"已删除中间文件: {final_english_path}")
+                cleaned_files += 1
+            
+            if cleaned_files > 0:
+                print(f"🧹 已清理 {cleaned_files} 个中间文件")
         
         # 处理原始SRT文件
         if temp_srt_path and temp_srt_path.exists():
