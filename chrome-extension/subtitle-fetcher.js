@@ -371,13 +371,50 @@ class YouTubeSubtitleFetcher {
         throw new Error(`字幕下载失败: ${response.status}`);
       }
 
-      const data = await response.json();
-      if (!data.events) {
-        throw new Error('字幕数据格式错误');
+      // 增强的响应处理
+      const responseText = await response.text();
+      this.logger.debug('📄 响应长度:', responseText.length + '字符');
+      
+      if (!responseText || responseText.trim().length === 0) {
+        throw new Error('响应内容为空');
+      }
+
+      let data;
+      try {
+        // 尝试JSON解析
+        data = JSON.parse(responseText);
+        this.logger.debug('✅ JSON解析成功');
+      } catch (jsonError) {
+        this.logger.warn('⚠️ JSON解析失败，尝试XML格式:', jsonError.message);
+        
+        // 尝试XML格式作为fallback
+        try {
+          data = await this.parseXMLSubtitles(responseText);
+          this.logger.info('✅ XML格式解析成功');
+        } catch (xmlError) {
+          this.logger.error('❌ XML解析也失败:', xmlError.message);
+          
+          // 提供详细的诊断信息
+          this.logger.debug('📊 响应诊断:', {
+            length: responseText.length,
+            firstChars: responseText.substring(0, 100),
+            lastChars: responseText.substring(Math.max(0, responseText.length - 100)),
+            contentType: response.headers.get('content-type'),
+            isValidJSON: this.isValidJSON(responseText),
+            hasXMLStructure: responseText.includes('<')
+          });
+          
+          throw new Error(`无法解析响应格式: JSON错误=${jsonError.message}, XML错误=${xmlError.message}`);
+        }
+      }
+
+      if (!data.events && !data.transcript) {
+        throw new Error('字幕数据格式错误：缺少events或transcript字段');
       }
 
       // 解析字幕事件
-      this.fullSubtitles = this.parseSubtitleEvents(data.events);
+      const events = data.events || data.transcript || [];
+      this.fullSubtitles = this.parseSubtitleEvents(events);
       this.logger.info('✅ 字幕数据下载成功:', this.fullSubtitles.length + '条');
       
       return this.fullSubtitles;
@@ -423,6 +460,92 @@ class YouTubeSubtitleFetcher {
     return subtitles;
   }
 
+  // 验证JSON格式
+  isValidJSON(text) {
+    try {
+      JSON.parse(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // XML格式字幕解析
+  async parseXMLSubtitles(xmlText) {
+    try {
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+      
+      // 检查解析错误
+      const parseError = xmlDoc.querySelector('parsererror');
+      if (parseError) {
+        throw new Error('XML解析错误: ' + parseError.textContent);
+      }
+
+      const events = [];
+      
+      // 尝试解析不同的XML格式
+      let textElements = xmlDoc.querySelectorAll('text');
+      if (textElements.length === 0) {
+        textElements = xmlDoc.querySelectorAll('p'); // TTML格式
+      }
+      
+      if (textElements.length === 0) {
+        throw new Error('XML中未找到文本元素');
+      }
+
+      for (const element of textElements) {
+        const startAttr = element.getAttribute('start') || element.getAttribute('t');
+        const durationAttr = element.getAttribute('dur') || element.getAttribute('d');
+        
+        if (startAttr) {
+          const startTime = this.parseTimeToSeconds(startAttr);
+          const duration = durationAttr ? this.parseTimeToSeconds(durationAttr) : 3;
+          const text = element.textContent.trim();
+          
+          if (text) {
+            events.push({
+              tStartMs: startTime * 1000,
+              dDurationMs: duration * 1000,
+              segs: [{ utf8: text }]
+            });
+          }
+        }
+      }
+
+      return { events };
+    } catch (error) {
+      throw new Error('XML解析失败: ' + error.message);
+    }
+  }
+
+  // 时间格式转换（支持多种格式）
+  parseTimeToSeconds(timeStr) {
+    if (!timeStr) return 0;
+    
+    // 如果是纯数字（毫秒）
+    if (/^\d+$/.test(timeStr)) {
+      return parseFloat(timeStr) / 1000;
+    }
+    
+    // 如果是秒数格式
+    if (/^\d+(\.\d+)?s?$/.test(timeStr)) {
+      return parseFloat(timeStr.replace('s', ''));
+    }
+    
+    // 如果是时:分:秒格式
+    if (timeStr.includes(':')) {
+      const parts = timeStr.split(':');
+      let seconds = 0;
+      for (let i = 0; i < parts.length; i++) {
+        seconds = seconds * 60 + parseFloat(parts[i]);
+      }
+      return seconds;
+    }
+    
+    return parseFloat(timeStr) || 0;
+  }
+
   // 根据时间获取字幕文本
   getSubtitleAtTime(currentTime) {
     if (!this.fullSubtitles) return null;
@@ -457,43 +580,21 @@ class YouTubeSubtitleFetcher {
     }));
   }
 
-  // 精简的字幕获取方法 - 只保留3种最有效的方法
+  // 只保留最可靠的字幕获取方法
   async getSubtitlesWithEnhancedMethods() {
-    this.logger.info('🚀 启动字幕获取流程（精简版）...');
+    this.logger.info('🚀 启动最可靠的字幕获取流程...');
     
     const methods = [
       {
-        name: '标准播放器配置',
-        method: async () => {
-          const captionTrack = await this.getCaptionTracks();
-          if (captionTrack) {
-            return await this.fetchFullSubtitles(captionTrack);
-          }
-          return null;
-        }
-      },
-      {
-        name: '增强页面解析',
-        method: async () => {
-          // 多重页面解析策略
-          const results = await Promise.allSettled([
-            this.extractTimedtextFromPageSource(),
-            this.extractFromPlayerScripts(),
-            this.extractFromYouTubeAPI()
-          ]);
-          
-          for (const result of results) {
-            if (result.status === 'fulfilled' && result.value) {
-              return result.value;
-            }
-          }
-          return null;
-        }
-      },
-      {
-        name: 'yt-dlp风格获取',
+        name: 'yt-dlp风格字幕获取（最可靠）',
         method: async () => {
           return await this.getSubtitlesWithYTDLP();
+        }
+      },
+      {
+        name: '经过验证的完整字幕获取',
+        method: async () => {
+          return await this.getVerifiedCompleteSubtitles();
         }
       }
     ];
@@ -503,19 +604,703 @@ class YouTubeSubtitleFetcher {
         this.logger.info(`🔄 尝试方法: ${methodInfo.name}`);
         const result = await methodInfo.method();
         
-        if (result && result.length > 0) {
+        if (result && result.length > 10) { // 至少要有10条字幕才算成功
           this.logger.info(`✅ ${methodInfo.name} 成功获取 ${result.length} 条字幕`);
           this.fullSubtitles = result;
           return result;
+        } else if (result) {
+          this.logger.warn(`⚠️ ${methodInfo.name} 只获取到 ${result.length} 条字幕，数量不足`);
         }
       } catch (error) {
-        this.logger.warn(`⚠️ ${methodInfo.name} 失败:`, error.message);
+        this.logger.error(`❌ ${methodInfo.name} 失败:`, error.message);
         continue;
       }
     }
 
-    this.logger.error('❌ 所有字幕获取方法都失败了');
+    this.logger.error('❌ 字幕获取失败，回退到实时翻译模式');
     return null;
+  }
+
+  // 经过验证的完整字幕获取方法
+  async getVerifiedCompleteSubtitles() {
+    this.logger.info('🎯 开始经过验证的完整字幕获取...');
+    
+    try {
+      // 第一步：获取字幕轨道信息
+      const playerResponse = this.extractPlayerResponse();
+      if (!playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
+        throw new Error('无法获取播放器字幕轨道信息');
+      }
+
+      const tracks = playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks;
+      this.logger.info('📋 找到字幕轨道:', tracks.length + '个');
+      
+      // 第二步：选择最好的英文字幕轨道
+      const bestTrack = this.findBestEnglishTrack(tracks);
+      if (!bestTrack?.baseUrl) {
+        throw new Error('无法找到合适的英文字幕轨道');
+      }
+
+      this.logger.info('✅ 选定字幕轨道:', {
+        language: bestTrack.languageCode,
+        name: bestTrack.name?.simpleText || '自动生成',
+        isAsr: bestTrack.kind === 'asr'
+      });
+
+      // 第三步：尝试多种格式获取完整字幕 - 优先SRT格式
+      const formats = ['srt', 'vtt', 'srv3', 'ttml'];
+      
+      for (const format of formats) {
+        try {
+          this.logger.info(`📡 尝试${format.toUpperCase()}格式获取...`);
+          
+          const subtitleUrl = bestTrack.baseUrl.replace(/fmt=[^&]*/, `fmt=${format}`);
+          const response = await fetch(subtitleUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/vtt, text/plain, */*',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Referer': 'https://www.youtube.com/',
+              'Sec-Fetch-Dest': 'empty',
+              'Sec-Fetch-Mode': 'cors',
+              'Sec-Fetch-Site': 'same-origin'
+            }
+          });
+
+          if (!response.ok) {
+            this.logger.warn(`❌ ${format}请求失败:`, response.status);
+            continue;
+          }
+
+          const text = await response.text();
+          this.logger.debug(`📄 ${format}响应长度:`, text.length + '字符');
+
+          if (!text || text.trim().length < 500) {
+            this.logger.warn(`❌ ${format}响应内容太短:`, text.length);
+            continue;
+          }
+
+          // 解析字幕
+          let subtitles = [];
+          if (format === 'vtt') {
+            subtitles = this.parseVTTFormat(text);
+          } else if (format === 'srv3') {
+            subtitles = this.parseSRV3Format(text);
+          } else if (format === 'ttml') {
+            subtitles = this.parseXMLSubtitles(text);
+          }
+
+          if (subtitles && subtitles.length > 10) {
+            this.logger.info(`✅ ${format}格式成功:`, subtitles.length + '条字幕');
+            
+            // 验证字幕质量
+            const quality = this.validateSubtitleQuality(subtitles);
+            if (quality.isValid) {
+              this.logger.info('✅ 字幕质量验证通过:', quality);
+              return subtitles;
+            } else {
+              this.logger.warn('⚠️ 字幕质量不佳:', quality);
+              continue;
+            }
+          } else {
+            this.logger.warn(`❌ ${format}解析结果太少:`, subtitles?.length || 0);
+          }
+
+        } catch (formatError) {
+          this.logger.warn(`❌ ${format}格式处理失败:`, formatError.message);
+          continue;
+        }
+      }
+
+      throw new Error('所有格式都无法获取到足够的字幕数据');
+
+    } catch (error) {
+      this.logger.error('❌ 经过验证的字幕获取失败:', error.message);
+      throw error;
+    }
+  }
+
+  // 寻找最佳的英文字幕轨道
+  findBestEnglishTrack(tracks) {
+    // 优先级排序
+    const priorities = [
+      // 1. 手动制作的英文字幕（最高优先级）
+      track => track.languageCode === 'en' && !track.kind,
+      track => track.languageCode === 'en-US' && !track.kind,
+      
+      // 2. 自动生成的英文字幕
+      track => track.languageCode === 'en' && track.kind === 'asr',
+      track => track.languageCode === 'en-US' && track.kind === 'asr',
+      
+      // 3. 其他英文变体
+      track => track.languageCode?.startsWith('en'),
+      
+      // 4. 任何ASR字幕
+      track => track.kind === 'asr'
+    ];
+
+    for (const priority of priorities) {
+      const track = tracks.find(priority);
+      if (track) {
+        return track;
+      }
+    }
+
+    // 5. 如果都没有，返回第一个
+    return tracks[0];
+  }
+
+  // 验证字幕质量
+  validateSubtitleQuality(subtitles) {
+    if (!subtitles || subtitles.length === 0) {
+      return { isValid: false, reason: '字幕为空' };
+    }
+
+    if (subtitles.length < 10) {
+      return { isValid: false, reason: '字幕数量太少', count: subtitles.length };
+    }
+
+    // 检查时间有效性
+    let validTimeCount = 0;
+    let textValidCount = 0;
+    let totalDuration = 0;
+
+    for (const sub of subtitles) {
+      if (typeof sub.startTime === 'number' && typeof sub.endTime === 'number' && 
+          sub.startTime >= 0 && sub.endTime > sub.startTime) {
+        validTimeCount++;
+        totalDuration += (sub.endTime - sub.startTime);
+      }
+
+      if (typeof sub.text === 'string' && sub.text.trim().length > 0) {
+        textValidCount++;
+      }
+    }
+
+    const timeValidRatio = validTimeCount / subtitles.length;
+    const textValidRatio = textValidCount / subtitles.length;
+    const avgDuration = totalDuration / validTimeCount || 0;
+
+    const isValid = timeValidRatio >= 0.9 && textValidRatio >= 0.9 && avgDuration > 0.5;
+
+    return {
+      isValid,
+      count: subtitles.length,
+      timeValidRatio: (timeValidRatio * 100).toFixed(1) + '%',
+      textValidRatio: (textValidRatio * 100).toFixed(1) + '%',
+      avgDuration: avgDuration.toFixed(2) + 's',
+      totalDuration: totalDuration.toFixed(1) + 's'
+    };
+  }
+
+  // 方法1: 可靠的VTT格式获取
+  async getReliableVTTSubtitles() {
+    try {
+      this.logger.info('📡 获取VTT格式字幕...');
+      
+      // 从播放器配置获取字幕轨道
+      const playerResponse = this.extractPlayerResponse();
+      if (!playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
+        throw new Error('无法获取字幕轨道信息');
+      }
+      
+      const tracks = playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks;
+      const englishTrack = this.selectPreferredTrack(tracks);
+      
+      if (!englishTrack?.baseUrl) {
+        throw new Error('无法找到英文字幕轨道');
+      }
+      
+      // 构建VTT格式URL
+      const vttUrl = englishTrack.baseUrl.replace(/fmt=[^&]*/, 'fmt=vtt');
+      this.logger.info('📡 VTT URL:', vttUrl.substring(0, 100) + '...');
+      
+      const response = await fetch(vttUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`VTT请求失败: ${response.status}`);
+      }
+      
+      const vttText = await response.text();
+      this.logger.debug('📄 VTT响应长度:', vttText.length + '字符');
+      
+      if (!vttText || vttText.trim().length < 100) {
+        throw new Error('VTT响应内容太短或为空');
+      }
+      
+      // 解析VTT格式
+      const subtitles = this.parseVTTFormat(vttText);
+      this.logger.info('✅ VTT解析结果:', subtitles.length + '条字幕');
+      
+      return subtitles;
+      
+    } catch (error) {
+      this.logger.error('❌ VTT字幕获取失败:', error.message);
+      throw error;
+    }
+  }
+  
+  // 方法2: 可靠的SRT格式获取  
+  async getReliableSRTSubtitles() {
+    try {
+      this.logger.info('📡 获取SRT格式字幕...');
+      
+      // 从播放器配置获取字幕轨道
+      const playerResponse = this.extractPlayerResponse();
+      if (!playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
+        throw new Error('无法获取字幕轨道信息');
+      }
+      
+      const tracks = playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks;
+      const englishTrack = this.selectPreferredTrack(tracks);
+      
+      if (!englishTrack?.baseUrl) {
+        throw new Error('无法找到英文字幕轨道');
+      }
+      
+      // 构建SRT格式URL
+      const srtUrl = englishTrack.baseUrl.replace(/fmt=[^&]*/, 'fmt=srt');
+      this.logger.info('📡 SRT URL:', srtUrl.substring(0, 100) + '...');
+      
+      const response = await fetch(srtUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`SRT请求失败: ${response.status}`);
+      }
+      
+      const srtText = await response.text();
+      this.logger.debug('📄 SRT响应长度:', srtText.length + '字符');
+      
+      if (!srtText || srtText.trim().length < 100) {
+        throw new Error('SRT响应内容太短或为空');
+      }
+      
+      // 解析SRT格式
+      const subtitles = this.parseSRTFormat(srtText);
+      this.logger.info('✅ SRT解析结果:', subtitles.length + '条字幕');
+      
+      return subtitles;
+      
+    } catch (error) {
+      this.logger.error('❌ SRT字幕获取失败:', error.message);
+      throw error;
+    }
+  }
+  
+  // 方法3: 直接timedtext API调用
+  async getDirectTimedTextSubtitles() {
+    try {
+      this.logger.info('📡 直接调用timedtext API...');
+      
+      // 尝试多种不同的timedtext API调用方式
+      const apiUrls = [
+        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=vtt&lang=en`,
+        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srt&lang=en`,
+        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=vtt&lang=en&kind=asr`,
+        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srt&lang=en&kind=asr`
+      ];
+      
+      for (const apiUrl of apiUrls) {
+        try {
+          this.logger.info('🔍 尝试API URL:', apiUrl.substring(0, 80) + '...');
+          
+          const response = await fetch(apiUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+              'Accept': 'text/plain, */*',
+              'Referer': 'https://www.youtube.com/'
+            }
+          });
+          
+          if (response.ok) {
+            const text = await response.text();
+            this.logger.debug('📄 API响应长度:', text.length + '字符');
+            
+            if (text && text.trim().length > 100) {
+              // 根据URL中的格式解析
+              let subtitles;
+              if (apiUrl.includes('fmt=vtt')) {
+                subtitles = this.parseVTTFormat(text);
+              } else if (apiUrl.includes('fmt=srt')) {
+                subtitles = this.parseSRTFormat(text);
+              }
+              
+              if (subtitles && subtitles.length > 5) {
+                this.logger.info('✅ 直接API调用成功:', subtitles.length + '条字幕');
+                return subtitles;
+              }
+            }
+          }
+          
+        } catch (error) {
+          this.logger.debug('⚠️ API URL失败:', error.message);
+          continue;
+        }
+      }
+      
+      throw new Error('所有API URL都失败了');
+      
+    } catch (error) {
+      this.logger.error('❌ 直接timedtext API调用失败:', error.message);
+      throw error;
+    }
+  }
+
+  // 方法1: 直接尝试XML格式字幕
+  async tryDirectXMLSubtitles() {
+    try {
+      this.logger.info('🔍 尝试XML格式字幕获取...');
+      
+      // 从播放器配置获取字幕轨道
+      const playerResponse = this.extractPlayerResponse();
+      if (!playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
+        throw new Error('无法获取字幕轨道信息');
+      }
+      
+      const tracks = playerResponse.captions.playerCaptionsTracklistRenderer.captionTracks;
+      const englishTrack = this.selectPreferredTrack(tracks);
+      
+      if (!englishTrack?.baseUrl) {
+        throw new Error('无法找到英文字幕轨道');
+      }
+      
+      // 尝试不同的XML格式参数
+      const xmlFormats = ['srv3', 'ttml', 'vtt', 'srt'];
+      
+      for (const format of xmlFormats) {
+        try {
+          const xmlUrl = englishTrack.baseUrl.replace(/fmt=[^&]*/, `fmt=${format}`);
+          this.logger.info(`📡 尝试${format.toUpperCase()}格式:`, xmlUrl.substring(0, 120) + '...');
+          
+          const response = await fetch(xmlUrl);
+          if (response.ok) {
+            const xmlText = await response.text();
+            this.logger.debug(`📄 ${format}响应长度:`, xmlText.length + '字符');
+            
+            if (xmlText && xmlText.trim().length > 0) {
+              // 尝试解析XML/SRT内容
+              const parsed = await this.parseTextSubtitles(xmlText, format);
+              if (parsed && parsed.length > 0) {
+                this.logger.info(`✅ ${format.toUpperCase()}格式解析成功:`, parsed.length + '条字幕');
+                return parsed;
+              }
+            }
+          }
+        } catch (error) {
+          this.logger.debug(`⚠️ ${format}格式失败:`, error.message);
+          continue;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.debug('XML字幕获取失败:', error.message);
+      return null;
+    }
+  }
+  
+  // 方法2: 尝试SRV3格式字幕
+  async trySRV3Subtitles() {
+    try {
+      this.logger.info('🔍 尝试SRV3格式字幕...');
+      
+      // 构建SRV3格式的字幕URL
+      const srv3Urls = [
+        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srv3&lang=en`,
+        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srv3&lang=en&kind=asr`,
+        `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srv3&lang=a.en`
+      ];
+      
+      for (const url of srv3Urls) {
+        try {
+          this.logger.info('📡 尝试SRV3 URL:', url);
+          
+          const response = await fetch(url);
+          if (response.ok) {
+            const srv3Text = await response.text();
+            this.logger.debug('📄 SRV3响应长度:', srv3Text.length + '字符');
+            
+            if (srv3Text && srv3Text.trim().length > 0) {
+              const parsed = await this.parseSRV3Format(srv3Text);
+              if (parsed && parsed.length > 0) {
+                this.logger.info('✅ SRV3格式解析成功:', parsed.length + '条字幕');
+                return parsed;
+              }
+            }
+          }
+        } catch (error) {
+          this.logger.debug('⚠️ SRV3 URL失败:', error.message);
+          continue;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.debug('SRV3字幕获取失败:', error.message);
+      return null;
+    }
+  }
+  
+  // 方法3: DOM直接提取现有字幕
+  async tryDOMSubtitleExtraction() {
+    try {
+      this.logger.info('🔍 尝试DOM字幕提取...');
+      
+      // 等待字幕加载
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // 检查是否有现有字幕显示
+      const subtitleSelectors = [
+        '.caption-window .captions-text',
+        '.ytp-caption-segment',
+        '.caption-window',
+        '.html5-captions-text',
+        '[class*="caption"]'
+      ];
+      
+      let foundSubtitles = [];
+      const videoElement = document.querySelector('video');
+      
+      if (!videoElement) {
+        throw new Error('未找到视频元素');
+      }
+      
+      // 监听视频播放过程中的字幕变化
+      return new Promise((resolve, reject) => {
+        let subtitleData = [];
+        let lastSubtitle = '';
+        let startTime = 0;
+        
+        const collectSubtitle = () => {
+          const currentTime = videoElement.currentTime;
+          let currentSubtitle = '';
+          
+          for (const selector of subtitleSelectors) {
+            const element = document.querySelector(selector);
+            if (element && element.textContent && element.textContent.trim()) {
+              currentSubtitle = element.textContent.trim();
+              break;
+            }
+          }
+          
+          if (currentSubtitle && currentSubtitle !== lastSubtitle) {
+            if (lastSubtitle) {
+              // 保存上一个字幕
+              subtitleData.push({
+                startTime: startTime,
+                endTime: currentTime,
+                text: lastSubtitle
+              });
+            }
+            lastSubtitle = currentSubtitle;
+            startTime = currentTime;
+            this.logger.debug('📝 收集字幕:', currentSubtitle);
+          }
+        };
+        
+        // 开始收集字幕
+        const interval = setInterval(collectSubtitle, 1000);
+        
+        // 10秒后停止收集并返回结果
+        setTimeout(() => {
+          clearInterval(interval);
+          
+          // 添加最后一个字幕
+          if (lastSubtitle) {
+            subtitleData.push({
+              startTime: startTime,
+              endTime: videoElement.currentTime,
+              text: lastSubtitle
+            });
+          }
+          
+          if (subtitleData.length > 0) {
+            this.logger.info('✅ DOM字幕提取成功:', subtitleData.length + '条');
+            resolve(subtitleData);
+          } else {
+            reject(new Error('未能提取到字幕数据'));
+          }
+        }, 10000);
+      });
+      
+    } catch (error) {
+      this.logger.debug('DOM字幕提取失败:', error.message);
+      return null;
+    }
+  }
+  
+  // 解析文本格式字幕（XML/SRT/VTT等）
+  async parseTextSubtitles(text, format) {
+    try {
+      if (format === 'srt') {
+        return this.parseSRTFormat(text);
+      } else if (format === 'vtt') {
+        return this.parseVTTFormat(text);
+      } else if (format === 'ttml') {
+        return this.parseXMLSubtitles(text);
+      } else if (format === 'srv3') {
+        return this.parseSRV3Format(text);
+      }
+      
+      // 默认尝试XML解析
+      return this.parseXMLSubtitles(text);
+    } catch (error) {
+      throw new Error(`${format}格式解析失败: ${error.message}`);
+    }
+  }
+  
+  // 解析SRT格式 - 优化版，兼容转换格式
+  parseSRTFormat(srtText) {
+    const subtitles = [];
+    
+    // 支持从其他格式转换的SRT
+    if (!srtText || typeof srtText !== 'string') {
+      this.logger.warn('⚠️ SRT数据无效');
+      return subtitles;
+    }
+    
+    // 分割成字幕条目
+    const entries = srtText.trim().split(/\n\s*\n/).filter(entry => entry.trim());
+    
+    this.logger.debug('🔍 SRT解析开始:', entries.length + '个条目');
+    
+    for (const entry of entries) {
+      const lines = entry.trim().split('\n');
+      if (lines.length < 3) continue;
+      
+      // 找时间行（可能在第2行或第3行）
+      let timeLineIndex = -1;
+      for (let i = 0; i < Math.min(3, lines.length); i++) {
+        if (lines[i].includes('-->')) {
+          timeLineIndex = i;
+          break;
+        }
+      }
+      
+      if (timeLineIndex === -1) continue;
+      
+      const timeMatch = lines[timeLineIndex].match(/([\d:,\.]+)\s*-->\s*([\d:,\.]+)/);
+      if (timeMatch) {
+        const startTime = this.parseSRTTime(timeMatch[1]);
+        const endTime = this.parseSRTTime(timeMatch[2]);
+        const text = lines.slice(timeLineIndex + 1).join(' ').trim();
+        
+        if (text && startTime >= 0 && endTime > startTime) {
+          subtitles.push({ 
+            startTime, 
+            endTime, 
+            text: text.replace(/<[^>]*>/g, '').trim() // 移除HTML标签
+          });
+        }
+      }
+    }
+    
+    this.logger.info(`✅ SRT解析完成: ${subtitles.length}条字幕`);
+    return subtitles;
+  }
+
+  // 解析SRT时间格式（兼容多种格式）
+  parseSRTTime(timeStr) {
+    if (!timeStr) return 0;
+    
+    // 处理多种时间格式: 00:01:23,456 或 00:01:23.456 或 1:23.456
+    const normalizedTime = timeStr.replace(',', '.');
+    const parts = normalizedTime.split(':');
+    
+    if (parts.length === 3) {
+      const hours = parseInt(parts[0]) || 0;
+      const minutes = parseInt(parts[1]) || 0;
+      const secondsParts = parts[2].split('.');
+      const seconds = parseInt(secondsParts[0]) || 0;
+      const milliseconds = parseInt(secondsParts[1]?.padEnd(3, '0').slice(0, 3)) || 0;
+      
+      return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+    } else if (parts.length === 2) {
+      // 处理 mm:ss.sss 格式
+      const minutes = parseInt(parts[0]) || 0;
+      const secondsParts = parts[1].split('.');
+      const seconds = parseInt(secondsParts[0]) || 0;
+      const milliseconds = parseInt(secondsParts[1]?.padEnd(3, '0').slice(0, 3)) || 0;
+      
+      return minutes * 60 + seconds + milliseconds / 1000;
+    }
+    
+    return 0;
+  }
+  
+  // 解析VTT格式
+  parseVTTFormat(vttText) {
+    const subtitles = [];
+    const lines = vttText.split('\n');
+    let i = 0;
+    
+    // 跳过VTT头部
+    while (i < lines.length && !lines[i].includes('-->')) {
+      i++;
+    }
+    
+    while (i < lines.length) {
+      const timeMatch = lines[i].match(/(\d{2}:\d{2}:\d{2}\.\d{3}) --> (\d{2}:\d{2}:\d{2}\.\d{3})/);
+      if (timeMatch) {
+        const startTime = this.parseTimeToSeconds(timeMatch[1]);
+        const endTime = this.parseTimeToSeconds(timeMatch[2]);
+        
+        let text = '';
+        i++;
+        while (i < lines.length && lines[i].trim() && !lines[i].includes('-->')) {
+          text += lines[i] + ' ';
+          i++;
+        }
+        
+        if (text.trim()) {
+          subtitles.push({ startTime, endTime, text: text.trim() });
+        }
+      } else {
+        i++;
+      }
+    }
+    
+    return subtitles;
+  }
+  
+  // 解析SRV3格式（YouTube特殊格式）
+  parseSRV3Format(srv3Text) {
+    try {
+      // SRV3格式通常是基于XML的
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(srv3Text, 'text/xml');
+      
+      const subtitles = [];
+      const textElements = xmlDoc.querySelectorAll('text');
+      
+      for (const element of textElements) {
+        const start = element.getAttribute('start') || element.getAttribute('t');
+        const dur = element.getAttribute('dur') || element.getAttribute('d');
+        
+        if (start) {
+          const startTime = parseFloat(start);
+          const duration = dur ? parseFloat(dur) : 3;
+          const endTime = startTime + duration;
+          const text = element.textContent.trim();
+          
+          if (text) {
+            subtitles.push({ startTime, endTime, text });
+          }
+        }
+      }
+      
+      return subtitles;
+    } catch (error) {
+      throw new Error('SRV3格式解析失败: ' + error.message);
+    }
   }
 
   // 检查是否有完整字幕（增强版）
@@ -552,15 +1337,25 @@ class YouTubeSubtitleFetcher {
     this.logger.info('📺 尝试yt-dlp风格的字幕获取...');
     
     try {
-      // 直接尝试最常用的格式
+      // 直接尝试最常用的格式 - 按可靠性排序
       const ytdlpUrls = [
+        {
+          name: 'YouTube SRT格式（最可靠）',
+          url: `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srt&lang=en`,
+          format: 'srt'
+        },
+        {
+          name: 'YouTube Auto-Generated SRT',
+          url: `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=srt&lang=en&kind=asr`,
+          format: 'srt'
+        },
         {
           name: 'YouTube TimedText JSON3',
           url: `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=json3&lang=en`,
           format: 'json3'
         },
         {
-          name: 'YouTube Auto-Generated',
+          name: 'YouTube Auto-Generated JSON3',
           url: `https://www.youtube.com/api/timedtext?v=${this.videoId}&fmt=json3&lang=en&kind=asr`,
           format: 'json3'
         }
@@ -606,14 +1401,45 @@ class YouTubeSubtitleFetcher {
   // 解析yt-dlp响应（精简版）
   async parseYTDLPResponse(data, format) {
     try {
-      if (format === 'json3') {
-        const jsonData = JSON.parse(data);
+      if (format === 'srt') {
+        // 解析SRT格式
+        const subtitles = this.parseSRTFormat(data);
+        if (subtitles && subtitles.length > 0) {
+          this.logger.debug('✅ yt-dlp SRT解析成功:', subtitles.length + '条字幕');
+          return subtitles;
+        }
+      } else if (format === 'json3') {
+        let jsonData;
+        try {
+          jsonData = JSON.parse(data);
+          this.logger.debug('✅ yt-dlp JSON解析成功');
+        } catch (jsonError) {
+          this.logger.warn('⚠️ yt-dlp JSON解析失败，尝试其他方法:', jsonError.message);
+          
+          // 尝试修复常见的JSON问题
+          const cleanedData = data.trim();
+          if (cleanedData.length === 0) {
+            throw new Error('响应为空');
+          }
+          
+          // 提供诊断信息
+          this.logger.debug('📊 yt-dlp响应诊断:', {
+            length: cleanedData.length,
+            startsWithBrace: cleanedData.startsWith('{'),
+            endsWithBrace: cleanedData.endsWith('}'),
+            firstChars: cleanedData.substring(0, 50),
+            lastChars: cleanedData.substring(Math.max(0, cleanedData.length - 50))
+          });
+          
+          return null;
+        }
+        
         if (jsonData.events) {
           return this.parseSubtitleEvents(jsonData.events);
         }
       }
     } catch (error) {
-      this.logger.debug('解析响应失败:', error.message);
+      this.logger.debug('yt-dlp解析响应失败:', error.message);
     }
     
     return null;
@@ -654,14 +1480,30 @@ class YouTubeSubtitleFetcher {
         throw new Error(`字幕请求失败: ${response.status}`);
       }
       
-      const data = await response.json();
+      // 使用改进的响应处理
+      const responseText = await response.text();
+      this.logger.debug('📄 内部API响应长度:', responseText.length + '字符');
+      
+      if (!responseText || responseText.trim().length === 0) {
+        throw new Error('内部API响应为空');
+      }
+      
+      let data;
+      try {
+        data = JSON.parse(responseText);
+        this.logger.debug('✅ 内部API JSON解析成功');
+      } catch (jsonError) {
+        this.logger.debug('❌ 内部API JSON解析失败:', jsonError.message);
+        throw new Error(`内部API JSON解析失败: ${jsonError.message}`);
+      }
+      
       if (data.events) {
         const parsed = this.parseSubtitleEvents(data.events);
         this.logger.info('✅ 内部API成功:', parsed.length + '条字幕');
         return parsed;
       }
       
-      throw new Error('字幕数据格式错误');
+      throw new Error('字幕数据格式错误：缺少events字段');
       
     } catch (error) {
       this.logger.debug('内部API失败:', error.message);
