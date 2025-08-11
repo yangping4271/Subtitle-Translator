@@ -6,19 +6,22 @@
   
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "scripting"
   ],
   
   "host_permissions": [
     "https://www.youtube.com/*",
+    "https://m.youtube.com/*",
     "https://api.openai.com/*"
   ],
   
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/watch*"],
+      "matches": ["https://www.youtube.com/watch*", "https://m.youtube.com/watch*"],
       "js": ["logger.js", "content-with-logger.js"],
-      "css": ["style.css"]
+      "css": ["style.css"],
+      "run_at": "document_start"
     }
   ],
   
@@ -31,7 +34,11 @@
   "web_accessible_resources": [
     {
       "resources": ["style.css"],
-      "matches": ["https://www.youtube.com/*"]
+      "matches": ["https://www.youtube.com/*", "https://m.youtube.com/*"]
     }
-  ]
+  ],
+  
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
 }
