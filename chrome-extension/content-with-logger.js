@@ -18,7 +18,7 @@ class YouTubeSubtitleTranslator {
     this.translationContainer = null;
     
     // 预加载相关
-    this.subtitleFetcher = new YouTubeSubtitleFetcher();
+    // 移除 YouTube 内置字幕获取，改为后端转录方案
     this.translationProcessor = new SmartTranslationProcessor(this.settings, this.logger);
     this.preloadedTranslations = null;
     this.isPreloading = false;
@@ -355,7 +355,7 @@ class YouTubeSubtitleTranslator {
     this.isPreloading = false;
     this.currentSubtitleText = '';
     this.translationCache.clear();
-    this.subtitleFetcher.clearSubtitles();
+    // 移除本地字幕清理（不再使用内置获取）
     this.updateSubtitleDisplay('', '');
     
     // 重置状态追踪变量
@@ -415,9 +415,11 @@ class YouTubeSubtitleTranslator {
       // 更新设置到处理器
       this.translationProcessor.settings = this.settings;
       
-      // 准备字幕文本数据
-      const subtitleTexts = this.subtitleFetcher.getAllSubtitleTexts();
-      this.logger.info('📝 获取字幕文本数据:', subtitleTexts.length + '条');
+      // 改为从后端拉取初始 segments（当前窗口前后）
+      const now = this.getCurrentPlayTime() ?? 0;
+      await this.maybeFetchBackendSegments(now);
+      const subtitleTexts = (this.segments || []).map((s, i) => ({ index: i, text: s.text, startTime: s.startTime, endTime: s.endTime }));
+      this.logger.info('📝 获取字幕文本数据(后端):', subtitleTexts.length + '条');
 
       // 智能断句（仅当检测为单词级时提示展示）
       const typeInfoForUi = this.translationProcessor.detectSubtitleType(subtitleTexts);
@@ -573,12 +575,17 @@ class YouTubeSubtitleTranslator {
   // 从预加载数据更新显示
   updateDisplayFromPreloaded() {
     if (!this.preloadedTranslations || this.preloadedTranslations.length === 0) {
+      // 若后端存在，尝试按需拉取首批段落
+      const now = this.getCurrentPlayTime();
+      if (now !== null) this.maybeFetchBackendSegments(now);
       return;
     }
     
     // 获取当前播放时间
     const currentTime = this.getCurrentPlayTime();
     if (currentTime === null) return;
+    // 后端按需拉取
+    this.maybeFetchBackendSegments(currentTime);
     
     // 找到当前时间对应的字幕
     const currentSubtitle = this.findSubtitleAtTime(currentTime);
@@ -620,6 +627,93 @@ class YouTubeSubtitleTranslator {
       if ((nextStart - currentTime) <= 8 && !this.translatedBatch.has(nextBatch) && !this.pendingBatch.has(nextBatch)) {
         this.translateAndFillBatch(nextBatch);
       }
+    }
+  }
+
+  // 限流并按窗口从后端拉取 segments（首版实现）
+  maybeFetchBackendSegments(currentTimeSec) {
+    if (!this.currentJobId || !this.backend?.baseUrl) return;
+    const now = Date.now();
+    if (this._lastSegFetchTs && (now - this._lastSegFetchTs) < 800) return; // 800ms 限流
+    this._lastSegFetchTs = now;
+    const ahead = this.backend.prefetchAheadSec || 30;
+    const fromMs = Math.max(0, Math.floor((currentTimeSec - 2) * 1000));
+    const toMs = Math.floor((currentTimeSec + ahead) * 1000);
+    const url = `${this.backend.baseUrl}/segments?job_id=${encodeURIComponent(this.currentJobId)}&from_ms=${fromMs}&to_ms=${toMs}&include_translation=1`;
+    fetch(url).then(r => r.ok ? r.json() : null).then(data => {
+      if (!data || !Array.isArray(data.events) || data.events.length === 0) return;
+      this.incorporateBackendSegments(data.events);
+    }).catch(() => {});
+  }
+
+  // 将后端 events 合并为前端 segments，并建立/更新懒加载翻译结构
+  async incorporateBackendSegments(events) {
+    // 1) 映射为统一 segments（段落字幕，无需断句）
+    const backendSegments = [];
+    for (const ev of events) {
+      const start = (ev.tStartMs || 0) / 1000;
+      const dur = (ev.dDurationMs || 0) / 1000;
+      const end = start + dur;
+      const text = Array.isArray(ev.segs) ? ev.segs.map(s => s.utf8 || '').join('') : (ev.text || '');
+      if (text && end > start) backendSegments.push({ text: text.trim(), startTime: start, endTime: end });
+    }
+    if (backendSegments.length === 0) return;
+
+    // 2) 合并到现有 segments，去重（按 start/end/text）
+    const keyOf = (s) => `${s.startTime.toFixed(3)}|${s.endTime.toFixed(3)}|${s.text}`;
+    const existing = this.segments || [];
+    const seen = new Set(existing.map(keyOf));
+    const merged = existing.slice();
+    for (const s of backendSegments) {
+      const k = keyOf(s);
+      if (!seen.has(k)) { merged.push(s); seen.add(k); }
+    }
+    merged.sort((a,b)=> (a.startTime - b.startTime) || (a.endTime - b.endTime));
+
+    // 3) 生成/更新懒加载翻译结构
+    const oldTranslations = new Map();
+    if (this.preloadedTranslations) {
+      for (const t of this.preloadedTranslations) {
+        if (t && t.text && t.translation) oldTranslations.set(t.text, t.translation);
+      }
+    }
+
+    // 智能断句：段落字幕检测为 paragraph 时，smartSplit 会直接透传
+    const segments = this.translationProcessor.smartSplit(merged.map((s, i) => ({ index: i, text: s.text, startTime: s.startTime, endTime: s.endTime })));
+    this.segments = segments;
+
+    // 重新构建批次与索引
+    this.batchSize = this.batchSize || 30;
+    this.segIndexMap = new Map();
+    segments.forEach((s, i) => this.segIndexMap.set(s, i));
+    this.batches = this.translationProcessor.createBatches(segments, this.batchSize);
+    this.segIndexToBatch = new Array(segments.length);
+    this.batchMeta = this.batches.map((batch, bi) => {
+      let start = Number.POSITIVE_INFINITY, end = 0;
+      batch.forEach(seg => {
+        const idx = this.segIndexMap.get(seg);
+        this.segIndexToBatch[idx] = bi;
+        start = Math.min(start, seg.startTime);
+        end = Math.max(end, seg.endTime);
+      });
+      return { startTime: start, endTime: end };
+    });
+    this.translatedBatch = this.translatedBatch || new Set();
+    this.pendingBatch = this.pendingBatch || new Set();
+
+    // 重建 preloadedTranslations，并尽量带上已有翻译
+    this.preloadedTranslations = segments.map((seg, i) => ({
+      index: i,
+      segIndex: i,
+      text: seg.text,
+      translation: oldTranslations.get(seg.text) || null,
+      startTime: seg.startTime,
+      endTime: seg.endTime
+    }));
+
+    // 若首批尚未翻译，触发首批
+    if (!this.translatedBatch.has(0) && !this.pendingBatch.has(0)) {
+      this.translateAndFillBatch(0);
     }
   }
 
