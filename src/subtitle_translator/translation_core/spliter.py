@@ -524,15 +524,13 @@ def merge_segments(asr_data: SubtitleData,
     # 如果需要保存断句结果
     if save_split:
         try:
-            from .data import save_split_result
-            
             # 获取输入的全部文本
             all_text = asr_data.to_txt()
             # 获取所有处理后的分段文本
             split_sentences = [seg.text for seg in all_segments]
             
             # 显示断句结果
-            save_split_result(all_text, split_sentences, save_split)
+            save_split_results(all_text, split_sentences, save_split)
             logger.info(f"📄 断句结果已保存到: {save_split}")
         except Exception as e:
             logger.error(f"❌ 保存断句结果失败: {str(e)}")
