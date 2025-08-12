@@ -41,6 +41,7 @@ def main(
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
     reflect: bool = typer.Option(False, "--reflect", "-r", help="启用反思翻译模式，提高翻译质量但会增加处理时间。"),
     debug: bool = typer.Option(False, "--debug", "-d", help="启用调试日志级别，显示更详细的处理信息。"),
+    preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
     version: bool = typer.Option(False, "--version", help="显示版本信息并退出。"),
 ):
     """字幕翻译工具主命令"""
@@ -95,7 +96,7 @@ def main(
         files_to_process = _get_batch_files(max_count, llm_model)
 
     # 批量处理文件
-    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, reflect, debug)
+    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, reflect, debug, preserve_intermediate)
 
 
 def _validate_target_language(target_lang: str):
@@ -170,7 +171,7 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
 
 
 def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path, 
-                        model: str, llm_model: Optional[str], reflect: bool, debug: bool):
+                        model: str, llm_model: Optional[str], reflect: bool, debug: bool, preserve_intermediate: bool):
     """批量处理文件"""
     from .transcription_core.model_cache import model_context
     
@@ -219,7 +220,8 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
                 process_single_file(
                     current_input_file, target_lang, output_dir, model, 
                     llm_model, reflect, debug, model_precheck_passed,
-                    batch_mode=True, translator_service=translator_service
+                    batch_mode=True, translator_service=translator_service,
+                    preserve_intermediate=preserve_intermediate
                 )
                 count += 1
                 
