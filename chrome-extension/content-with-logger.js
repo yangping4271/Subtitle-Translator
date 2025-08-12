@@ -120,16 +120,28 @@ class YouTubeSubtitleTranslator {
   async init() {
     await this.loadSettings();
     
-    if (!this.settings.apiKey) {
-      this.logger.error('❌ 未配置API密钥');
-      this.showStatusInfo('未配置API密钥！请点击插件图标配置。');
+    // 首先设置后台配置
+    this.setupBackendTranscribe();
+    
+    // 使用后台API，不再需要直接的API密钥检查
+    this.logger.info('✅ 使用后台API模式，无需直接API密钥');
+    
+    // 检查后台服务连接
+    try {
+      const response = await fetch(`${this.backend.baseUrl}/health`);
+      if (!response.ok) {
+        throw new Error(`后台服务不可用: ${response.status}`);
+      }
+      this.logger.info('✅ 后台服务连接正常');
+    } catch (error) {
+      this.logger.error('❌ 后台服务连接失败:', error.message);
+      this.showStatusInfo('后台服务未运行！请启动后台服务。');
       return;
     }
     
     this.createTranslationContainer();
     this.setupMessageListener();
     this.setupVideoChangeDetection();
-    this.setupBackendTranscribe();
     
     // 设置翻译进度回调
     this.translationProcessor.setProgressCallback((progress) => {
@@ -139,7 +151,7 @@ class YouTubeSubtitleTranslator {
     
             this.logger.info('✅ 初始化完成');
         // 显示简洁的启动提示
-        this.showTemporaryMessage('🌐 YouTube双语字幕已启动 (Ctrl+B显示详细状态)', 3000);
+        this.showTemporaryMessage('🌐 YouTube双语字幕已启动 (Ctrl+B=调试面板, Ctrl+T=测试字幕)', 3000);
     
     // 设置全局快捷键
     this.setupGlobalKeyboardShortcuts();
@@ -299,6 +311,12 @@ class YouTubeSubtitleTranslator {
         this.showTemporaryMessage('调试日志已导出到下载文件夹！');
       }
       
+      // Ctrl+T: 测试双语字幕显示
+      if (event.ctrlKey && event.key === 't') {
+        event.preventDefault();
+        this.testBilingualSubtitles();
+      }
+      
       // Ctrl+B: 切换调试面板显示/隐藏
       if (event.ctrlKey && event.key === 'b') {
         event.preventDefault();
@@ -306,7 +324,32 @@ class YouTubeSubtitleTranslator {
       }
     });
     
-    this.logger.info('⌨️ 全局快捷键已设置: Ctrl+L=导出日志, Ctrl+B=显示/隐藏调试面板');
+    this.logger.info('⌨️ 全局快捷键已设置: Ctrl+L=导出日志, Ctrl+B=显示/隐藏调试面板, Ctrl+T=测试双语字幕');
+  }
+  
+  // 测试双语字幕显示
+  testBilingualSubtitles() {
+    this.logger.info('🧪 开始测试双语字幕显示');
+    
+    // 确保容器存在
+    if (!this.translationContainer) {
+      this.createTranslationContainer();
+    }
+    
+    // 显示测试字幕
+    this.updateBilingualSubtitles(
+      'This is a test subtitle for the YouTube bilingual subtitle extension.',
+      '这是YouTube双语字幕扩展的测试字幕。'
+    );
+    
+    // 5秒后清除测试字幕
+    setTimeout(() => {
+      this.updateBilingualSubtitles('', '');
+      this.logger.info('🧪 测试字幕已清除');
+      this.showTemporaryMessage('测试完成！双语字幕功能正常。', 2000);
+    }, 5000);
+    
+    this.showTemporaryMessage('🧪 正在测试双语字幕显示...（5秒后自动清除）', 1500);
   }
   
   // 显示临时消息
@@ -338,8 +381,18 @@ class YouTubeSubtitleTranslator {
   
   // 切换调试面板显示/隐藏
   toggleDebugPanel() {
-    const statusDiv = document.getElementById('subtitle-status-info');
-    if (statusDiv) {
+    let statusDiv = document.getElementById('subtitle-status-info');
+    
+    if (!statusDiv) {
+      // 如果不存在，先创建并显示
+      this.showStatusInfo('调试面板已显示 (按 Ctrl+B 再次隐藏)');
+      statusDiv = document.getElementById('subtitle-status-info');
+      if (statusDiv) {
+        statusDiv.style.display = 'block';
+      }
+      this.logger.info('🔧 调试面板显示');
+    } else {
+      // 切换显示/隐藏状态
       const isVisible = statusDiv.style.display !== 'none';
       statusDiv.style.display = isVisible ? 'none' : 'block';
       this.logger.info(`🔧 调试面板${isVisible ? '隐藏' : '显示'}`);

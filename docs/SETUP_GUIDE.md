@@ -15,8 +15,8 @@ Subtitle Translator 主项目
 │   └── 词级时间戳对齐
 ├── 核心翻译引擎 (translation_core)      ← Chrome插件调用  
 │   ├── 智能断句 (spliter.py)
-│   ├── 内容总结 (summarizer.py)
-│   └── 批量优化翻译 (optimizer.py)
+│   ├── 内容总结 (summarizer.py) + 文件路径上下文智能
+│   └── 批量优化翻译 (optimizer.py) + 上下文感知翻译
 ├── 命令行工具 (cli.py)                 ← 独立使用
 │   ├── translate 命令
 │   └── transcribe 命令

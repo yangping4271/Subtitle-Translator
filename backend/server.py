@@ -21,6 +21,28 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# 设置环境变量加载
+def setup_project_environment():
+    """设置项目环境变量"""
+    try:
+        # 添加项目源码路径到Python路径
+        project_root = Path(__file__).parent.parent
+        src_path = project_root / "src"
+        if src_path.exists():
+            sys.path.insert(0, str(src_path))
+        
+        # 加载项目环境配置
+        from subtitle_translator.env_setup import setup_environment
+        setup_environment()
+        print("✅ 项目环境配置已加载")
+        
+    except Exception as e:
+        print(f"⚠️  环境配置加载失败: {e}")
+        print("使用默认环境变量")
+
+# 初始化环境
+setup_project_environment()
+
 # 全局状态
 JOBS: Dict[str, Dict[str, Any]] = {}
 TMP_DIR = os.path.join("/tmp", "yt_subs")
@@ -208,6 +230,27 @@ def _parse_srt_to_segments(srt_path: str) -> List[Dict[str, Any]]:
     return segments
 
 # API 端点
+@app.get("/config")
+async def get_config():
+    """获取后台配置信息（不暴露敏感信息）"""
+    import os
+    
+    config_info = {
+        "status": "ok",
+        "models": {
+            "split_model": os.getenv('SPLIT_MODEL', 'gpt-4o-mini'),
+            "translation_model": os.getenv('TRANSLATION_MODEL', 'gpt-4o'),
+            "summary_model": os.getenv('SUMMARY_MODEL', 'gpt-4o-mini'),
+            "llm_model": os.getenv('LLM_MODEL', 'gpt-4o-mini')
+        },
+        "api_configured": bool(os.getenv('OPENAI_API_KEY') and os.getenv('OPENAI_BASE_URL')),
+        "hf_endpoint": os.getenv('HF_ENDPOINT', ''),
+        "available_languages": ["zh", "zh-tw", "ja", "ko", "en", "fr", "de", "es"],
+        "backend_version": "0.3.0"
+    }
+    
+    return config_info
+
 @app.get("/health")
 async def health_check():
     """健康检查"""
@@ -415,7 +458,17 @@ async def _run_translate_job(job_id: str, url: str, target_lang: str = "zh"):
             stdout, stderr = await proc.communicate()
             
             if proc.returncode != 0:
-                raise RuntimeError(f"translate command failed with code {proc.returncode}. stderr: {(stderr or b'').decode('utf-8', 'ignore')[-1000:]}")
+                error_msg = (stderr or b'').decode('utf-8', 'ignore')
+                
+                # 提供更详细的错误信息
+                if "API调用失败" in error_msg or "API Key" in error_msg:
+                    raise RuntimeError(f"API配置错误: {error_msg}")
+                elif "模型下载" in error_msg or "网络" in error_msg:
+                    raise RuntimeError(f"模型下载失败: {error_msg}")
+                elif "文件不存在" in error_msg:
+                    raise RuntimeError(f"输入文件问题: {error_msg}")
+                else:
+                    raise RuntimeError(f"translate命令失败 (退出码 {proc.returncode}): {error_msg[-500:]}")
 
             # 查找生成的文件
             srt_files = [f for f in os.listdir(temp_dir) if f.endswith('.srt')]
@@ -484,6 +537,59 @@ async def get_job_status(job_id: str):
         "error": job.get("error"),
         "events_count": len(job.get("events", []))
     }
+
+@app.get("/video/{video_id}/segments")
+async def get_video_segments(video_id: str, target_lang: str = "zh"):
+    """根据视频ID获取翻译segments（用于扩展重新加载缓存）"""
+    try:
+        # 检查是否有翻译缓存
+        cached_translation = _get_cached_translation_files(video_id, target_lang)
+        if all(cached_translation.values()):
+            # 从缓存的 SRT 文件生成 segments
+            english_segments = _parse_srt_to_segments(cached_translation["english_srt"])
+            translated_segments = _parse_srt_to_segments(cached_translation["translated_srt"])
+            
+            # 合并双语 segments
+            events = []
+            for i, (en_seg, zh_seg) in enumerate(zip(english_segments, translated_segments)):
+                events.append({
+                    "id": str(i),
+                    "start_time": en_seg["start_time"],
+                    "end_time": en_seg["end_time"],
+                    "text": en_seg["text"],
+                    "translation": zh_seg["text"]
+                })
+            
+            return {
+                "video_id": video_id,
+                "target_lang": target_lang,
+                "segments": events,
+                "total_count": len(events),
+                "source": "translation_cache"
+            }
+        else:
+            # 检查是否有正在进行的任务
+            active_jobs = []
+            for job_id, job_data in JOBS.items():
+                if (job_data.get("youtube_url", "").find(f"v={video_id}") != -1 and 
+                    job_data.get("target_lang") == target_lang):
+                    active_jobs.append({
+                        "job_id": job_id,
+                        "status": job_data.get("status"),
+                        "events_count": len(job_data.get("events", []))
+                    })
+            
+            return {
+                "video_id": video_id,
+                "target_lang": target_lang,
+                "segments": [],
+                "total_count": 0,
+                "source": "no_cache",
+                "active_jobs": active_jobs
+            }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取视频segments失败: {str(e)}")
 
 @app.get("/segments/{job_id}")
 async def get_segments(job_id: str, start: float = 0, window: int = 60):

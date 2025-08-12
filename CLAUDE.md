@@ -150,6 +150,17 @@ This design separates concerns effectively: segmentation handles display constra
 - Outputs structured JSON with corrections and context
 - Module: `translation_core/summarizer.py`
 
+**File Path Context Intelligence:**
+The summarization stage leverages file path information as authoritative context for improved accuracy:
+
+- **Filename Analysis**: Extracts product/topic names from filename, converting underscores and hyphens to readable text
+- **Folder Hierarchy**: Analyzes up to 3 levels of parent directory names for additional context clues
+- **Context Construction**: Builds structured context with format: `Folder path: Parent / Child / Current` and `Filename: readable name`
+- **Authority Enforcement**: Prompts emphasize filename as authoritative source for correct spellings when conflicts arise
+- **ASR Correction Guidance**: Uses file path context to identify and correct systematic naming errors (e.g., filename "Windsurf" corrects ASR "WinSurf")
+
+Implementation details in `summarizer.py:33-78` with prompt guidelines in `prompts.py:82,96,102,157,160`.
+
 #### Translation Stage (翻译阶段)
 
 **Why Batch Processing:**
@@ -185,26 +196,36 @@ Summary JSON → Parse corrections & context
 - Implements retry logic with fallback strategies
 - Module: `translation_core/optimizer.py`
 
+**Context-Aware Translation:**
+The translation stage receives and utilizes file path context from the summarization stage:
+
+- **Context Injection**: Summary results (including file path context) pass through `summary_content` parameter to translation batches
+- **Structured Reference**: Parses summarization JSON to extract context, corrections, canonical terms, and do-not-translate lists
+- **Prompt Enhancement**: File path context information gets injected into translation prompts for better accuracy
+- **Consistency Enforcement**: Uses file-derived context to maintain consistent terminology across all translation batches
+
+Implementation in `optimizer.py:443-473` with context creation in `_create_translate_message()` method.
+
 #### Information Flow Design
 
 The pipeline implements a carefully orchestrated data flow:
 
 ```
-Audio/Video Input
+Audio/Video Input + File Path Context
        ↓
    Transcription (Parakeet MLX)
        ↓
    Segmentation (Smart Splitting)
        ↓
-   Summarization (Global Analysis) ←──────┐
-       ↓                                  │
-   [Summary Context]                      │
-       ↓                                  │
-   ┌─────────────┐                       │
-   │  Batch 1    │ → Translation → Quality Check
-   │  Batch 2    │ → Translation → Quality Check  
-   │  ...        │ → Translation → Quality Check
-   │  Batch N    │ → Translation → Quality Check
+   Summarization (Global Analysis + File Path Intelligence) ←──────┐
+       ↓                                                           │
+   [Summary Context + File Path Context]                          │
+       ↓                                                           │
+   ┌─────────────┐                                                │
+   │  Batch 1    │ → Context-Aware Translation → Quality Check    │
+   │  Batch 2    │ → Context-Aware Translation → Quality Check    │
+   │  ...        │ → Context-Aware Translation → Quality Check    │
+   │  Batch N    │ → Context-Aware Translation → Quality Check    │
    └─────────────┘
        ↓
    Result Merging
@@ -217,6 +238,7 @@ Audio/Video Input
 **Key Design Principles:**
 - **Unidirectional flow** prevents circular dependencies
 - **Context preservation** ensures consistency across batches
+- **File path intelligence** leverages filesystem context for authoritative naming
 - **Graceful degradation** handles failures without stopping
 - **Progressive enhancement** allows quality improvements at each stage
 
@@ -254,6 +276,8 @@ This architecture delivers several critical benefits:
 - Unified terminology across entire subtitle file
 - Context-aware processing improves accuracy
 - Systematic ASR fixes applied uniformly
+- **File path context intelligence** provides authoritative naming reference
+- **Automatic product/topic identification** from filesystem structure
 
 **Quality & Performance**
 - Parallel processing accelerates translation
@@ -274,6 +298,50 @@ This architecture delivers several critical benefits:
 - Supports different quality/speed trade-offs
 
 This sophisticated pipeline architecture ensures professional-quality subtitle translation, transforming raw speech recognition output into polished bilingual subtitles that maintain semantic accuracy, technical precision, and viewing comfort.
+
+## File Path Context Intelligence Examples
+
+The system leverages file and folder names to provide intelligent context for more accurate translations. Here are real-world examples:
+
+### Example 1: Product Name Correction
+```
+File Path: ~/Videos/Windsurf/windsurf-tutorial-basics.mp4
+ASR Output: "Today we'll learn about WinSurf editor features"
+Context Analysis: 
+  - Folder path: Windsurf
+  - Filename: windsurf tutorial basics
+System Action: Corrects "WinSurf" → "Windsurf" based on authoritative file path
+Final Translation: "今天我们将学习 Windsurf 编辑器的功能"
+```
+
+### Example 2: Technical Topic Identification
+```
+File Path: ~/Tutorials/Docker-Kubernetes/k8s-deployment-strategies.mp4
+ASR Output: "The case strategies are important for container management"
+Context Analysis:
+  - Folder path: Docker Kubernetes  
+  - Filename: k8s deployment strategies
+System Action: Identifies topic as Kubernetes, corrects "case" → "K8s" 
+Final Translation: "K8s 部署策略对容器管理很重要"
+```
+
+### Example 3: Multi-level Context
+```
+File Path: ~/Work/OpenAI-GPT4/api-integration/gpt4-advanced-features.mp4
+Context Analysis:
+  - Folder hierarchy: Work / OpenAI GPT4 / api integration
+  - Filename: gpt4 advanced features
+Benefits:
+  - Recognizes OpenAI/GPT-4 context automatically
+  - Preserves technical terms like "API" untranslated
+  - Ensures consistent "GPT-4" spelling throughout
+```
+
+### How It Works
+1. **File Path Parsing**: Extracts meaningful names from up to 3 directory levels
+2. **Context Building**: Creates structured context: `Folder path: Parent / Child / Current` + `Filename: readable name`
+3. **Authoritative Reference**: File/folder names override conflicting ASR results
+4. **Systematic Application**: Context applies to entire translation session for consistency
 
 ## YouTube Chrome Extension Usage
 
@@ -678,6 +746,64 @@ ffmpeg -f lavfi -i testsrc2=duration=30:size=1280x720:rate=30 -f lavfi -i sine=f
 # Create corresponding SRT subtitle manually for testing
 # Test files are preserved in repository: test_video.mp4, test_video.srt, test_video.ass
 ```
+
+### Real Testing Philosophy
+**IMPORTANT: No Mock/Simulation Testing**
+
+This project prioritizes **real-world testing** over mocking or simulation for the following reasons:
+
+1. **API Integration Reality**: Real API calls reveal actual network issues, rate limits, authentication problems, and response variations that mocks cannot capture
+2. **End-to-End Validation**: Only real testing validates the complete pipeline from user input to final output
+3. **Configuration Verification**: Real tests ensure environment variables, API keys, and model configurations work correctly
+4. **Performance Measurement**: Actual API response times, caching behavior, and resource usage can only be measured with real calls
+5. **Error Handling**: Real API failures test the robustness of error handling and recovery mechanisms
+
+#### Real Testing Guidelines
+
+**Always Test with Real Configuration:**
+```bash
+# Ensure proper configuration exists before testing
+translate init  # Configure real API keys and models
+
+# Test with real API calls
+uv run python -m subtitle_translator.cli -i test.mp4 -t zh -d
+
+# Test Chrome extension with real backend
+uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload
+```
+
+**Development Testing Best Practices:**
+- Use actual API keys (not test-key-for-demo)
+- Test with real YouTube URLs for Chrome extension
+- Validate actual model downloads and caching
+- Verify real translation quality and accuracy
+- Test actual network conditions and failures
+
+**When Real Testing is Required:**
+- All Chrome extension functionality
+- API connectivity and authentication
+- Translation quality validation
+- Caching mechanism verification
+- Error handling and recovery
+- Performance optimization
+- User experience validation
+
+**Test Environment Setup:**
+```bash
+# 1. Configure real environment
+translate init
+
+# 2. Verify configuration
+uv run python -c "from subtitle_translator.translation_core.utils.test_openai import test_openai; test_openai()"
+
+# 3. Test complete workflow
+uv run python -m subtitle_translator.cli -i test_video.mp4 -t zh --preserve-intermediate -d
+
+# 4. Test Chrome extension integration
+# Start backend and test with real YouTube video
+```
+
+This approach ensures the software works reliably in production environments and provides accurate feedback on actual system behavior.
 
 ### Reinstallation Process
 The project now uses an **optimized reinstallation strategy**:

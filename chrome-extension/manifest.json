@@ -20,16 +20,15 @@
     "http://localhost/*"
   ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/watch*", "https://m.youtube.com/watch*"],
-      "js": ["logger.js", "srt-parser.js", "translation-processor.js", "content-with-logger.js"],
+      "js": ["srt-parser.js", "translation-processor.js", "content-with-logger.js"],
       "css": ["style.css"],
-      "run_at": "document_start"
+      "run_at": "document_end"
     }
   ],
   

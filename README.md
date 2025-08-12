@@ -20,6 +20,7 @@ Real-time bilingual subtitles for any YouTube video, with intelligent caching sy
 - **English Video Transcription**: Transcribes English audio/video to SRT subtitles using the Parakeet MLX model.
 - **AI-Powered Translation**: Supports various LLM models for translation into multiple languages.
 - **Three-Stage Translation**: Smart segmentation → content summarization → batch translation.
+- **File Path Context Intelligence**: Leverages file and folder names to improve translation accuracy and terminology consistency.
 - **Bilingual Subtitles**: Automatically generates bilingual ASS subtitle files.
 - **Batch Processing**: Supports processing multiple files at once.
 - **Intermediate File Preservation**: `--preserve-intermediate` option to keep English and translated SRT files.

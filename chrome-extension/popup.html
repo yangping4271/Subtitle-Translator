@@ -4,29 +4,68 @@
   <meta charset="utf-8">
   <style>
     body {
-      width: 350px;
-      padding: 20px;
+      width: 320px;
+      padding: 16px;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
     }
     .header {
       text-align: center;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       color: #1a73e8;
     }
+    .header h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+    .connection-status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      font-size: 12px;
+    }
+    .connection-status.connected {
+      background-color: #e8f5e8;
+      color: #2e7d32;
+    }
+    .connection-status.disconnected {
+      background-color: #ffebee;
+      color: #c62828;
+    }
+    .connection-status.checking {
+      background-color: #fff3e0;
+      color: #f57c00;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .status-dot.green { background-color: #4caf50; }
+    .status-dot.red { background-color: #f44336; }
+    .status-dot.orange { background-color: #ff9800; }
+    
     .form-group {
-      margin-bottom: 15px;
+      margin-bottom: 12px;
     }
     label {
       display: block;
-      margin-bottom: 5px;
+      margin-bottom: 4px;
       font-weight: 500;
+      font-size: 13px;
     }
-    input[type="url"], input[type="password"], input[type="text"], select {
+    select {
       width: 100%;
-      padding: 8px;
+      padding: 6px;
       border: 1px solid #ddd;
       border-radius: 4px;
       box-sizing: border-box;
+      font-size: 13px;
     }
     button {
       width: 100%;
@@ -37,16 +76,44 @@
       border-radius: 4px;
       cursor: pointer;
       font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
     }
-    button:hover {
+    button:hover:not(:disabled) {
       background-color: #1557b0;
     }
-    .status {
-      margin-top: 10px;
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    .secondary-button {
+      background-color: #f8f9fa;
+      color: #5f6368;
+      border: 1px solid #dadce0;
+    }
+    .secondary-button:hover:not(:disabled) {
+      background-color: #e8eaed;
+    }
+    .progress {
+      margin-top: 12px;
       padding: 8px;
       border-radius: 4px;
-      text-align: center;
+      background-color: #f0f4ff;
+      border-left: 3px solid #1a73e8;
       font-size: 12px;
+      line-height: 1.4;
+      display: none;
+    }
+    .progress.show {
+      display: block;
+    }
+    .status {
+      margin-top: 8px;
+      padding: 6px;
+      border-radius: 4px;
+      text-align: center;
+      font-size: 11px;
+      display: none;
     }
     .success {
       background-color: #e8f5e8;
@@ -56,99 +123,75 @@
       background-color: #ffebee;
       color: #c62828;
     }
-    .toggle {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    .warning {
+      background-color: #fff3e0;
+      color: #f57c00;
     }
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 50px;
-      height: 24px;
+    .info {
+      background-color: #e3f2fd;
+      color: #1976d2;
     }
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
+    .video-info {
+      margin-bottom: 12px;
+      padding: 8px;
+      background-color: #f8f9fa;
+      border-radius: 4px;
+      font-size: 12px;
+      display: none;
     }
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: #ccc;
-      transition: .4s;
-      border-radius: 24px;
+    .video-info.show {
+      display: block;
     }
-    .slider:before {
-      position: absolute;
-      content: "";
-      height: 16px;
-      width: 16px;
-      left: 4px;
-      bottom: 4px;
-      background-color: white;
-      transition: .4s;
-      border-radius: 50%;
+    .video-title {
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: #333;
     }
-    input:checked + .slider {
-      background-color: #1a73e8;
-    }
-    input:checked + .slider:before {
-      transform: translateX(26px);
+    .video-url {
+      color: #666;
+      word-break: break-all;
     }
   </style>
 </head>
 <body>
   <div class="header">
-    <h2>🌐 YouTube双语字幕</h2>
+    <h2>🌐 YouTube双语字幕翻译器</h2>
   </div>
   
-  <form id="settingsForm">
-    <div class="form-group">
-      <label for="apiUrl">API Base URL:</label>
-      <input type="url" id="apiUrl" placeholder="https://api.openai.com/v1" required>
-    </div>
-    
-    <div class="form-group">
-      <label for="apiKey">API Key:</label>
-      <input type="password" id="apiKey" placeholder="sk-..." required>
-    </div>
-    
-    <div class="form-group">
-      <label for="targetLang">翻译目标语言:</label>
-      <select id="targetLang">
-        <option value="简体中文">简体中文</option>
-        <option value="繁体中文">繁体中文</option>
-        <option value="日文">日文</option>
-        <option value="韩文">韩文</option>
-        <option value="English">English</option>
-      </select>
-    </div>
-    
-    <div class="form-group">
-      <label for="model">翻译模型:</label>
-      <input type="text" id="model" placeholder="gpt-4o-mini" required>
-      <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
-        常用模型：gpt-4o, gpt-4o-mini, gpt-4-turbo, claude-3-sonnet
-      </small>
-    </div>
-    
-    <div class="form-group toggle">
-      <label>启用自动翻译:</label>
-      <label class="switch">
-        <input type="checkbox" id="autoTranslate" checked>
-        <span class="slider"></span>
-      </label>
-    </div>
-    
-    <button type="submit">保存设置</button>
-  </form>
+  <div id="connectionStatus" class="connection-status checking">
+    <span class="status-dot orange"></span>
+    <span>正在连接后台服务...</span>
+  </div>
   
-  <div id="status" class="status" style="display: none;"></div>
+  <div id="videoInfo" class="video-info">
+    <div class="video-title" id="videoTitle">检测视频中...</div>
+    <div class="video-url" id="videoUrl"></div>
+  </div>
+  
+  <div class="form-group">
+    <label for="targetLang">翻译目标语言:</label>
+    <select id="targetLang">
+      <option value="zh">简体中文</option>
+      <option value="zh-tw">繁体中文</option>
+      <option value="ja">日文</option>
+      <option value="ko">韩文</option>
+      <option value="en">English</option>
+    </select>
+  </div>
+  
+  <button id="startTranslation" disabled>
+    🚀 开始翻译当前视频
+  </button>
+  
+  <button id="stopTranslation" class="secondary-button" style="display: none;" disabled>
+    ⏹️ 停止翻译
+  </button>
+  
+  <div id="progress" class="progress">
+    <div id="progressText">准备开始翻译...</div>
+  </div>
+  
+  <div id="status" class="status"></div>
   
   <script src="popup.js"></script>
 </body>
