@@ -11,14 +11,11 @@ Chrome插件显示"等待后端完成音频下载和翻译..."状态，但一直
 首先确保后端服务正常运行：
 
 ```bash
-# 方式1: 使用启动脚本（推荐）
-python start_backend.py
+# 方式1: 使用uvicorn启动（推荐）
+uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload
 
-# 方式2: 直接启动
-python backend/server.py
-
-# 方式3: 使用uvicorn
-uvicorn backend.server:app --host 0.0.0.0 --port 9009
+# 方式2: 直接启动Python脚本
+uv run python backend/server.py
 ```
 
 ### 2. 检查服务状态
@@ -95,7 +92,7 @@ lsof -i :9009
 kill -9 <PID>
 
 # 重新启动服务
-python start_backend.py
+uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload
 ```
 
 ### 问题2: "yt-dlp下载失败"

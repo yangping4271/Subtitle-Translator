@@ -45,9 +45,11 @@
 
 1. **启动后端服务**
    ```bash
-   python start_backend.py
-   # 或直接运行
-   python backend/server.py
+   # 推荐方式（uvicorn）
+   uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload
+   
+   # 备选方式（Python脚本）
+   uv run python backend/server.py
    ```
 
 2. **访问YouTube视频**
@@ -168,7 +170,7 @@ curl -X POST "http://127.0.0.1:9009/cache/upload_audio/VIDEO_ID" \
 ```
 
 **3. 后端连接失败**
-- 确保后端服务已启动：`python start_backend.py`
+- 确保后端服务已启动：`uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload`
 - 检查端口9009是否被占用：`lsof -i :9009`
 - 验证API密钥配置：检查.env文件或环境变量
 

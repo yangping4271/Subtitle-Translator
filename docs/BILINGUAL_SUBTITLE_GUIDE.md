@@ -176,7 +176,7 @@ translate -i my_video.mp4 -t zh --preserve-intermediate --reflect
 
 ```bash
 # 第一步：启动后端服务
-python backend/server.py
+uv run python backend/server.py
 
 # 第二步：访问 YouTube 视频
 # Chrome 扩展会自动：

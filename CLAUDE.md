@@ -8,7 +8,11 @@ Subtitle Translator is a command-line tool that integrates English video transcr
 - `translate`: Full workflow from audio/video to bilingual subtitles  
 - `transcribe`: Transcription-only workflow
 
-The project is structured as a Python package using `uv` for dependency management and distribution via `uv tool install`. Current version: **0.2.8**.
+The project is structured as a Python package using `uv` for dependency management and distribution via `uv tool install`. Current version: **0.3.0**.
+
+## YouTube Chrome Extension
+
+Since version 0.3.0, the project includes a **YouTube Chrome Extension** for real-time bilingual subtitle display directly in the browser. This extension works seamlessly with the main CLI tool through a FastAPI backend service.
 
 ## Architecture
 
@@ -30,21 +34,34 @@ src/subtitle_translator/
 │   ├── parakeet.py         # MLX model implementation
 │   ├── model_cache.py      # Model caching system
 │   └── ...                 # Other transcription modules
-└── translation_core/       # LLM-based translation engine
-    ├── config.py          # Language configuration
-    ├── spliter.py         # Smart sentence splitting
-    ├── aligner.py         # Translation alignment
-    ├── optimizer.py       # Translation optimization
-    ├── summarizer.py      # Content summarization
-    └── utils/
-        ├── ass_converter.py  # ASS subtitle generation
-        ├── json_repair.py   # JSON repair utilities
-        └── test_openai.py   # API connectivity testing
+├── translation_core/       # LLM-based translation engine
+│   ├── config.py          # Language configuration
+│   ├── spliter.py         # Smart sentence splitting
+│   ├── aligner.py         # Translation alignment
+│   ├── optimizer.py       # Translation optimization
+│   ├── summarizer.py      # Content summarization
+│   └── utils/
+│       ├── ass_converter.py  # ASS subtitle generation
+│       ├── json_repair.py   # JSON repair utilities
+│       └── test_openai.py   # API connectivity testing
+├── backend/                 # YouTube Chrome Extension Backend
+│   └── server.py           # FastAPI server for Chrome extension
+└── chrome-extension/       # Chrome Extension for YouTube
+    ├── manifest.json       # Extension configuration
+    ├── content.js          # Main content script
+    ├── background.js       # Background service worker
+    ├── popup.js            # Extension popup interface
+    ├── srt-parser.js       # SRT subtitle parsing
+    ├── translation-processor.js  # Translation processing
+    ├── logger.js           # Extension logging
+    └── style.css          # YouTube interface styling
 ```
 
 ### Key Components
 
 **Translation Pipeline**: The main workflow processes files through transcription → smart splitting → translation → ASS generation. The `processor.py` orchestrates this flow, handling both audio/video files and existing SRT files.
+
+**YouTube Chrome Extension**: A complete browser extension that provides real-time bilingual subtitle overlay on YouTube videos. The extension communicates with a FastAPI backend service (`backend/server.py`) to process videos and display synchronized bilingual subtitles directly in the browser.
 
 **Transcription Engine**: Uses Parakeet MLX models optimized for Apple Silicon. Features model caching system (`model_cache.py`) for improved performance, automatic audio chunking for long files, and supports word-level timestamps.
 
@@ -258,6 +275,148 @@ This architecture delivers several critical benefits:
 
 This sophisticated pipeline architecture ensures professional-quality subtitle translation, transforming raw speech recognition output into polished bilingual subtitles that maintain semantic accuracy, technical precision, and viewing comfort.
 
+## YouTube Chrome Extension Usage
+
+### Installation and Setup
+
+#### 1. Install Chrome Extension (Developer Mode)
+```bash
+# Load extension in Chrome
+1. Open Chrome -> chrome://extensions/
+2. Enable "Developer mode" (top right toggle)
+3. Click "Load unpacked"
+4. Select the chrome-extension/ directory from the project
+5. Extension "YouTube双语字幕翻译器" should appear in your extensions
+```
+
+#### 2. Start Backend Service
+```bash
+# Start the FastAPI backend server (推荐方式)
+uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload
+
+# Alternative method - direct Python execution
+uv run python backend/server.py
+
+# Service will be available at:
+# - API: http://127.0.0.1:9009
+# - Documentation: http://127.0.0.1:9009/docs
+```
+
+#### 3. Configure Extension
+```bash
+# Click the extension icon in Chrome toolbar
+# Configure settings in the popup:
+# - Target language (Chinese, Japanese, etc.)
+# - Translation model preferences
+# - Display options
+```
+
+### Chrome Extension Features
+
+#### Core Functionality
+- **Real-time Bilingual Subtitles**: Displays both original English and translated subtitles simultaneously
+- **Intelligent Caching System**: Three-tier caching (audio, subtitles, translation) for dramatic speed improvements
+- **SRT Integration**: Supports high-quality SRT subtitle files generated by the main CLI tool
+- **Fallback System**: Multiple display modes ensure subtitles work even when processing fails
+
+#### Performance Features
+- **First Visit**: 6-16 minutes (full processing including download, transcription, translation)
+- **Cache Hit**: Seconds to load (when translation cache exists)
+- **Audio Cache**: 5-10 minutes (skips download, processes transcription + translation)
+- **Smart Detection**: Automatically detects processed videos and loads cached results
+
+#### Technical Architecture
+- **Content Script**: `content-with-logger.js` - Main YouTube page integration
+- **SRT Parser**: `srt-parser.js` - Advanced SRT subtitle parsing and synchronization
+- **Translation Processor**: `translation-processor.js` - Handles API communication and subtitle processing
+- **Background Service**: `background.js` - Manages extension lifecycle and cross-tab communication
+- **Popup Interface**: `popup.js` - User settings and configuration
+
+### Backend API Endpoints
+
+The FastAPI backend (`backend/server.py`) provides these key endpoints:
+
+#### Video Processing
+```bash
+POST /process
+# Start processing a YouTube video
+# Body: {"url": "https://www.youtube.com/watch?v=VIDEO_ID", "target_lang": "zh"}
+# Returns: {"job_id": "uuid", "status": "processing"}
+
+GET /status/{job_id}
+# Check processing status
+# Returns: {"status": "completed|processing|failed", "progress": 50}
+
+GET /result/{job_id}
+# Get final translation results
+# Returns: bilingual subtitle segments
+```
+
+#### SRT File Support
+```bash
+GET /srt_files/{job_id}
+# Get bilingual SRT files (requires --preserve-intermediate)
+# Returns: {"english_srt": "content...", "translated_srt": "content..."}
+```
+
+#### Cache Management
+```bash
+GET /cache/status
+# View cache statistics and health
+# Returns: cache sizes, hit rates, and cleanup info
+
+POST /cache/cleanup
+# Manual cache cleanup
+# Returns: cleanup results and freed space
+```
+
+### Usage Workflow
+
+#### Standard YouTube Usage
+1. **Start Backend**: `uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload`
+2. **Visit YouTube**: Navigate to any English YouTube video
+3. **Automatic Processing**: Extension detects video change and starts processing
+4. **Progress Tracking**: See real-time progress in the extension popup
+5. **Bilingual Display**: Once complete, bilingual subtitles appear on the video
+
+#### CLI + Extension Workflow
+```bash
+# Pre-process videos using CLI with SRT preservation
+translate -i video.mp4 -t zh --preserve-intermediate --reflect
+
+# Extension will automatically use the high-quality SRT files
+# Result: Near-instant loading of professional-quality subtitles
+```
+
+#### Development Workflow
+```bash
+# Development mode backend (preferred for testing)
+uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload
+
+# Check backend logs for debugging
+# Extension logs available in Chrome DevTools Console
+# API documentation at http://127.0.0.1:9009/docs
+```
+
+### Chrome Extension Troubleshooting
+
+#### Common Issues
+- **Backend Not Running**: Ensure `uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload` is active
+- **Port Conflicts**: Backend uses port 9009, ensure it's available
+- **CORS Issues**: Extension includes necessary permissions in `manifest.json`
+- **Processing Failures**: Check backend logs for API key configuration
+
+#### Debug Mode
+```bash
+# Enable debug logging in extension
+1. Right-click on webpage -> Inspect
+2. Go to Console tab
+3. Look for extension logs prefixed with [Logger]
+
+# Backend debug mode
+# Debug output is shown in the terminal where backend/server.py is running
+```
+
 ## Development Commands
 
 ### Installation and Setup
@@ -322,16 +481,23 @@ uv tool install .
 
 ### Running the Application
 ```bash
-# Using installed tool
+# Using installed tool - CLI Commands
 translate init           # Configure API keys
 translate               # Batch process current directory
 translate -i video.mp4  # Process single file
 transcribe audio.mp3    # Transcription only
 
-# Common options
+# Common CLI options
 translate -i video.mp4 -t ja -r    # Translate to Japanese with reflection
 translate -i video.mp4 -d          # Debug mode
+translate -i video.mp4 --preserve-intermediate  # Keep SRT files for Chrome extension
 transcribe video.mp4 --timestamps  # With word-level timestamps
+
+# YouTube Chrome Extension - Backend Service
+uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload  # Recommended method
+uv run python backend/server.py                                          # Alternative method
+
+# Chrome Extension automatically connects to http://127.0.0.1:9009
 ```
 
 ### Development Mode Usage
@@ -390,13 +556,13 @@ The application processes files with intelligent file discovery:
 ## Version Management and Testing
 
 ### Version Updates
-Current version: **0.2.7** (see `pyproject.toml`)
+Current version: **0.3.0** (see `pyproject.toml`)
 
-Recent optimizations include:
-- Enhanced terminal output experience with reduced redundancy
-- Model caching improvements
-- Better error handling for subtitle processing
-- Optimized batch processing workflows
+Recent major additions in v0.3.0:
+- YouTube Chrome Extension for bilingual subtitle overlay
+- FastAPI backend service for Chrome extension integration
+- Support for YouTube URL processing and subtitle generation
+- Real-time subtitle display on YouTube videos
 
 ### Testing and Validation
 ```bash

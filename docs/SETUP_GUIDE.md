@@ -219,17 +219,14 @@ uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload --log-leve
 - ✅ **快速启动**: uv优化的启动速度
 - ✅ **标准方式**: FastAPI官方推荐
 
-### 方法2: uv直接启动
+### 方法2: uv直接启动（备选方式）
 
 ```bash
-# 进入后端目录
-cd backend
-
-# 使用uv直接运行
-uv run python server.py
+# 使用uv直接运行Python脚本
+uv run python backend/server.py
 
 # 或指定Python版本
-uv run --python 3.11 python server.py
+uv run --python 3.11 python backend/server.py
 ```
 
 ### uv环境管理命令
@@ -417,7 +414,7 @@ curl http://127.0.0.1:9009/cache/status
 
 ```bash
 # 开发模式（自动重载）
-uv run uvicorn backend.server:app --reload --port 9009
+uv run uvicorn backend.server:app --host 0.0.0.0 --port 9009 --reload
 
 # 查看实时日志
 tail -f /tmp/backend.log
@@ -446,7 +443,7 @@ curl -X POST http://127.0.0.1:9009/cache/upload_audio/test \
 
 ```bash
 # 监控系统资源
-top -p $(pgrep -f "python.*server.py")
+top -p $(pgrep -f "uv.*python.*server.py")
 
 # 监控缓存使用
 du -sh /tmp/yt_cache/

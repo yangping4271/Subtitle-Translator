@@ -141,7 +141,7 @@ kill <PID>
 uv sync --dev
 
 # 检查MLX安装（仅限Apple Silicon Mac）
-python -c "import mlx.core; print('MLX OK')"
+uv run python -c "import mlx.core; print('MLX OK')"
 ```
 
 ### 3. 模型下载

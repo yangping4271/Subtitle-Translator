@@ -200,7 +200,7 @@ The interactive configuration includes:
 #### 2. Start Backend Service
 ```bash
 # Start the backend server (required for Chrome extension)
-python backend/server.py
+uv run python backend/server.py
 # Server runs on http://127.0.0.1:9009
 ```
 
