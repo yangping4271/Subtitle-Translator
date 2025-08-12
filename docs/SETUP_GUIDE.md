@@ -279,7 +279,7 @@ curl http://127.0.0.1:9009/cache/status
 2. 访问 `chrome://extensions/`
 3. 开启右上角的"开发者模式"
 4. 点击"加载已解压的扩展程序"
-5. 选择项目中的 `chrome-extension` 文件夹
+5. 选择项目中的 `chrome-extension` 文件夹 (生产环境，仅包含必需文件)
 
 ### 步骤2: 配置插件
 

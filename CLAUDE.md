@@ -46,15 +46,29 @@ src/subtitle_translator/
 │       └── test_openai.py   # API connectivity testing
 ├── backend/                 # YouTube Chrome Extension Backend
 │   └── server.py           # FastAPI server for Chrome extension
-└── chrome-extension/       # Chrome Extension for YouTube
-    ├── manifest.json       # Extension configuration
-    ├── content.js          # Main content script
-    ├── background.js       # Background service worker
-    ├── popup.js            # Extension popup interface
-    ├── srt-parser.js       # SRT subtitle parsing
-    ├── translation-processor.js  # Translation processing
-    ├── logger.js           # Extension logging
-    └── style.css          # YouTube interface styling
+├── chrome-extension/       # Chrome Extension (Production Files Only)
+│   ├── manifest.json       # Extension configuration
+│   ├── content-with-logger.js # Main content script with logging
+│   ├── background.js       # Background service worker
+│   ├── popup.js            # Extension popup interface
+│   ├── popup.html          # Extension popup HTML
+│   ├── srt-parser.js       # SRT subtitle parsing
+│   ├── translation-processor.js  # Translation processing
+│   └── style.css          # YouTube interface styling
+└── development/            # Development Environment
+    ├── chrome-extension/   # Chrome Extension Development Files
+    │   ├── content-test.js # Test scripts
+    │   ├── content-debug.js # Debug versions
+    │   ├── content.js      # Legacy versions
+    │   ├── logger.js       # Standalone logger
+    │   ├── logic-explanation.js # Code explanations
+    │   └── test.html       # Test pages
+    └── docs/               # Development Documentation
+        ├── FEATURES_TODO.md # Feature development roadmap
+        ├── README.md       # Development guide
+        ├── CHROME_EXTENSION_DEBUG.md # Chrome extension debugging
+        ├── PROMPT_OPTIMIZATION_PROJECT.md # Prompt optimization
+        └── SUBTITLE_UI_IMPROVEMENTS.md # UI enhancement notes
 ```
 
 ### Key Components
@@ -353,7 +367,7 @@ Benefits:
 1. Open Chrome -> chrome://extensions/
 2. Enable "Developer mode" (top right toggle)
 3. Click "Load unpacked"
-4. Select the chrome-extension/ directory from the project
+4. Select the chrome-extension/ directory from the project (production-ready files only)
 5. Extension "YouTube双语字幕翻译器" should appear in your extensions
 ```
 

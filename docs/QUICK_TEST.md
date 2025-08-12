@@ -37,7 +37,7 @@ curl http://127.0.0.1:9009/health
 2. 访问 `chrome://extensions/`
 3. 开启"开发者模式"
 4. 点击"加载已解压的扩展程序"
-5. 选择 `chrome-extension` 文件夹
+5. 选择 `chrome-extension` 文件夹 (生产环境)
 
 ### 步骤3: 配置插件（1分钟）
 

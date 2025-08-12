@@ -195,7 +195,7 @@ The interactive configuration includes:
 #### 1. Install Chrome Extension
 1. Open `chrome://extensions/`
 2. Enable "Developer mode"
-3. Click "Load unpacked" and select the `chrome-extension` folder
+3. Click "Load unpacked" and select the `chrome-extension` folder (production-ready)
 4. Pin the extension to toolbar for easy access
 
 #### 2. Start Backend Service
