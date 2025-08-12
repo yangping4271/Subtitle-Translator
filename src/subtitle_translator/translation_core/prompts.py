@@ -93,13 +93,14 @@ Only include systematic ASR errors that appear multiple times:
 - Map incorrect transcription → correct form
 - Must have clear phonetic similarity
 - Must be consistent errors (not one-time mistakes)
-- **IMPORTANT**: Use filename as reference for correct spellings
-  - Example: Filename has "Windsurf" but content has "WinSurf" → "WinSurf" → "Windsurf"
-  - Example: Content has "GPD-5" → "GPT-5" (phonetic similarity)
+- **IMPORTANT**: Use BOTH folder path AND filename as reference for correct spellings
+  - Example: Folder "Windsurf" + Filename has "Windsurf" but content has "WinSurf" → "WinSurf" → "Windsurf"
+  - Example: Folder "OpenAI GPT4" helps identify "GPD-5" → "GPT-4" (phonetic similarity)
+  - Folder names often contain the correct product/topic names
 
 ### 3. Canonical Terms (Unified List)
 List of proper nouns and technical terms in their correct form:
-- Product names as they should appear (use filename as reference)
+- Product names as they should appear (use folder path and filename as reference)
 - Company/organization names
 - Technical terms that must be consistent
 - No explanations, just the final correct forms
@@ -154,10 +155,10 @@ Return a **flat, simple JSON** structure:
 
 1. **NO nested structures** - Keep JSON flat and simple
 2. **NO analysis or validation** - Only provide actionable corrections
-3. **NO uncertainty markers** - Make decisive choices based on filename authority
+3. **NO uncertainty markers** - Make decisive choices based on folder path and filename authority
 4. **NO explanations** - Just the data needed for translation
 5. **Be concise** - Every field should be minimal and direct
-6. **Trust the filename** - When in doubt, use the filename spelling as authoritative
+6. **Trust the file path** - When in doubt, use the folder path and filename spelling as authoritative
 
 Focus on providing clean, immediately usable information for the translation system.
 """
