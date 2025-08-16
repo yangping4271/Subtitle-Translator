@@ -135,7 +135,7 @@ def validate_existing_config(env_path: Path = None):
         print("\n⚠️  [bold yellow]部分模型验证失败，请检查模型名称和网络连接[/bold yellow]")
 
 
-def _check_transcription_model_availability(model_id: str = "mlx-community/parakeet-tdt-0.6b-v2") -> tuple[bool, str]:
+def _check_transcription_model_availability(model_id: str = "mlx-community/parakeet-tdt-0.6b-v3") -> tuple[bool, str]:
     """
     检查转录模型可用性
     
@@ -157,7 +157,7 @@ def _check_transcription_model_availability(model_id: str = "mlx-community/parak
         return False, f"检测失败: {str(e)[:50]}..."
 
 
-def _display_model_download_guide(model_id: str = "mlx-community/parakeet-tdt-0.6b-v2"):
+def _display_model_download_guide(model_id: str = "mlx-community/parakeet-tdt-0.6b-v3"):
     """显示转录模型手动下载指南"""
     print(f"\n📋 [bold blue]转录模型下载指南:[/bold blue]")
     print("如需使用转录功能，可通过以下方式下载模型：")
@@ -219,7 +219,7 @@ def _handle_model_download_suggestion():
     
     if not model_available:
         print(f"\n💡 [bold yellow]发现转录模型未下载[/bold yellow]")
-        print("转录功能需要下载默认模型 (mlx-community/parakeet-tdt-0.6b-v2)")
+        print("转录功能需要下载默认模型 (mlx-community/parakeet-tdt-0.6b-v3)")
         print("模型大小约 1.2GB，建议在网络良好时预下载")
         print("🔄 [dim]如果之前下载被中断，现在可以继续完成下载[/dim]")
         
@@ -306,7 +306,7 @@ def init_config():
     # 🆕 检查转录模型可用性
     print(f"\n🤖 [bold blue]转录模型检测结果:[/bold blue]")
     model_available, model_status = _check_transcription_model_availability()
-    default_model = "mlx-community/parakeet-tdt-0.6b-v2"
+    default_model = "mlx-community/parakeet-tdt-0.6b-v3"
     
     if model_available:
         print(f"   ✅ 默认转录模型: {model_status} ([cyan]{default_model}[/cyan])")
@@ -596,7 +596,7 @@ def _execute_predownload():
     try:
         # 导入并调用模型预下载功能
         from .transcription_core.utils import from_pretrained
-        default_model = "mlx-community/parakeet-tdt-0.6b-v2"
+        default_model = "mlx-community/parakeet-tdt-0.6b-v3"
         
         # 尝试预下载模型
         from_pretrained(default_model, show_progress=True)
@@ -613,7 +613,7 @@ def _handle_predownload():
     """处理转录模型预下载"""
     print("\n🤖 [bold blue]转录模型预下载[/bold blue]")
     print("字幕翻译工具需要下载转录模型来处理音频文件：")
-    print("• 默认模型：mlx-community/parakeet-tdt-0.6b-v2")
+    print("• 默认模型：mlx-community/parakeet-tdt-0.6b-v3")
     print("• 模型大小：约 1.2GB")
     print("• 首次使用时会自动下载，但可能影响处理速度")
     
@@ -641,7 +641,7 @@ def _handle_predownload():
         try:
             # 导入并调用模型预下载功能
             from .transcription_core.utils import from_pretrained
-            default_model = "mlx-community/parakeet-tdt-0.6b-v2"
+            default_model = "mlx-community/parakeet-tdt-0.6b-v3"
             
             # 尝试预下载模型
             from_pretrained(default_model, show_progress=True)
