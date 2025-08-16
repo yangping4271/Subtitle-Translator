@@ -133,7 +133,7 @@ Commands:
 transcribe [OPTIONS] AUDIOS...
 
 Options:
-  --model TEXT                    转录模型 [default: mlx-community/parakeet-tdt-0.6b-v2]
+  --model TEXT                    转录模型 [default: mlx-community/parakeet-tdt-0.6b-v3]
   --output-dir PATH               输出目录 [default: .]
   --output-format [txt|srt|vtt|json|all]  输出格式 [default: srt]
   --output-template TEXT          文件名模板 [default: {filename}]
