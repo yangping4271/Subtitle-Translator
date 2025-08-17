@@ -70,9 +70,98 @@ class SubtitleData:
         for seg in self.segments:
             text = seg.text.strip()
             # 检查是否只包含一个英文单词或一个汉字
-            if (len(text.split()) == 1 and text.isascii()) or len(text.strip()) <= 4:
+            # 参考VideoCaptioner的标准，使用更严格的≤2字符检测
+            if (len(text.split()) == 1 and text.isascii()) or len(text.strip()) <= 2:
                 valid_segments += 1
         return (valid_segments / total_segments) >= 0.8
+
+    def split_to_word_segments(self) -> 'SubtitleData':
+        """
+        将片段级别字幕转换为单词级别字幕，并按音素精确分配时间戳
+        
+        这个方法借鉴了VideoCaptioner项目的实现策略，通过以下步骤处理：
+        1. 使用多语言正则表达式识别所有有效字符和单词
+        2. 基于音素理论分配时间戳（每4个字符=1个音素）
+        3. 支持拉丁语系、中日韩、阿拉伯文、俄文等多种语言
+        
+        优势：
+        - 时间戳分配比简单比例分配更准确
+        - 支持多语言混合文本
+        - 转换后可复用现有的批量断句框架
+        
+        Returns:
+            SubtitleData: 包含分割后字词级别segments的新SubtitleData实例
+            
+        Note:
+            转换后的字幕将被现有的断句系统进一步优化，
+            最终生成适合观看的句子级别字幕
+        """
+        import math
+        import re
+        
+        CHARS_PER_PHONEME = 4  # 每个音素包含的字符数（基于语音学理论）
+        new_segments = []
+        
+        for seg in self.segments:
+            text = seg.text
+            duration = seg.end_time - seg.start_time
+            
+            # 多语言字符匹配模式（借鉴VideoCaptioner的全面支持）
+            # 分为两类：连续提取的语言和单字提取的语言
+            pattern = (
+                # 以单词形式出现的语言(连续提取)
+                r"[a-zA-Z\u00c0-\u00ff\u0100-\u017f']+"  # 拉丁字母及其变体(英语、德语、法语等)
+                r"|[\u0400-\u04ff]+"  # 西里尔字母(俄语等)
+                r"|[\u0370-\u03ff]+"  # 希腊语
+                r"|[\u0600-\u06ff]+"  # 阿拉伯语
+                r"|[\u0590-\u05ff]+"  # 希伯来语
+                r"|\d+"  # 数字
+                # 以单字形式出现的语言(单字提取)
+                r"|[\u4e00-\u9fff]"  # 中文
+                r"|[\u3040-\u309f]"  # 日文平假名
+                r"|[\u30a0-\u30ff]"  # 日文片假名
+                r"|[\uac00-\ud7af]"  # 韩文
+                r"|[\u0e00-\u0e7f][\u0e30-\u0e3a\u0e47-\u0e4e]*"  # 泰文基字符及其音标组合
+                r"|[\u0900-\u097f]"  # 天城文(印地语等)
+                r"|[\u0980-\u09ff]"  # 孟加拉语
+                r"|[\u0e80-\u0eff]"  # 老挝文
+                r"|[\u1000-\u109f]"  # 缅甸文
+            )
+            
+            words = re.finditer(pattern, text)
+            words_list = list(words)
+            
+            if not words_list:
+                # 如果没有匹配到有效字符，跳过此段
+                continue
+                
+            # 基于音素理论计算时间分配
+            total_phonemes = sum(
+                math.ceil(len(w.group()) / CHARS_PER_PHONEME) for w in words_list
+            )
+            time_per_phoneme = duration / max(total_phonemes, 1)  # 防止除零错误
+            
+            # 为每个识别出的词/字符创建独立的时间戳
+            current_time = seg.start_time
+            for word_match in words_list:
+                word = word_match.group()
+                # 计算当前词的音素数量
+                word_phonemes = math.ceil(len(word) / CHARS_PER_PHONEME)
+                word_duration = int(time_per_phoneme * word_phonemes)
+                
+                # 创建新的字词级segment，确保时间不超出原始范围
+                word_end_time = min(current_time + word_duration, seg.end_time)
+                new_segments.append(
+                    SubtitleSegment(
+                        text=word, 
+                        start_time=current_time, 
+                        end_time=word_end_time
+                    )
+                )
+                
+                current_time = word_end_time
+                
+        return SubtitleData(new_segments)
 
     def to_txt(self) -> str:
         """

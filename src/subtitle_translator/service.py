@@ -120,24 +120,38 @@ class SubtitleTranslatorService:
             
             print(f"📊 [bold blue]加载完成[/bold blue]")
             
-            # 检查是否需要重新断句
+            # 智能断句处理 - 统一处理策略（v0.4.0 重大升级）
+            # 借鉴VideoCaptioner的解决方案：统一转换为单词级别后进行断句
+            # 优势：1) 复用现有批量框架 2) 无额外API成本 3) 时间戳精确分配
             split_time = 0
+            section_start_time = time.time()
+            log_section_start(logger, "字幕断句处理", "✂️")
+            
+            # 检查字幕类型并统一转换为单词级别
             if asr_data.is_word_timestamp():
-                section_start_time = time.time()
-                log_section_start(logger, "字幕断句处理", "✂️")
-                print(f"✂️ [bold yellow]智能断句处理中...[/bold yellow]")
-                
-                model = self.config.split_model
-                logger.info(f"🤖 使用模型: {model}")
-                logger.info(f"📏 句子长度限制: {self.config.max_word_count_english} 字")
-                
-                asr_data = merge_segments(asr_data, model=model, 
-                                       num_threads=self.config.thread_num, 
-                                       save_split=None)
-                
-                split_time = time.time() - section_start_time
-                log_section_end(logger, "字幕断句处理", split_time, "✅")
-                print(f"✅ [bold green]断句完成[/bold green] (优化为 [cyan]{len(asr_data.segments)}[/cyan] 句)")
+                print(f"✂️ [bold yellow]检测到单词级别字幕，进行智能断句...[/bold yellow]")
+                logger.info("检测到单词级别时间戳，执行合并断句")
+            else:
+                print(f"✂️ [bold yellow]检测到片段级别字幕，转换为单词级别后进行断句...[/bold yellow]")
+                logger.info("检测到片段级别时间戳，先转换为单词级别")
+                # 统一转换为单词级别字幕（核心创新功能）
+                # 使用音素级时间戳分配，支持多语言处理
+                asr_data = asr_data.split_to_word_segments()
+                logger.info(f"转换完成，生成 {len(asr_data.segments)} 个单词级别片段")
+            
+            # 执行统一的断句处理流程
+            # 现在所有字幕都是单词级别，可以使用相同的批量处理策略
+            model = self.config.split_model
+            logger.info(f"🤖 使用模型: {model}")
+            logger.info(f"📏 句子长度限制: {self.config.max_word_count_english} 字")
+            
+            asr_data = merge_segments(asr_data, model=model, 
+                                   num_threads=self.config.thread_num, 
+                                   save_split=None)
+            
+            split_time = time.time() - section_start_time
+            log_section_end(logger, "字幕断句处理", split_time, "✅")
+            print(f"✅ [bold green]断句完成[/bold green] (优化为 [cyan]{len(asr_data.segments)}[/cyan] 句)")
             
             if split_time > 0:
                 stage_times["✂️  智能断句"] = split_time
