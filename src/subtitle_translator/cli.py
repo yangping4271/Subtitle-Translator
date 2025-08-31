@@ -18,7 +18,7 @@ from .transcription_core.utils import _find_cached_model, _check_network_connect
 from .transcription_core import utils as transcription_utils
 
 # 默认转录模型
-DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
+DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
 
 # 初始化logger
 logger = setup_logger(__name__)
