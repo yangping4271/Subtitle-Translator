@@ -38,9 +38,11 @@ def precheck_model_availability(model: str, show_progress: bool = True, silent: 
         
         # 检查指定模型的可用性
         try:
-            _find_cached_model(model)
+            config_path, weight_path = _find_cached_model(model)
             if show_progress and not silent:
                 print("✅ [green]模型已在本地缓存，可立即使用[/green]")
+                print(f"💡 [dim]配置文件: {Path(config_path).name}[/dim]")
+                print(f"💡 [dim]权重文件: {Path(weight_path).name} ({Path(weight_path).stat().st_size / 1024 / 1024:.1f}MB)[/dim]")
             return True
         except:
             # 本地没有指定模型的缓存，检查网络连接
@@ -102,18 +104,17 @@ def process_single_file(
             logger.info("开始转录音频...")
             print(f"🎤 [bold cyan]正在转录音频...[/bold cyan]")
             
-            # 使用批量模式缓存管理
-            with model_context(batch_mode=batch_mode):
-                # 懒加载模型，只在需要时加载
-                loaded_model = from_pretrained(
-                    model, 
-                    show_progress=True,  # 显示加载进度
-                    use_cache=True  # 启用缓存优化
-                )
-                
-                # 对于大文件，使用分块处理避免内存溢出
-                # 使用与原始parakeet-mlx相同的默认值：120秒分块，15秒重叠
-                result = loaded_model.transcribe(input_file, chunk_duration=120.0, overlap_duration=15.0)
+            # 直接使用模型，不再嵌套 model_context（因为外部已有上下文管理）
+            # 懒加载模型，只在需要时加载
+            loaded_model = from_pretrained(
+                model, 
+                show_progress=True,  # 显示加载进度
+                use_cache=True  # 启用缓存优化
+            )
+            
+            # 对于大文件，使用分块处理避免内存溢出
+            # 使用与原始parakeet-mlx相同的默认值：120秒分块，15秒重叠
+            result = loaded_model.transcribe(input_file, chunk_duration=120.0, overlap_duration=15.0)
             
             # 根据批量模式决定是否显示缓存释放信息
             if not batch_mode:
@@ -129,10 +130,6 @@ def process_single_file(
             subtitle_count = len(srt_content.strip().split('\n\n'))
             logger.info(f"转录完成，SRT文件保存至: {temp_srt_path}")
             print(f"✅ [bold green]转录完成[/bold green] (共 [cyan]{subtitle_count}[/cyan] 条字幕)")
-            
-            # 只在单文件模式下显示模型释放信息
-            if not batch_mode:
-                print(f"🎯 [dim]模型已自动释放，内存已优化[/dim]")
 
         except Exception as e:
             print(f"[bold red]转录失败:[/bold red] {e}")

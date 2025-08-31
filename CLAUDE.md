@@ -230,10 +230,14 @@ Audio/Video Input
 - Ensures robust parsing
 
 **Model Cache System (`model_cache.py`)**
-- Caches loaded ML models in memory
-- Reduces startup time for repeated operations
-- Manages memory efficiently
-- Validates cache integrity
+- Implements intelligent two-tier caching architecture for optimal performance
+- **Memory Cache**: Single-model in-memory cache with automatic lifecycle management
+- **Storage Optimization Cache**: Custom `optimized_models` directory for pre-compiled models
+- **Cache Location**: `~/.cache/huggingface/optimized_models/` (custom directory name)
+- **Cache Detection**: Enhanced `_find_cached_model` function supports both standard HF cache and storage optimization cache
+- **Memory Management**: Automatic release for single-file processing, batch-aware caching for multi-file operations
+- **Cache Validation**: Intelligent pre-check system accurately detects cached models and displays file information
+- **Performance Benefits**: Reduces model loading time from seconds to milliseconds for cached models
 
 #### Design Advantages
 
@@ -311,6 +315,16 @@ uv cache clean
 uv tool install .
 ```
 
+#### Complete Reinstallation (Force Mode)
+Use when code changes aren't being reflected or for complete fresh install:
+
+```bash
+# Force complete reinstallation - ensures all changes are applied
+uv tool uninstall subtitle-translator
+uv cache clean  # Clear UV build and tool cache
+uv tool install . --force  # Force reinstall even if up to date
+```
+
 **When to use each approach:**
 
 **Standard Reinstall** (most common):
@@ -319,13 +333,23 @@ uv tool install .
 - Configuration or prompt modifications
 - Regular development workflow
 
-**Deep Clean Reinstall** (only when needed):
+**Deep Clean Reinstall** (when needed):
 - Dependencies have been added/removed/updated in `pyproject.toml`
 - Python version requirements changed
 - Encountering installation conflicts or cache corruption
 - Persistent import errors or module loading issues
 
-**Note**: `uv tool install` is intelligent enough to handle most build artifacts automatically. Manual cache cleaning is rarely necessary due to UV's efficient dependency resolution.
+**Complete Reinstall** (force mode):
+- Code changes not being reflected after standard reinstall
+- Memory management or model cache code modifications
+- After significant architectural changes
+- When you need to ensure 100% fresh installation
+
+**Important Notes:**
+- `uv cache clean` clears both build cache and tool installation cache
+- `--force` flag ensures reinstallation even if UV thinks it's unnecessary
+- **Model cache is separate**: Located at `~/.cache/huggingface/optimized_models/` and preserved during reinstallation
+- The Parakeet MLX model cache system is independent of UV tool cache
 
 ### Running the Application
 ```bash
