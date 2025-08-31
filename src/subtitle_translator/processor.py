@@ -36,14 +36,14 @@ def precheck_model_availability(model: str, show_progress: bool = True, silent: 
         # 尝试加载模型（但不实际使用，只是验证可用性）
         from .transcription_core.utils import _find_cached_model, _check_network_connectivity
         
-        # 首先检查本地是否有缓存
+        # 检查指定模型的可用性
         try:
             _find_cached_model(model)
             if show_progress and not silent:
                 print("✅ [green]模型已在本地缓存，可立即使用[/green]")
             return True
         except:
-            # 本地没有缓存，检查网络连接
+            # 本地没有指定模型的缓存，检查网络连接
             if show_progress and not silent:
                 print("📥 [yellow]模型需要下载，检查网络连接...[/yellow]")
             
