@@ -587,6 +587,7 @@ def _download_with_retry(hf_id_or_path: str, filename: str, show_progress: bool 
 def _find_cached_model(hf_id_or_path: str) -> tuple[str, str]:
     """
     查找已缓存的 Hugging Face 模型文件
+    优先检查存储优化缓存，然后检查标准HF缓存
     
     Args:
         hf_id_or_path: Hugging Face 模型ID
@@ -601,14 +602,34 @@ def _find_cached_model(hf_id_or_path: str) -> tuple[str, str]:
     cache_dir = os.environ.get("HF_HOME") or os.environ.get("HUGGINGFACE_HUB_CACHE") or Path.home() / ".cache" / "huggingface"
     cache_dir = Path(cache_dir)
     
-    # 构建模型缓存路径
+    # 优先检查存储优化缓存
+    optimized_cache_dir = cache_dir / "optimized_models"
+    if optimized_cache_dir.exists():
+        import mlx.core as mx
+        from . import utils
+        try:
+            storage_optimizer = utils._storage_optimizer
+            cache_key = storage_optimizer._get_cache_key(hf_id_or_path, mx.bfloat16)
+            optimized_model_dir = optimized_cache_dir / cache_key
+            
+            if optimized_model_dir.exists():
+                config_path = optimized_model_dir / "config.json"
+                weight_path = optimized_model_dir / "optimized_weights.safetensors"
+                
+                if config_path.exists() and weight_path.exists():
+                    logger.debug(f"从存储优化缓存找到模型: {optimized_model_dir}")
+                    return str(config_path), str(weight_path)
+        except Exception as e:
+            logger.debug(f"存储优化缓存检查失败: {e}")
+    
+    # 构建标准模型缓存路径
     model_cache_name = hf_id_or_path.replace("/", "--")
     model_cache_dir = cache_dir / "hub" / f"models--{model_cache_name}"
     
-    logger.debug(f"正在查找缓存模型: {model_cache_dir}")
+    logger.debug(f"正在查找标准缓存模型: {model_cache_dir}")
     
     if not model_cache_dir.exists():
-        raise FileNotFoundError(f"模型缓存目录不存在")
+        raise FileNotFoundError(f"模型缓存目录不存在（标准缓存: {model_cache_dir}，优化缓存: {optimized_cache_dir}）")
     
     # 查找 snapshots 目录下的最新版本
     snapshots_dir = model_cache_dir / "snapshots"

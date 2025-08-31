@@ -215,19 +215,24 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
         print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
         raise
     
-    # 使用批量模式上下文管理器处理整个批量任务
-    with model_context(batch_mode=True):
+    # 根据文件数量决定使用批量模式还是单文件模式
+    is_batch_mode = len(files_to_process) > 1
+    
+    with model_context(batch_mode=is_batch_mode):
         for i, current_input_file in enumerate(files_to_process):
             print()
             logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
-            print(f"🎯 [bold cyan]开始处理第 {i+1}/{len(files_to_process)} 个文件...[/bold cyan]")
+            if is_batch_mode:
+                print(f"🎯 [bold cyan]开始处理第 {i+1}/{len(files_to_process)} 个文件...[/bold cyan]")
+            else:
+                print(f"🎯 [bold cyan]开始处理文件...[/bold cyan]")
             
             try:
-                # 批量模式处理，传入已初始化的翻译服务
+                # 根据实际情况传递批量模式标志
                 process_single_file(
                     current_input_file, target_lang, output_dir, model, 
                     llm_model, reflect, debug, model_precheck_passed,
-                    batch_mode=True, translator_service=translator_service,
+                    batch_mode=is_batch_mode, translator_service=translator_service,
                     preserve_intermediate=preserve_intermediate
                 )
                 count += 1
@@ -254,20 +259,28 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
             
             print()  # 添加空行分隔
     
-    # 批量处理完成，显示模型优化信息
+    # 处理完成，显示模型优化信息
     if needs_transcription and count > 0:
-        print("🎯 [dim]批量处理完成，模型已自动释放，内存已优化[/dim]")
+        if is_batch_mode:
+            print("🎯 [dim]批量处理完成，模型已自动释放，内存已优化[/dim]")
+        else:
+            print("🎯 [dim]处理完成，模型已自动释放，内存已优化[/dim]")
     
     # 显示处理结果
-    _show_batch_results(count, generated_ass_files, output_dir)
+    _show_results(count, generated_ass_files, output_dir, is_batch_mode)
 
 
-def _show_batch_results(count: int, generated_ass_files: list, output_dir: Path):
-    """显示批量处理结果"""
+def _show_results(count: int, generated_ass_files: list, output_dir: Path, is_batch_mode: bool):
+    """显示处理结果"""
     print()
-    logger.info("🎉 批量处理完成！")
-    logger.info(f"总计处理文件数: {count}")
-    print(f"🎉 [bold green]批量处理完成！[/bold green] (处理 [cyan]{count}[/cyan] 个文件)")
+    if is_batch_mode:
+        logger.info("🎉 批量处理完成！")
+        logger.info(f"总计处理文件数: {count}")
+        print(f"🎉 [bold green]批量处理完成！[/bold green] (处理 [cyan]{count}[/cyan] 个文件)")
+    else:
+        logger.info("🎉 处理完成！")
+        logger.info(f"总计处理文件数: {count}")
+        print(f"🎉 [bold green]处理完成！[/bold green] (处理 [cyan]{count}[/cyan] 个文件)")
     
     # 只显示本次生成的ASS文件统计
     if count > 0:
