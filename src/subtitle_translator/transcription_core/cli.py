@@ -23,7 +23,7 @@ from .utils import _find_cached_model, _check_network_connectivity, _storage_opt
 from .model_cache import model_context, get_cache_info, clear_model_cache
 
 # 默认转录模型
-DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
+DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
 
 # 初始化控制台
 console = Console()

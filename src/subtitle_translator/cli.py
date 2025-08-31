@@ -106,6 +106,12 @@ def _validate_target_language(target_lang: str):
     print(f"🎯 [bold green]目标语言:[/bold green] [cyan]{target_language_name}[/cyan] ([dim]{target_lang}[/dim])")
 
 
+def _natural_sort_key(s: str):
+    """用于自然排序的key函数：将数字片段按整数比较，其他片段按不区分大小写的字符串比较"""
+    parts = re.split(r"(\d+)", s)
+    return [int(p) if p.isdigit() else p.casefold() for p in parts]
+
+
 def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
     """获取批量处理的文件列表"""
     MEDIA_EXTENSIONS = ["*.srt", "*.mp3", "*.mp4"]
@@ -130,7 +136,8 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
             base_name = re.sub(suffix_pattern, '', base_name)
         base_names.add(base_name)
     
-    base_names = sorted(base_names)
+    # 自然排序基础文件名（EP2 在 EP10 之前）
+    base_names = sorted(base_names, key=_natural_sort_key)
     
     # 为每个基础名称找到对应的输入文件
     files_to_process = []
