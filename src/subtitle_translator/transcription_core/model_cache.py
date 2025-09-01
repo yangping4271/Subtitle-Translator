@@ -17,8 +17,9 @@ import mlx.core as mx
 from contextlib import contextmanager
 
 from .parakeet import BaseParakeet
+from ..logger import setup_logger
 
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 
 
 class SingleModelCache:
