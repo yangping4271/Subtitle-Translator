@@ -47,9 +47,10 @@ from .parakeet import (
     ParakeetTDTCTCArgs,
 )
 from .model_cache import load_cached_model, model_context
+from ..logger import setup_logger
 
 # 设置日志记录器
-logger = logging.getLogger(__name__)
+logger = setup_logger(__name__)
 console = Console()
 
 # Hugging Face 镜像站列表（按优先级排序）

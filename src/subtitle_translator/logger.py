@@ -234,7 +234,7 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
         Path(LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
         self._file_handler = logging.FileHandler(
             LOG_FILE,
-            mode='w',  # 使用写入模式，覆盖旧文件
+            mode='w',  # 使用覆盖模式，每个新任务覆盖旧日志
             encoding='utf-8'
         )
         file_formatter = ColoredFormatter(use_color=False, use_emoji=True)

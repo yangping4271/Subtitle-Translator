@@ -134,7 +134,7 @@ def merge_longest_contiguous(
     overlap_a = [token for token in a if token.end > b_start_time - overlap_duration]
     overlap_b = [token for token in b if token.start < a_end_time + overlap_duration]
 
-    enough_pairs = len(overlap_a) // 2
+    enough_pairs = max(len(overlap_a) // 3, 10)  # 降低要求：1/3或至少10对
 
     if len(overlap_a) < 2 or len(overlap_b) < 2:
         cutoff_time = (a_end_time + b_start_time) / 2
@@ -147,7 +147,7 @@ def merge_longest_contiguous(
         for j in range(len(overlap_b)):
             if (
                 overlap_a[i].id == overlap_b[j].id
-                and abs(overlap_a[i].start - overlap_b[j].start) < overlap_duration / 2
+                and abs(overlap_a[i].start - overlap_b[j].start) < min(overlap_duration * 0.8, 10.0)
             ):
                 current = []
                 k, l = i, j
@@ -156,7 +156,7 @@ def merge_longest_contiguous(
                     and l < len(overlap_b)
                     and overlap_a[k].id == overlap_b[l].id
                     and abs(overlap_a[k].start - overlap_b[l].start)
-                    < overlap_duration / 2
+                    < min(overlap_duration * 0.8, 10.0)
                 ):
                     current.append((k, l))
                     k += 1
@@ -228,7 +228,7 @@ def merge_longest_common_subsequence(
             if (
                 overlap_a[i - 1].id == overlap_b[j - 1].id
                 and abs(overlap_a[i - 1].start - overlap_b[j - 1].start)
-                < overlap_duration / 2
+                < min(overlap_duration * 0.8, 10.0)
             ):
                 dp[i][j] = dp[i - 1][j - 1] + 1
             else:
@@ -241,7 +241,7 @@ def merge_longest_common_subsequence(
         if (
             overlap_a[i - 1].id == overlap_b[j - 1].id
             and abs(overlap_a[i - 1].start - overlap_b[j - 1].start)
-            < overlap_duration / 2
+            < min(overlap_duration * 0.8, 10.0)
         ):
             lcs_pairs.append((i - 1, j - 1))
             i -= 1

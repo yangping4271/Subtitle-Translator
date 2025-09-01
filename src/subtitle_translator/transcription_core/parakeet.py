@@ -1,6 +1,11 @@
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
+import platform
+import re
+
+from ..logger import setup_logger
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -19,6 +24,130 @@ from .cache import ConformerCache, RotatingConformerCache
 from .conformer import Conformer, ConformerArgs
 from .ctc import AuxCTCArgs, ConvASRDecoder, ConvASRDecoderArgs
 from .rnnt import JointArgs, JointNetwork, PredictArgs, PredictNetwork
+
+
+def get_optimal_chunk_duration(audio_duration_seconds: float, logger=None) -> Optional[float]:
+    """
+    根据系统性能和音频长度智能选择最佳分块时长
+    
+    Args:
+        audio_duration_seconds: 音频总时长（秒）
+        logger: 日志记录器
+    
+    Returns:
+        chunk_duration: 分块时长（秒），None表示不分块
+    """
+    if logger is None:
+        logger = setup_logger(__name__)
+    
+    # 1. macOS内存检测策略
+    memory_gb = None
+    
+    # 策略1: 使用psutil（最准确）
+    try:
+        import psutil
+        memory_gb = psutil.virtual_memory().total / (1024**3)
+        logger.debug(f"psutil检测到系统内存: {memory_gb:.1f}GB")
+    except ImportError:
+        logger.debug("psutil不可用，尝试macOS原生方法")
+    except Exception as e:
+        logger.debug(f"psutil检测失败: {e}")
+    
+    # 策略2: macOS原生sysctl（高效可靠）
+    if memory_gb is None:
+        try:
+            import subprocess
+            result = subprocess.run(['sysctl', 'hw.memsize'], 
+                                  capture_output=True, text=True, timeout=3)
+            if result.returncode == 0:
+                mem_bytes = int(result.stdout.split()[-1])
+                memory_gb = mem_bytes / (1024**3)
+                logger.debug(f"macOS sysctl检测到系统内存: {memory_gb:.1f}GB")
+        except Exception as e:
+            logger.debug(f"macOS内存检测失败: {e}")
+    
+    # 保险策略：合理默认值
+    if memory_gb is None:
+        memory_gb = 16  # macOS设备通常至少16GB
+        logger.warning("⚠️  内存检测失败，使用默认值16GB")
+    else:
+        logger.info(f"✅ 检测到系统内存: {memory_gb:.1f}GB")
+    
+    # 2. Apple Silicon检测（macOS优化）
+    is_apple_silicon = False
+    chip_info = "Intel Mac"
+    
+    # 策略1: 使用platform.machine()检测架构（最快最准确）
+    try:
+        machine = platform.machine()
+        if machine == 'arm64':
+            is_apple_silicon = True
+            chip_info = "Apple Silicon"
+            logger.debug(f"检测到ARM64架构: {machine}")
+    except Exception as e:
+        logger.debug(f"架构检测失败: {e}")
+    
+    # 策略2: 获取详细芯片信息（sysctl更快更可靠）
+    if is_apple_silicon:
+        try:
+            import subprocess
+            result = subprocess.run(['sysctl', '-n', 'machdep.cpu.brand_string'], 
+                                  capture_output=True, text=True, timeout=3)
+            if result.returncode == 0:
+                brand_string = result.stdout.strip()
+                if 'Apple' in brand_string:
+                    chip_info = brand_string
+                    logger.debug(f"获取到详细芯片信息: {brand_string}")
+        except Exception as e:
+            logger.debug(f"芯片信息获取失败: {e}")
+    
+    logger.info(f"💻 系统配置: {memory_gb:.1f}GB内存, {chip_info}")
+    
+    # 3. 基于音频长度的基础策略
+    if audio_duration_seconds <= 8 * 60:  # 8分钟内
+        logger.info("🎯 音频较短，使用单次处理")
+        return None
+    
+    # 4. 根据系统性能调整分块策略
+    if is_apple_silicon:
+        # Apple Silicon优化策略
+        if memory_gb >= 32:
+            # 32GB+ 内存：大块处理
+            chunk_duration = min(20 * 60, audio_duration_seconds * 0.6)  # 最大20分钟或音频60%
+            strategy = "高性能"
+        elif memory_gb >= 16:
+            # 16GB 内存：平衡策略
+            chunk_duration = min(12 * 60, audio_duration_seconds * 0.5)  # 最大12分钟或音频50%
+            strategy = "平衡"
+        elif memory_gb >= 8:
+            # 8GB 内存：保守策略
+            chunk_duration = min(8 * 60, audio_duration_seconds * 0.4)   # 最大8分钟或音频40%
+            strategy = "保守"
+        else:
+            # < 8GB 内存：超保守策略
+            chunk_duration = min(5 * 60, audio_duration_seconds * 0.3)   # 最大5分钟或音频30%
+            strategy = "超保守"
+    else:
+        # Intel/其他平台策略（更保守）
+        if memory_gb >= 32:
+            chunk_duration = min(15 * 60, audio_duration_seconds * 0.5)
+            strategy = "Intel高性能"
+        elif memory_gb >= 16:
+            chunk_duration = min(10 * 60, audio_duration_seconds * 0.4)
+            strategy = "Intel平衡"
+        elif memory_gb >= 8:
+            chunk_duration = min(6 * 60, audio_duration_seconds * 0.3)
+            strategy = "Intel保守"
+        else:
+            chunk_duration = min(4 * 60, audio_duration_seconds * 0.25)
+            strategy = "Intel超保守"
+    
+    # 5. 确保最小分块不少于2分钟（避免过度分块）
+    if chunk_duration < 2 * 60:
+        chunk_duration = 2 * 60
+    
+    logger.info(f"📦 {strategy}策略: {chunk_duration/60:.1f}分钟分块")
+    return chunk_duration
 
 
 @dataclass
@@ -138,18 +267,33 @@ class BaseParakeet(nn.Module):
         audio_path = Path(path)
         audio_data = load_audio(audio_path, self.preprocessor_config.sample_rate, dtype)
 
+        # 添加基础日志记录
+        logger = setup_logger(__name__)
+        
         if chunk_duration is None:
+            logger.info("✅ 使用单次处理（无分块）")
             mel = get_logmel(audio_data, self.preprocessor_config)
             return self.generate(mel)[0]
 
         audio_length_seconds = len(audio_data) / self.preprocessor_config.sample_rate
+        logger.info(f"🎵 音频时长: {audio_length_seconds/60:.1f}分钟")
 
-        if audio_length_seconds <= chunk_duration:
+        # 智能分块策略：如果chunk_duration为负数，启用自动优化
+        if chunk_duration < 0:
+            chunk_duration = get_optimal_chunk_duration(audio_length_seconds, logger)
+            if chunk_duration is None:
+                mel = get_logmel(audio_data, self.preprocessor_config)
+                return self.generate(mel)[0]
+        elif audio_length_seconds <= chunk_duration:
+            logger.info("✅ 音频时长小于分块时长，使用单次处理")
             mel = get_logmel(audio_data, self.preprocessor_config)
             return self.generate(mel)[0]
 
         chunk_samples = int(chunk_duration * self.preprocessor_config.sample_rate)
         overlap_samples = int(overlap_duration * self.preprocessor_config.sample_rate)
+        
+        total_chunks = (len(audio_data) + chunk_samples - overlap_samples - 1) // (chunk_samples - overlap_samples)
+        logger.info(f"🔧 实际分块: {total_chunks}块，每块{chunk_duration/60:.1f}分钟，重叠{overlap_duration}秒")
 
         all_tokens = []
 
@@ -159,8 +303,12 @@ class BaseParakeet(nn.Module):
             if chunk_callback is not None:
                 chunk_callback(end, len(audio_data))
 
+            # 检查是否为最后一个chunk，如果是且有内容则不跳过
+            is_last_chunk = (start + chunk_samples >= len(audio_data))
             if end - start < self.preprocessor_config.hop_length:
-                break  # prevent zero-length log mel
+                if not is_last_chunk or end <= start:
+                    break  # prevent zero-length log mel
+                # 最后一个chunk即使很短也要处理，避免丢失内容
 
             chunk_audio = audio_data[start:end]
             chunk_mel = get_logmel(chunk_audio, self.preprocessor_config)
@@ -180,16 +328,31 @@ class BaseParakeet(nn.Module):
                         chunk_result.tokens,
                         overlap_duration=overlap_duration,
                     )
-                except RuntimeError:
-                    all_tokens = merge_longest_common_subsequence(
-                        all_tokens,
-                        chunk_result.tokens,
-                        overlap_duration=overlap_duration,
-                    )
+                    logger.debug(f"✅ 严格合并成功：精确匹配重叠区域")
+                except RuntimeError as e:
+                    logger.warning(f"🔄 严格合并未达标，启用智能合并：{e}")
+                    try:
+                        before_count = len(all_tokens)
+                        all_tokens = merge_longest_common_subsequence(
+                            all_tokens,
+                            chunk_result.tokens,
+                            overlap_duration=overlap_duration,
+                        )
+                        after_count = len(all_tokens)
+                        added_tokens = after_count - before_count
+                        logger.info(f"✅ 智能合并完成：成功添加{added_tokens}个新token，无内容丢失")
+                    except Exception as e2:
+                        logger.error(f"❌ 所有合并算法都失败：{e2}")
+                        # 保险合并：简单拼接
+                        before_count = len(all_tokens)
+                        all_tokens.extend(chunk_result.tokens)
+                        added_tokens = len(chunk_result.tokens)
+                        logger.warning(f"🆘 使用保险合并：直接添加{added_tokens}个token（可能有重复）")
             else:
                 all_tokens = chunk_result.tokens
 
         result = sentences_to_result(tokens_to_sentences(all_tokens))
+        logger.info(f"🎯 转录完成: {len(all_tokens)}个token，{len(result.sentences)}个句子")
         return result
 
     def transcribe_stream(

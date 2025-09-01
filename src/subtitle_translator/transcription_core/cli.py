@@ -190,12 +190,12 @@ def main(
     chunk_duration: Annotated[
         float,
         typer.Option(
-            help="长音频的分块时长（秒），0 禁用分块。"
+            help="长音频的分块时长（秒），0 禁用分块，-1 智能分块（推荐）。"
         ),
-    ] = 60 * 2,
+    ] = -1,  # 智能分块：根据系统性能自动优化
     overlap_duration: Annotated[
         float, typer.Option(help="使用分块时的重叠时长（秒）")
-    ] = 15,
+    ] = 30,  # 优化：增加到30秒重叠，提高合并成功率
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="打印详细的处理和调试信息"),
@@ -472,12 +472,12 @@ def main_callback(
     chunk_duration: Annotated[
         float,
         typer.Option(
-            help="长音频的分块时长（秒），0 禁用分块。"
+            help="长音频的分块时长（秒），0 禁用分块，-1 智能分块（推荐）。"
         ),
-    ] = 60 * 2,
+    ] = -1,  # 智能分块：根据系统性能自动优化
     overlap_duration: Annotated[
         float, typer.Option(help="使用分块时的重叠时长（秒）")
-    ] = 15,
+    ] = 30,  # 优化：增加到30秒重叠，提高合并成功率
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="打印详细的处理和调试信息"),
