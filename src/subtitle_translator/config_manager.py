@@ -135,9 +135,49 @@ def validate_existing_config(env_path: Path = None):
         print("\n⚠️  [bold yellow]部分模型验证失败，请检查模型名称和网络连接[/bold yellow]")
 
 
+def _check_model_availability(model_id: str, detailed: bool = True) -> tuple[bool, str]:
+    """
+    检查转录模型可用性的统一函数
+    
+    Args:
+        model_id: 转录模型ID
+        detailed: 是否返回详细信息（包含缓存信息、ImportError处理等）
+        
+    Returns:
+        tuple: (是否可用, 状态描述)
+    """
+    try:
+        from .transcription_core.utils import _find_cached_model
+        
+        try:
+            config_path, weight_path = _find_cached_model(model_id)
+            if detailed:
+                # 获取缓存目录名作为状态信息
+                cache_info = Path(config_path).parent.parent.name
+                return True, f"已缓存 ({cache_info})"
+            else:
+                return True, "已缓存"
+        except FileNotFoundError:
+            return False, "未下载" if detailed else "未缓存"
+            
+    except ImportError:
+        # 只在非详细模式下特别处理ImportError
+        if not detailed:
+            return False, "模块未可用"
+        else:
+            return False, "检测失败: 转录模块导入失败"
+    except Exception as e:
+        if detailed:
+            # 详细模式下截断错误信息
+            return False, f"检测失败: {str(e)[:50]}..."
+        else:
+            # 简化模式下显示完整错误信息
+            return False, f"检查失败: {str(e)}"
+
+
 def _check_transcription_model_availability(model_id: str = "mlx-community/parakeet-tdt-0.6b-v2") -> tuple[bool, str]:
     """
-    检查转录模型可用性
+    检查转录模型可用性 (兼容性包装函数)
     
     Args:
         model_id: 转录模型ID
@@ -145,16 +185,7 @@ def _check_transcription_model_availability(model_id: str = "mlx-community/parak
     Returns:
         tuple: (是否可用, 状态描述)
     """
-    try:
-        from .transcription_core.utils import _find_cached_model
-        config_path, weight_path = _find_cached_model(model_id)
-        # 获取缓存目录名作为状态信息
-        cache_info = Path(config_path).parent.parent.name
-        return True, f"已缓存 ({cache_info})"
-    except FileNotFoundError:
-        return False, "未下载"
-    except Exception as e:
-        return False, f"检测失败: {str(e)[:50]}..."
+    return _check_model_availability(model_id, detailed=True)
 
 
 def _display_model_download_guide(model_id: str = "mlx-community/parakeet-tdt-0.6b-v2"):
@@ -304,6 +335,9 @@ def init_config():
     print(f"   🌐 全局配置: {'✅ 存在' if global_exists else '❌ 不存在'} ([cyan]{global_env_path}[/cyan])")
     
     default_model = "mlx-community/parakeet-tdt-0.6b-v2"
+    
+    # 检查默认转录模型是否可用
+    model_available, model_status = _check_model_availability(default_model, detailed=False)
     
     if model_available:
         print(f"   ✅ 默认转录模型: {model_status} ([cyan]{default_model}[/cyan])")
