@@ -112,9 +112,13 @@ def process_single_file(
                 use_cache=True  # 启用缓存优化
             )
             
-            # 对于大文件，使用分块处理避免内存溢出
-            # 使用与原始parakeet-mlx相同的默认值：120秒分块，15秒重叠
-            result = loaded_model.transcribe(input_file, chunk_duration=120.0, overlap_duration=15.0)
+            # 对于长音频，启用智能分块，并增大重叠以降低边界丢词风险
+            # chunk_duration=-1 表示自动选择（见 parakeet.get_optimal_chunk_duration）
+            result = loaded_model.transcribe(
+                input_file,
+                chunk_duration=-1,
+                overlap_duration=30.0,
+            )
             
             # 根据批量模式决定是否显示缓存释放信息
             if not batch_mode:
