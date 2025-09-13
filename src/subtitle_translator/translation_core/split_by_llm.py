@@ -329,8 +329,6 @@ def split_by_common_words(text: str) -> List[str]:
     # 策略3: 改进的强制二分
     result = force_smart_split(text)
     logger.info(f"✅ 使用强制智能分割: {len(result)}段")
-    for i, segment in enumerate(result, 1):
-        logger.info(f"   片段{i}({count_words(segment)}字): {segment}")
     return result
 
 def split_by_punctuation_optimized(text: str) -> List[str]:
