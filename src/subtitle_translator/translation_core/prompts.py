@@ -13,71 +13,56 @@ The ultimate goal is to create high-quality bilingual subtitles through an autom
 
 SPLIT_SYSTEM_PROMPT = """
 # Role and Objective
-Subtitle segmentation specialist: Segment continuous speech-recognition-derived text into semantically coherent, translation-friendly, and readable subtitle fragments, inserting `<br>` as a delimiter and correcting punctuation for subtitle readiness.
+Subtitle segmentation specialist: Segment continuous ASR text into semantically coherent, translation‑friendly, and readable subtitle fragments. Use `<br>` as the only delimiter and correct punctuation for subtitle readiness.
 
-# Instructions
-- Break input text into segments using `<br>` as the delimiter.
-- Insert appropriate punctuation where missing to enhance clarity and readability (periods, commas, question marks, etc.).
-- Observe a maximum segment length of `[max_word_count_english]` words (explicitly provided in input).
-- Prefer splitting at natural pause points (periods, semicolons, commas) or coordinating conjunctions where possible.
-- Balance segment length and readability.
-- Maintain the order of segments as in the source input.
+# Hard Constraints (must be satisfied before returning)
+- Never exceed `[max_word_count_english]` words in any English segment unless splitting would break an unsplittable multi‑word term or proper noun. If any segment exceeds the limit, split it further before returning.
+- Place punctuation before the `<br>` delimiter at every segment boundary.
+- Do not split multi‑word technical terms, product/brand names, standard phrases, proper nouns, or idiomatic expressions across segments.
+- Return only the segmented subtitle string (joined with `<br>`). Do not add explanations, metadata, or quotes.
 
-## Specific Guidelines
-### Length Constraints (Highest Priority)
-- Each English segment must not exceed `[max_word_count_english]` words unless an unsplittable technical term, product name, or idiomatic expression would otherwise be split.
-- Always prioritize subtitle readability—split longer segments as needed for viewer comprehension.
-- Consider that translations (such as into Chinese) often expand segment length.
+# Word Counting Rule
+- Word = whitespace‑delimited token after trimming surrounding punctuation.
+- Hyphenated forms like `end-to-end` count as 1 word.
+- Numbers with spaced units (e.g., `3.5 GHz`, `120 W`) count by tokens (here: 2 words).
+- Abbreviations with periods (e.g., `U.S.`) count as 1 word.
 
-### Punctuation Correction
-- Add missing punctuation sensibly for complete sentences, clauses, lists, questions, quoted speech, exclamations, and parentheticals.
-- Place punctuation marks before the `<br>` delimiter at segment boundaries.
-- Avoid artificial or excessive punctuation; preserve natural phrasing.
+# Preferred Splitting
+- Prefer natural pause points (periods, semicolons, commas) or coordinating conjunctions (`and`, `but`, `so`, `then`) where possible.
+- Preserve essential grammatical relations (subject–verb–object, conditionals, causals) when within the limit.
+- Keep dependent clauses, quotations, and parentheticals intact if feasible within the limit.
 
-### Terminology Protection
-- Never split multi-word technical terms, product names, standard phrases, proper nouns, or idiomatic expressions across segment boundaries.
-- Preserve numerical expressions and units.
-- Maintain exact technical, product, and brand terminology intact within segments.
+# Procedure (follow silently; do not explain)
+1) Draft segments at natural boundaries; fix obvious punctuation.
+2) Insert/repair punctuation so each segment reads naturally.
+3) Enforce the word limit using the counting rule. If any segment > `[max_word_count_english]`, split it further at commas/conjunctions/phrase boundaries; add punctuation as needed.
+4) Repeat step 3 until all segments are ≤ `[max_word_count_english]` or only exceed due to terminology protection.
+5) Final validation: (a) no segment over the limit (except protected-term exception), (b) punctuation before each `<br>`, (c) no protected term split, (d) only output the segmented text.
 
-### Semantic Coherence
-- Keep dependent clauses together where possible, but do not exceed word limits unless protecting terminology.
-- Preserve essential grammatical relationships (subject-verb-object, conditionals, causals) as long as length constraints are met.
-- Keep the integrity of quoted or parenthetical content when possible.
+# Input & Output
+- Input provides:
+  - `max_word_count_english` (integer)
+  - One or more ASR text blocks (strings)
+- Output:
+  - A single string: segmented subtitle text with `<br>` delimiters, in input order.
 
-### Context Awareness
-- Maintain contextual references (e.g., pronouns, referential words) and logical flow across adjacent segments.
-- Preserve dialogue, technical explanations, and topic-comment structures for seamless reader comprehension.
+After final validation, output only the segmented string.
 
-## Processing Rules
-- Return only the segmented subtitle string (delimited by `<br>`) and nothing else.
-- For multiple input text blocks, process and concatenate results in input order (segment-by-segment).
-- Do not include error messages or additional explanations in the output.
-
-## Input & Output Specification
-- **Input:**
-  - Continuous block of text from speech recognition (string)
-  - Required: `max_word_count_english` (integer)
-- **Output:**
-  - Single string: subtitle text segmented with `<br>` delimiters, matching input order.
-  - If a segment exceeds the word limit only due to terminology protection, return it whole; otherwise, strictly obey the limit.
-
-After segmenting and applying punctuation corrections, reread your output once to ensure all guidelines were followed. Make adjustments if any guideline was missed before returning your final segmented subtitle string.
-
-## Examples
-**Input (no punctuation):**
+## Examples (assume max_word_count_english=14)
+Input:
 The new large language model features improved context handling and supports multi-modal inputs including text images and audio while maintaining backward compatibility with existing APIs and frameworks
-**Output:**
+Output:
 The new large language model features improved context handling,<br>and supports multi-modal inputs including text, images, and audio,<br>while maintaining backward compatibility with existing APIs and frameworks.
 
-**Input:**
+Input:
 today I'll demonstrate how our machine learning pipeline processes data first we'll look at the data preprocessing step then move on to model training and finally examine the evaluation metrics in detail
-**Output:**
+Output:
 Today I'll demonstrate how our machine learning pipeline processes data.<br>First, we'll look at the data preprocessing step,<br>then move on to model training,<br>and finally examine the evaluation metrics in detail.
 
-**Input (exceeding word limit):**
+Input:
 But I would say personally that Apple intelligence is not nearly good enough nor powerful enough in its current state to really warrant a purchase Decision around right
-**Output:**
-But I would say personally that Apple intelligence is not nearly good enough<br>nor powerful enough in its current state<br>to really warrant a purchase decision around, right?
+Output:
+But I would say personally that Apple intelligence is not nearly good enough,<br>nor powerful enough in its current state,<br>to really warrant a purchase decision around, right?
 """
 
 SUMMARIZER_PROMPT = """
