@@ -137,10 +137,39 @@ def merge_longest_contiguous(
     enough_pairs = max(len(overlap_a) // 3, 10)  # 降低要求：1/3或至少10对
 
     if len(overlap_a) < 2 or len(overlap_b) < 2:
+        # 更安全的兜底：包含跨越中点的token，并进行近似去重，宁可重复也不丢失
         cutoff_time = (a_end_time + b_start_time) / 2
-        return [t for t in a if t.end <= cutoff_time] + [
-            t for t in b if t.start >= cutoff_time
-        ]
+
+        left = [t for t in a if t.end <= cutoff_time]
+        right = [t for t in b if t.start >= cutoff_time]
+
+        # 处理跨越中点的token（两侧都可能有），择一保留，优先保留右侧（b）
+        cross_a = [t for t in a if t.start < cutoff_time < t.end]
+        cross_b = [t for t in b if t.start < cutoff_time < t.end]
+        chosen = None
+        if cross_b:
+            # 选择更靠近cutoff的token（右侧）
+            chosen = min(cross_b, key=lambda t: abs((t.start + t.end) / 2 - cutoff_time))
+        elif cross_a:
+            chosen = min(cross_a, key=lambda t: abs((t.start + t.end) / 2 - cutoff_time))
+
+        merged = []
+        merged.extend(left)
+        if chosen is not None:
+            merged.append(chosen)
+        merged.extend(right)
+
+        # 邻近去重：相邻且id相同且起始时间差很小，则保留持续时间更长者
+        deduped = []
+        TIME_EPS = 0.3
+        for tok in merged:
+            if deduped and deduped[-1].id == tok.id and abs(deduped[-1].start - tok.start) < TIME_EPS:
+                prev = deduped[-1]
+                keep = tok if tok.duration >= prev.duration else prev
+                deduped[-1] = keep
+            else:
+                deduped.append(tok)
+        return deduped
 
     best_contiguous = []
     for i in range(len(overlap_a)):
@@ -216,10 +245,36 @@ def merge_longest_common_subsequence(
     overlap_b = [token for token in b if token.start < a_end_time + overlap_duration]
 
     if len(overlap_a) < 2 or len(overlap_b) < 2:
+        # 更安全的兜底：包含跨越中点的token，并进行近似去重
         cutoff_time = (a_end_time + b_start_time) / 2
-        return [t for t in a if t.end <= cutoff_time] + [
-            t for t in b if t.start >= cutoff_time
-        ]
+
+        left = [t for t in a if t.end <= cutoff_time]
+        right = [t for t in b if t.start >= cutoff_time]
+
+        cross_a = [t for t in a if t.start < cutoff_time < t.end]
+        cross_b = [t for t in b if t.start < cutoff_time < t.end]
+        chosen = None
+        if cross_b:
+            chosen = min(cross_b, key=lambda t: abs((t.start + t.end) / 2 - cutoff_time))
+        elif cross_a:
+            chosen = min(cross_a, key=lambda t: abs((t.start + t.end) / 2 - cutoff_time))
+
+        merged = []
+        merged.extend(left)
+        if chosen is not None:
+            merged.append(chosen)
+        merged.extend(right)
+
+        deduped = []
+        TIME_EPS = 0.3
+        for tok in merged:
+            if deduped and deduped[-1].id == tok.id and abs(deduped[-1].start - tok.start) < TIME_EPS:
+                prev = deduped[-1]
+                keep = tok if tok.duration >= prev.duration else prev
+                deduped[-1] = keep
+            else:
+                deduped.append(tok)
+        return deduped
 
     dp = [[0 for _ in range(len(overlap_b) + 1)] for _ in range(len(overlap_a) + 1)]
 
