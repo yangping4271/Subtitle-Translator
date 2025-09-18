@@ -24,6 +24,7 @@ from .cache import ConformerCache, RotatingConformerCache
 from .conformer import Conformer, ConformerArgs
 from .ctc import AuxCTCArgs, ConvASRDecoder, ConvASRDecoderArgs
 from .rnnt import JointArgs, JointNetwork, PredictArgs, PredictNetwork
+from .vad_chunker import VADChunker, VADConfig, create_vad_chunker
 
 
 def get_optimal_chunk_duration(audio_duration_seconds: float, logger=None) -> Optional[float]:
@@ -242,6 +243,7 @@ class BaseParakeet(nn.Module):
         chunk_duration: Optional[float] = None,
         overlap_duration: float = 15.0,
         chunk_callback: Optional[Callable] = None,
+        use_vad: bool = True,
     ) -> AlignedResult:
         """
         Transcribe an audio file, with optional chunking for long files.
@@ -261,6 +263,10 @@ class BaseParakeet(nn.Module):
                 A function to call when each chunk is processed. The callback
                 is called with (current_position, total_position) arguments
                 to track progress. Defaults to None.
+            use_vad (bool, optional):
+                Whether to use VAD-based intelligent chunking. When True, uses
+                Voice Activity Detection to find optimal split points at silence.
+                Defaults to True.
         Returns:
             AlignedResult: Transcription result with aligned tokens and sentences.
         """
@@ -269,7 +275,52 @@ class BaseParakeet(nn.Module):
 
         # 添加基础日志记录
         logger = setup_logger(__name__)
-        
+
+        # Check if we should use VAD chunking
+        # VAD chunking is only used when chunk_duration is negative (smart chunking)
+        # If user explicitly sets a positive chunk_duration, respect their choice
+        if use_vad and chunk_duration is not None and chunk_duration < 0:
+            logger.info("🎯 启用 VAD 智能分块")
+            vad_chunker = create_vad_chunker(enable_vad=True)
+
+            if vad_chunker is not None:
+                # Use VAD-based chunking
+                chunks = vad_chunker.chunk_audio_with_vad(
+                    audio_data,
+                    self.preprocessor_config.sample_rate
+                )
+
+                if len(chunks) == 1:
+                    # Single chunk, process directly
+                    mel = get_logmel(chunks[0][0], self.preprocessor_config)
+                    return self.generate(mel)[0]
+
+                # Process multiple chunks
+                all_tokens = []
+                for i, (chunk_audio, (start_sample, end_sample)) in enumerate(chunks):
+                    if chunk_callback is not None:
+                        chunk_callback(end_sample, len(audio_data))
+
+                    # Process chunk
+                    chunk_mel = get_logmel(chunk_audio, self.preprocessor_config)
+                    chunk_result = self.generate(chunk_mel)[0]
+
+                    # Adjust timestamps
+                    chunk_offset = start_sample / self.preprocessor_config.sample_rate
+                    for sentence in chunk_result.sentences:
+                        for token in sentence.tokens:
+                            token.start += chunk_offset
+                            token.end = token.start + token.duration
+
+                    all_tokens.extend(chunk_result.tokens)
+
+                # Merge results - 由于 VAD 分块没有重叠，直接使用 tokens
+                merged_sentences = tokens_to_sentences(all_tokens)
+                return sentences_to_result(merged_sentences)
+            else:
+                logger.warning("VAD 不可用，回退到传统分块")
+                # Fall back to regular chunking
+
         if chunk_duration is None:
             logger.info("✅ 使用单次处理（无分块）")
             mel = get_logmel(audio_data, self.preprocessor_config)

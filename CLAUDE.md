@@ -29,6 +29,7 @@ src/subtitle_translator/
 │   ├── alignment.py        # Word-level timestamp alignment
 │   ├── parakeet.py         # MLX model implementation
 │   ├── model_cache.py      # Model caching system
+│   ├── vad_chunker.py      # VAD-based intelligent audio chunking
 │   └── ...                 # Other transcription modules
 └── translation_core/       # LLM-based translation engine
     ├── config.py          # Language configuration
@@ -46,7 +47,7 @@ src/subtitle_translator/
 
 **Translation Pipeline**: The main workflow processes files through transcription → smart splitting → translation → ASS generation. The `processor.py` orchestrates this flow, handling both audio/video files and existing SRT files.
 
-**Transcription Engine**: Uses Parakeet MLX models optimized for Apple Silicon. Features model caching system (`model_cache.py`) for improved performance, automatic audio chunking for long files, and supports word-level timestamps.
+**Transcription Engine**: Uses Parakeet MLX models optimized for Apple Silicon. Features model caching system (`model_cache.py`) for improved performance, automatic audio chunking for long files, supports word-level timestamps, and includes VAD-based intelligent chunking (`vad_chunker.py`) for optimal speech segmentation.
 
 **Translation Engine**: LLM-based translation supporting multiple models (OpenAI, etc.) with reflection mode for improved quality. Includes smart sentence splitting to optimize translation context and translation optimization features.
 
@@ -334,10 +335,11 @@ uv tool install . --force  # Force reinstall even if up to date
 - Regular development workflow
 
 **Deep Clean Reinstall** (when needed):
-- Dependencies have been added/removed/updated in `pyproject.toml`
+- Dependencies have been added/removed/updated in `pyproject.toml` (such as new onnxruntime dependency)
 - Python version requirements changed
 - Encountering installation conflicts or cache corruption
 - Persistent import errors or module loading issues
+- VAD functionality issues or missing ONNX runtime dependencies
 
 **Complete Reinstall** (force mode):
 - Code changes not being reflected after standard reinstall
@@ -363,6 +365,8 @@ transcribe audio.mp3    # Transcription only
 translate -i video.mp4 -t ja -r    # Translate to Japanese with reflection
 translate -i video.mp4 -d          # Debug mode
 transcribe video.mp4 --timestamps  # With word-level timestamps
+transcribe video.mp4 --vad          # With VAD intelligent chunking (default)
+transcribe video.mp4 --no-vad --chunk-duration 120  # Fixed 2-minute chunks
 ```
 
 ### Development Mode Usage
@@ -421,9 +425,13 @@ The application processes files with intelligent file discovery:
 ## Version Management and Testing
 
 ### Version Updates
-Current version: **0.2.7** (see `pyproject.toml`)
+Current version: **0.4.1** (see `pyproject.toml`)
 
 Recent optimizations include:
+- **VAD Intelligent Chunking**: Fixed VAD logic to respect user chunk_duration parameters
+- **Enhanced Dependencies**: Added explicit onnxruntime dependency for reliable VAD functionality
+- **Improved CLI**: Better help text explaining VAD vs fixed chunking behavior
+- **Code Quality**: Removed unused imports and corrected documentation
 - Enhanced terminal output experience with reduced redundancy
 - Model caching improvements
 - Better error handling for subtitle processing
@@ -504,6 +512,64 @@ uv tool uninstall subtitle-translator
 uv cache clean  # Clear UV cache for new dependencies
 uv tool install .
 ```
+
+## Major Upgrade v0.4.1: VAD Chunking Fixes
+
+### Critical Bug Fixes
+
+**Problem Addressed:**
+The VAD (Voice Activity Detection) system had several critical issues that prevented proper user parameter handling and reliable operation:
+
+1. **Parameter Bypass Issue**: VAD was activating even when users specified explicit chunk durations
+2. **Missing Dependencies**: Default ONNX mode failed due to missing `onnxruntime` dependency
+3. **Inconsistent Documentation**: Help text and docstrings didn't match actual behavior
+4. **Code Quality**: Unused imports and incomplete implementation
+
+**Solution Implementation:**
+
+#### 1. **Fixed VAD Logic** (`parakeet.py:283`)
+- **Smart Activation**: VAD now only activates when `chunk_duration < 0` (intelligent mode)
+- **User Respect**: Positive chunk_duration values use fixed chunking, ignoring VAD
+- **Clear Behavior**: `-1` = VAD smart chunking, `120` = 2-minute fixed chunks, `0` = no chunking
+
+#### 2. **Enhanced Dependencies** (`pyproject.toml`)
+- **Added `onnxruntime>=1.22.0`**: Ensures VAD's default ONNX mode works reliably
+- **Explicit Declaration**: No more silent fallbacks due to missing dependencies
+- **Better Reliability**: First-time VAD usage now works out of the box
+
+#### 3. **Improved CLI Documentation** (`cli.py`)
+- **Clear Help Text**: `--chunk-duration` now explains VAD vs fixed chunking behavior
+- **User Guidance**: `--vad` option explains when it activates
+- **Parameter Interaction**: Users understand the relationship between settings
+
+#### 4. **Code Quality Improvements**
+- **Removed Unused Imports**: Cleaned up `numpy` and `Path` imports not being used
+- **Corrected Docstrings**: Fixed `use_vad` default value documentation
+- **Consistent Behavior**: Code now matches documentation and user expectations
+
+#### Technical Benefits
+
+**Predictable Behavior:**
+```bash
+# Smart VAD chunking (default)
+transcribe video.mp4                    # Uses VAD intelligent segmentation
+
+# Fixed chunking (user specified)
+transcribe video.mp4 --chunk-duration 120   # 2-minute fixed chunks, no VAD
+
+# No chunking
+transcribe video.mp4 --chunk-duration 0     # Single processing, no chunking
+```
+
+**Reliable Dependencies:**
+- No more `ModuleNotFoundError: onnxruntime` on first VAD usage
+- Consistent performance across different environments
+- Proper fallback handling when VAD is unavailable
+
+**Enhanced User Experience:**
+- Clear parameter behavior that matches expectations
+- Better CLI help text explaining options
+- Reliable functionality without hidden dependencies
 
 ## Major Upgrade v0.4.0: Universal Subtitle Processing
 

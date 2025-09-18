@@ -190,12 +190,19 @@ def main(
     chunk_duration: Annotated[
         float,
         typer.Option(
-            help="长音频的分块时长（秒），0 禁用分块，-1 智能分块（推荐）。"
+            help="长音频的分块时长（秒），0 禁用分块，-1 智能分块（推荐）。注意：当设为正数时，将使用固定分块而非 VAD 智能分块。"
         ),
     ] = -1,  # 智能分块：根据系统性能自动优化
     overlap_duration: Annotated[
         float, typer.Option(help="使用分块时的重叠时长（秒）")
     ] = 30,  # 优化：增加到30秒重叠，提高合并成功率
+    use_vad: Annotated[
+        bool,
+        typer.Option(
+            "--vad/--no-vad",
+            help="使用 VAD 智能分块，在静音处分割音频（推荐）。仅在 chunk_duration 为负数时启用。"
+        ),
+    ] = True,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="打印详细的处理和调试信息"),
@@ -237,6 +244,7 @@ def main(
         timestamps=timestamps,
         chunk_duration=chunk_duration,
         overlap_duration=overlap_duration,
+        use_vad=use_vad,
         verbose=verbose,
         fp32=fp32
     )
@@ -251,6 +259,7 @@ def _transcribe_files(
     timestamps: bool,
     chunk_duration: float,
     overlap_duration: float,
+    use_vad: bool,
     verbose: bool,
     fp32: bool
 ):
@@ -345,6 +354,7 @@ def _transcribe_files(
                         dtype=bfloat16 if not fp32 else float32,
                         chunk_duration=chunk_duration if chunk_duration != 0 else None,
                         overlap_duration=overlap_duration,
+                        use_vad=use_vad,
                         chunk_callback=lambda current, full: progress.update(
                             task, total=total_files * full, completed=full * i + current
                         ),
@@ -472,12 +482,19 @@ def main_callback(
     chunk_duration: Annotated[
         float,
         typer.Option(
-            help="长音频的分块时长（秒），0 禁用分块，-1 智能分块（推荐）。"
+            help="长音频的分块时长（秒），0 禁用分块，-1 智能分块（推荐）。注意：当设为正数时，将使用固定分块而非 VAD 智能分块。"
         ),
     ] = -1,  # 智能分块：根据系统性能自动优化
     overlap_duration: Annotated[
         float, typer.Option(help="使用分块时的重叠时长（秒）")
     ] = 30,  # 优化：增加到30秒重叠，提高合并成功率
+    use_vad: Annotated[
+        bool,
+        typer.Option(
+            "--vad/--no-vad",
+            help="使用 VAD 智能分块，在静音处分割音频（推荐）。仅在 chunk_duration 为负数时启用。"
+        ),
+    ] = True,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="打印详细的处理和调试信息"),
@@ -542,6 +559,7 @@ def main_callback(
         timestamps=timestamps,
         chunk_duration=chunk_duration,
         overlap_duration=overlap_duration,
+        use_vad=use_vad,
         verbose=verbose,
         fp32=fp32
     )

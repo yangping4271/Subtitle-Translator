@@ -114,10 +114,12 @@ def process_single_file(
             
             # 对于长音频，启用智能分块，并增大重叠以降低边界丢词风险
             # chunk_duration=-1 表示自动选择（见 parakeet.get_optimal_chunk_duration）
+            # 默认启用 VAD 智能分块，获得更好的转录质量
             result = loaded_model.transcribe(
                 input_file,
                 chunk_duration=-1,
                 overlap_duration=30.0,
+                use_vad=True,  # 默认使用 VAD 智能分块
             )
             
             # 根据批量模式决定是否显示缓存释放信息
