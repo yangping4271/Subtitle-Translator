@@ -1596,7 +1596,7 @@ wheels = [
 
 [[package]]
 name = "subtitle-translator"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "dacite" },
@@ -1605,6 +1605,7 @@ dependencies = [
     { name = "librosa" },
     { name = "mlx" },
     { name = "numpy" },
+    { name = "onnxruntime" },
     { name = "openai" },
     { name = "psutil" },
     { name = "python-dotenv" },
@@ -1625,6 +1626,7 @@ requires-dist = [
     { name = "librosa", specifier = ">=0.11.0" },
     { name = "mlx", specifier = ">=0.22.1" },
     { name = "numpy", specifier = ">=2.2.5" },
+    { name = "onnxruntime", specifier = ">=1.22.0" },
     { name = "openai" },
     { name = "psutil", specifier = ">=5.9.0" },
     { name = "python-dotenv" },
