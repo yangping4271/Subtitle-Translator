@@ -280,7 +280,12 @@ class BaseParakeet(nn.Module):
         # VAD chunking is only used when chunk_duration is negative (smart chunking)
         # If user explicitly sets a positive chunk_duration, respect their choice
         if use_vad and chunk_duration is not None and chunk_duration < 0:
+            import time
+            from rich import print
+
             logger.info("🎯 启用 VAD 智能分块")
+            print("🎯 [bold blue]启用 VAD 智能分块[/bold blue]")
+            vad_start_time = time.time()
             vad_chunker = create_vad_chunker(enable_vad=True)
 
             if vad_chunker is not None:
@@ -289,6 +294,10 @@ class BaseParakeet(nn.Module):
                     audio_data,
                     self.preprocessor_config.sample_rate
                 )
+
+                vad_elapsed = time.time() - vad_start_time
+                logger.info(f"⏱️  VAD 处理耗时: {vad_elapsed:.1f}秒")
+                print(f"⏱️  [cyan]VAD 处理耗时: {vad_elapsed:.1f}秒[/cyan]")
 
                 if len(chunks) == 1:
                     # Single chunk, process directly
