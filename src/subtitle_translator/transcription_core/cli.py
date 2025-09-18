@@ -1,5 +1,6 @@
 import datetime
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -17,7 +18,7 @@ from rich.progress import (
 from rich.table import Table
 from typing_extensions import Annotated
 
-from ..logger import get_log_file_path, get_log_mode_info
+from ..logger import get_log_file_path, get_log_mode_info, setup_logger
 from . import AlignedResult, AlignedSentence, AlignedToken, from_pretrained
 from .utils import _find_cached_model, _check_network_connectivity, _storage_optimizer
 from .model_cache import model_context, get_cache_info, clear_model_cache
@@ -264,6 +265,9 @@ def _transcribe_files(
     fp32: bool
 ):
     """执行音频转录的核心逻辑"""
+    # 设置日志记录器
+    logger = setup_logger(__name__)
+
     # 不再在这里立即加载模型，而是延迟到实际转录时加载
     if verbose:
         print(f"准备使用模型: [bold cyan]{model}[/bold cyan]")
@@ -333,22 +337,25 @@ def _transcribe_files(
                     if loaded_model is None:
                         if verbose:
                             print(f"🤖 [bold blue]正在加载模型...[/bold blue] [cyan]{model}[/cyan]")
-                        
+
                         loaded_model, from_cache = from_pretrained(
-                            model, 
+                            model,
                             dtype=bfloat16 if not fp32 else float32,
                             show_progress=verbose,
                             use_cache=True,  # 启用缓存
                             return_cache_info=True  # 返回缓存信息
                         )
-                        
+
                         # 只有当模型不是从缓存加载时才显示加载完成信息
                         if verbose and not from_cache:
                             if batch_mode:
                                 print("✅ [green]模型加载完成，批量处理模式已启用[/green]")
                             else:
                                 print("✅ [green]模型加载完成[/green]")
-                    
+
+                    # 记录转录开始时间
+                    transcribe_start_time = time.time()
+
                     result: AlignedResult = loaded_model.transcribe(
                         audio_path,
                         dtype=bfloat16 if not fp32 else float32,
@@ -360,11 +367,20 @@ def _transcribe_files(
                         ),
                     )
 
+                    # 计算转录耗时
+                    transcribe_elapsed = time.time() - transcribe_start_time
+
                     if verbose:
                         for sentence in result.sentences:
                             start, end, text = sentence.start, sentence.end, sentence.text
                             line = f"[blue][{format_timestamp(start)} --> {format_timestamp(end)}][/blue] {text.strip()}"
                             print(line)
+
+                    # 统计字幕数量并显示时间统计
+                    sentence_count = len(result.sentences)
+                    logger.info(f"⏱️  转录耗时: {transcribe_elapsed:.1f}秒")
+                    if not verbose:
+                        print(f"✅ [bold green]转录完成[/bold green] (共 [cyan]{sentence_count}[/cyan] 条字幕) - 耗时: [cyan]{transcribe_elapsed:.1f}秒[/cyan]")
 
                     base_filename = audio_path.stem
                     template_vars = {

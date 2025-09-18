@@ -2,6 +2,7 @@
 文件处理模块 - 处理单个文件的核心逻辑
 """
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -103,15 +104,18 @@ def process_single_file(
             # 转录阶段 - 使用优化的缓存管理
             logger.info("开始转录音频...")
             print(f"🎤 [bold cyan]正在转录音频...[/bold cyan]")
-            
+
+            # 记录转录开始时间
+            transcribe_start_time = time.time()
+
             # 直接使用模型，不再嵌套 model_context（因为外部已有上下文管理）
             # 懒加载模型，只在需要时加载
             loaded_model = from_pretrained(
-                model, 
+                model,
                 show_progress=True,  # 显示加载进度
                 use_cache=True  # 启用缓存优化
             )
-            
+
             # 对于长音频，启用智能分块，并增大重叠以降低边界丢词风险
             # chunk_duration=-1 表示自动选择（见 parakeet.get_optimal_chunk_duration）
             # 默认启用 VAD 智能分块，获得更好的转录质量
@@ -121,21 +125,25 @@ def process_single_file(
                 overlap_duration=30.0,
                 use_vad=True,  # 默认使用 VAD 智能分块
             )
-            
+
+            # 计算转录耗时
+            transcribe_elapsed = time.time() - transcribe_start_time
+
             # 根据批量模式决定是否显示缓存释放信息
             if not batch_mode:
                 # 此时模型缓存已自动释放
                 pass  # 在单文件模式下会显示释放信息
-            
+
             # 将转录结果保存为 SRT，使用 timestamps=True 获得更精细的时间戳
             srt_content = to_srt(result, timestamps=True)
             with open(temp_srt_path, "w", encoding="utf-8") as f:
                 f.write(srt_content)
-            
-            # 统计字幕数量
-            subtitle_count = len(srt_content.strip().split('\n\n'))
+
+            # 统计字幕数量并显示时间统计
+            sentence_count = len(result.sentences)
             logger.info(f"转录完成，SRT文件保存至: {temp_srt_path}")
-            print(f"✅ [bold green]转录完成[/bold green] (共 [cyan]{subtitle_count}[/cyan] 条字幕)")
+            logger.info(f"⏱️  转录耗时: {transcribe_elapsed:.1f}秒")
+            print(f"✅ [bold green]转录完成[/bold green] (共 [cyan]{sentence_count}[/cyan] 条字幕) - 耗时: [cyan]{transcribe_elapsed:.1f}秒[/cyan]")
 
         except Exception as e:
             print(f"[bold red]转录失败:[/bold red] {e}")
