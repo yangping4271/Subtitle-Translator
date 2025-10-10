@@ -1,5 +1,6 @@
 import datetime
 import json
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -8,6 +9,9 @@ import typer
 from mlx.core import bfloat16, float32
 from rich import print
 from rich.console import Console
+
+# 抑制 macOS MallocStackLogging 警告（无害的系统消息）
+os.environ.setdefault('MallocStackLogging', '0')
 from rich.progress import (
     BarColumn,
     Progress,
