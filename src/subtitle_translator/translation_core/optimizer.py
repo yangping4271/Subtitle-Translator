@@ -440,12 +440,12 @@ class SubtitleOptimizer:
             "translated_subtitles": translated_subtitle
         }
 
-    def _create_translate_message(self, original_subtitle: Dict[str, str], 
+    def _create_translate_message(self, original_subtitle: Dict[str, str],
                                 summary_content: Dict, reflect=False):
         """创建翻译提示消息"""
-        # 基础输入内容
+        # 基础输入内容 - 使用json.dumps确保格式正确
         input_content = (f"Correct and translate the following subtitles into {self.config.target_language}:\n"
-                        f"<subtitles>{str(original_subtitle)}</subtitles>")
+                        f"<subtitles>{json.dumps(original_subtitle, ensure_ascii=False)}</subtitles>")
         
         # 解析并构建结构化的参考信息
         if summary_content and 'summary' in summary_content:
@@ -597,6 +597,11 @@ class SubtitleOptimizer:
         while current_try < max_retries:
             try:
                 message = self._create_translate_message(original_subtitle, summary_content, reflect=True)
+
+                # 【关键日志】记录提交给LLM的原始输入数据
+                logger.info(f"📤 {batch_info} 提交给LLM的字幕数据 (共{len(original_subtitle)}条):")
+                logger.info(f"   输入JSON: {json.dumps(original_subtitle, ensure_ascii=False)}")
+
                 response = self.client.chat.completions.create(
                     model=self.config.translation_model,
                     stream=False,
@@ -608,13 +613,53 @@ class SubtitleOptimizer:
                 if isinstance(response, str):
                     logger.error(f"❌ API调用返回错误: {response}")
                     raise Exception(f"API调用失败: {response}")
-                
+
                 if not hasattr(response, 'choices') or not response.choices:
                     logger.error("❌ API响应格式异常：缺少choices属性")
                     raise Exception("API响应格式异常")
-                
-                response_content = parse_llm_response(response.choices[0].message.content)
-                
+
+                # 获取原始响应内容
+                raw_response = response.choices[0].message.content
+                logger.info(f"📥 {batch_info} LLM原始返回数据:\n{raw_response}")
+
+                response_content = parse_llm_response(raw_response)
+                logger.info(f"📥 {batch_info} 解析后的数据类型: {type(response_content)}")
+
+                # 🔧 类型检查和自动修复（反思模式）
+                if isinstance(response_content, list):
+                    logger.warning(f"⚠️ {batch_info} LLM返回了array而非object，尝试转换")
+                    logger.info(f"📊 {batch_info} Array内容: {json.dumps(response_content, ensure_ascii=False)}")
+                    try:
+                        # 尝试从list转换为dict
+                        new_dict = {}
+                        for item in response_content:
+                            if isinstance(item, dict):
+                                # 尝试多种可能的ID字段名
+                                item_id = item.get('id') or item.get('subtitle_id') or item.get('key')
+                                if item_id:
+                                    new_dict[str(item_id)] = {
+                                        'optimized_subtitle': item.get('optimized_subtitle', item.get('optimized', '')),
+                                        'translation': item.get('translation', ''),
+                                        'revised_translation': item.get('revised_translation', item.get('translation', '')),
+                                        'revise_suggestions': item.get('revise_suggestions', '')
+                                    }
+                        if new_dict:
+                            response_content = new_dict
+                            logger.info(f"✅ {batch_info} 成功转换array为object，包含{len(new_dict)}个条目")
+                        else:
+                            logger.error(f"❌ {batch_info} Array转换失败：无法提取有效数据")
+                            logger.error(f"❌ {batch_info} 失败原因：array中没有可识别的id字段")
+                            response_content = {}
+                    except Exception as e:
+                        logger.error(f"❌ {batch_info} Array转换异常: {e}")
+                        logger.error(f"❌ {batch_info} Array结构: {json.dumps(response_content[:2] if len(response_content) > 2 else response_content, ensure_ascii=False)}")
+                        response_content = {}
+
+                if not isinstance(response_content, dict):
+                    logger.error(f"❌ {batch_info} LLM返回类型错误: {type(response_content)}")
+                    logger.error(f"❌ {batch_info} 返回内容: {str(response_content)[:500]}")
+                    raise Exception(f"LLM返回格式错误，期望dict，实际{type(response_content)}")
+
                 logger.debug(f"反思翻译API返回结果: {json.dumps(response_content, indent=4, ensure_ascii=False)}")
 
                 # 如果完全没有返回结果，这是整批次的失败，需要重试
@@ -626,11 +671,23 @@ class SubtitleOptimizer:
                     logger.error(f"❌ {batch_info} 重试{max_retries}次仍失败，使用默认翻译")
                     response_content = {}
 
+                # 【关键日志】对比输入和返回的ID
+                input_ids = set(original_subtitle.keys())
+                output_ids = set(response_content.keys())
+                missing_ids = input_ids - output_ids
+                extra_ids = output_ids - input_ids
+
+                if missing_ids:
+                    logger.warning(f"⚠️ {batch_info} LLM丢失了这些ID: {sorted([int(x) for x in missing_ids])}")
+                if extra_ids:
+                    logger.warning(f"⚠️ {batch_info} LLM返回了额外的ID: {sorted([int(x) for x in extra_ids])}")
+
                 # 检查API返回的结果是否完整
                 problematic_ids = []
                 for k in original_subtitle.keys():
                     if str(k) not in response_content:
                         logger.warning(f"⚠️ API返回结果缺少字幕ID: {k}")
+                        logger.warning(f"⚠️ 原始字幕: {original_subtitle[str(k)]}")
                         problematic_ids.append(k)
                         response_content[str(k)] = {
                             "optimized_subtitle": original_subtitle[str(k)],
@@ -642,21 +699,25 @@ class SubtitleOptimizer:
                         # 检查必要的字段是否存在
                         if "optimized_subtitle" not in response_content[str(k)]:
                             logger.warning(f"字幕ID {k} 缺少optimized_subtitle字段，将使用原始字幕")
+                            logger.warning(f"⚠️ 该字幕返回的数据: {json.dumps(response_content[str(k)], ensure_ascii=False)}")
                             response_content[str(k)]["optimized_subtitle"] = original_subtitle[str(k)]
                             problematic_ids.append(k)
-                        
+
                         if "translation" not in response_content[str(k)]:
                             logger.warning(f"字幕ID {k} 缺少translation字段，将使用默认翻译")
+                            logger.warning(f"⚠️ 该字幕返回的数据: {json.dumps(response_content[str(k)], ensure_ascii=False)}")
                             response_content[str(k)]["translation"] = f"[翻译失败] {original_subtitle[str(k)]}"
                             problematic_ids.append(k)
-                        
+
                         if "revised_translation" not in response_content[str(k)]:
                             logger.warning(f"字幕ID {k} 缺少revised_translation字段，将使用translation字段")
+                            logger.warning(f"⚠️ 该字幕返回的数据: {json.dumps(response_content[str(k)], ensure_ascii=False)}")
                             response_content[str(k)]["revised_translation"] = response_content[str(k)].get("translation", f"[翻译失败] {original_subtitle[str(k)]}")
                             problematic_ids.append(k)
-                        
+
                         if "revise_suggestions" not in response_content[str(k)]:
                             logger.warning(f"字幕ID {k} 缺少revise_suggestions字段，将使用默认建议")
+                            logger.warning(f"⚠️ 该字幕返回的数据: {json.dumps(response_content[str(k)], ensure_ascii=False)}")
                             response_content[str(k)]["revise_suggestions"] = "翻译失败，无法提供反思建议"
                             problematic_ids.append(k)
 
@@ -730,11 +791,11 @@ class SubtitleOptimizer:
         while current_try < max_retries:
             try:
                 message = self._create_translate_message(original_subtitle, summary_content, reflect=False)
-                
-                # 记录发送给模型的消息（调试用）
-                logger.debug(f"📤 {batch_info} 发送给翻译模型的消息:")
-                logger.debug(f"   User Content: {message[1]['content'][:500]}...")  # 只显示前500字符
-                
+
+                # 【关键日志】记录提交给LLM的原始输入数据
+                logger.info(f"📤 {batch_info} 提交给LLM的字幕数据 (共{len(original_subtitle)}条):")
+                logger.info(f"   输入JSON: {json.dumps(original_subtitle, ensure_ascii=False)}")
+
                 response = self.client.chat.completions.create(
                     model=self.config.translation_model,
                     stream=False,
@@ -751,11 +812,49 @@ class SubtitleOptimizer:
                     logger.error("❌ API响应格式异常：缺少choices属性")
                     raise Exception("API响应格式异常")
                 
-                response_content = parse_llm_response(response.choices[0].message.content)
+                # 获取原始响应内容
+                raw_response = response.choices[0].message.content
+                logger.info(f"📥 {batch_info} LLM原始返回数据:\n{raw_response}")
+
+                response_content = parse_llm_response(raw_response)
+                logger.info(f"📥 {batch_info} 解析后的数据类型: {type(response_content)}")
+
+                # 🔧 类型检查和自动修复
+                if isinstance(response_content, list):
+                    logger.warning(f"⚠️ {batch_info} LLM返回了array而非object，尝试转换")
+                    logger.info(f"📊 {batch_info} Array内容: {json.dumps(response_content, ensure_ascii=False)}")
+                    try:
+                        # 尝试从list转换为dict
+                        new_dict = {}
+                        for item in response_content:
+                            if isinstance(item, dict):
+                                # 尝试多种可能的ID字段名
+                                item_id = item.get('id') or item.get('subtitle_id') or item.get('key')
+                                if item_id:
+                                    new_dict[str(item_id)] = {
+                                        'optimized_subtitle': item.get('optimized_subtitle', item.get('optimized', '')),
+                                        'translation': item.get('translation', '')
+                                    }
+                        if new_dict:
+                            response_content = new_dict
+                            logger.info(f"✅ {batch_info} 成功转换array为object，包含{len(new_dict)}个条目")
+                        else:
+                            logger.error(f"❌ {batch_info} Array转换失败：无法提取有效数据")
+                            logger.error(f"❌ {batch_info} 失败原因：array中没有可识别的id字段")
+                            response_content = {}
+                    except Exception as e:
+                        logger.error(f"❌ {batch_info} Array转换异常: {e}")
+                        logger.error(f"❌ {batch_info} Array结构: {json.dumps(response_content[:2] if len(response_content) > 2 else response_content, ensure_ascii=False)}")
+                        response_content = {}
+
+                if not isinstance(response_content, dict):
+                    logger.error(f"❌ {batch_info} LLM返回类型错误: {type(response_content)}")
+                    logger.error(f"❌ {batch_info} 返回内容: {str(response_content)[:500]}")
+                    raise Exception(f"LLM返回格式错误，期望dict，实际{type(response_content)}")
 
                 logger.debug(f"📥 {batch_info} API返回结果样例（前3条）:")
                 # 只显示前3条翻译结果作为样例
-                sample_keys = list(response_content.keys())[:3]
+                sample_keys = list(response_content.keys())[:3] if response_content else []
                 for k in sample_keys:
                     if k in response_content:
                         logger.debug(f"   ID {k}: {response_content[k]}")
@@ -769,11 +868,23 @@ class SubtitleOptimizer:
                     logger.error(f"❌ {batch_info} 重试{max_retries}次仍失败，使用默认翻译")
                     response_content = {}
 
+                # 【关键日志】对比输入和返回的ID
+                input_ids = set(original_subtitle.keys())
+                output_ids = set(response_content.keys())
+                missing_ids = input_ids - output_ids
+                extra_ids = output_ids - input_ids
+
+                if missing_ids:
+                    logger.warning(f"⚠️ {batch_info} LLM丢失了这些ID: {sorted([int(x) for x in missing_ids])}")
+                if extra_ids:
+                    logger.warning(f"⚠️ {batch_info} LLM返回了额外的ID: {sorted([int(x) for x in extra_ids])}")
+
                 # 检查API返回的结果是否完整
                 problematic_ids = []
                 for k in original_subtitle.keys():
                     if str(k) not in response_content:
                         logger.warning(f"⚠️ API返回结果缺少字幕ID: {k}")
+                        logger.warning(f"⚠️ 原始字幕: {original_subtitle[str(k)]}")
                         problematic_ids.append(k)
                         response_content[str(k)] = {
                             "optimized_subtitle": original_subtitle[str(k)],
@@ -781,10 +892,12 @@ class SubtitleOptimizer:
                         }
                     elif "optimized_subtitle" not in response_content[str(k)]:
                         logger.warning(f"⚠️ 字幕ID {k} 缺少optimized_subtitle字段")
+                        logger.warning(f"⚠️ 该字幕返回的数据: {json.dumps(response_content[str(k)], ensure_ascii=False)}")
                         response_content[str(k)]["optimized_subtitle"] = original_subtitle[str(k)]
                         problematic_ids.append(k)
                     elif "translation" not in response_content[str(k)]:
                         logger.warning(f"⚠️ 字幕ID {k} 缺少translation字段")
+                        logger.warning(f"⚠️ 该字幕返回的数据: {json.dumps(response_content[str(k)], ensure_ascii=False)}")
                         response_content[str(k)]["translation"] = f"[翻译失败] {original_subtitle[str(k)]}"
                         problematic_ids.append(k)
 
