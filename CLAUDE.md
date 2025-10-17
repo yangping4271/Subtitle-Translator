@@ -287,71 +287,19 @@ uv sync --dev
 
 ### Reinstallation (Clean Install)
 
-#### Standard Reinstallation (Recommended)
-For most development scenarios, a basic reinstall is sufficient:
+**⚠️ 唯一可靠的重装方法（UV有缓存问题）：**
 
 ```bash
-# Basic reinstall - handles most cases efficiently
+# ✅ 标准重装流程 - 任何代码修改后都用这个
 uv tool uninstall subtitle-translator
-find . -name "*.pyc" -delete
-find . -name "__pycache__" -type d -exec rm -rf {} +
-uv tool install .
+uv cache clean              # 清理构建缓存（关键！）
+uv tool install . --force   # 强制重新编译
 ```
 
-#### Deep Clean Reinstallation (When Needed)
-Only use when encountering specific issues:
-
-```bash
-# 1. Uninstall the existing tool
-uv tool uninstall subtitle-translator
-
-# 2. Clean Python bytecode (optional, but recommended for issues)
-find . -name "*.pyc" -delete
-find . -name "__pycache__" -type d -exec rm -rf {} +
-
-# 3. Clean UV cache (only if dependency issues occur)
-uv cache clean
-
-# 4. Reinstall
-uv tool install .
-```
-
-#### Complete Reinstallation (Force Mode)
-Use when code changes aren't being reflected or for complete fresh install:
-
-```bash
-# Force complete reinstallation - ensures all changes are applied
-uv tool uninstall subtitle-translator
-uv cache clean  # Clear UV build and tool cache
-uv tool install . --force  # Force reinstall even if up to date
-```
-
-**When to use each approach:**
-
-**Standard Reinstall** (most common):
-- Code changes in Python files
-- Version number updates
-- Configuration or prompt modifications
-- Regular development workflow
-
-**Deep Clean Reinstall** (when needed):
-- Dependencies have been added/removed/updated in `pyproject.toml` (such as new onnxruntime dependency)
-- Python version requirements changed
-- Encountering installation conflicts or cache corruption
-- Persistent import errors or module loading issues
-- VAD functionality issues or missing ONNX runtime dependencies
-
-**Complete Reinstall** (force mode):
-- Code changes not being reflected after standard reinstall
-- Memory management or model cache code modifications
-- After significant architectural changes
-- When you need to ensure 100% fresh installation
-
-**Important Notes:**
-- `uv cache clean` clears both build cache and tool installation cache
-- `--force` flag ensures reinstallation even if UV thinks it's unnecessary
-- **Model cache is separate**: Located at `~/.cache/huggingface/optimized_models/` and preserved during reinstallation
-- The Parakeet MLX model cache system is independent of UV tool cache
+**为什么必须这样：**
+- `uv tool uninstall` 不清理构建缓存
+- 不加 `--force` 会复用旧的缓存版本
+- 模型缓存（`~/.cache/huggingface/`）不受影响
 
 ### Running the Application
 ```bash
@@ -507,10 +455,25 @@ uv tool install .
 # 2. Sync development environment
 uv sync --dev
 
-# 3. Deep clean reinstall for tool
+# 3. MUST use force reinstall for tool
 uv tool uninstall subtitle-translator
 uv cache clean  # Clear UV cache for new dependencies
-uv tool install .
+uv tool install . --force  # ✅ CRITICAL: Always use --force
+```
+
+### Critical Lessons: UV Cache Behavior
+
+**Real Case (October 2024):** 代码修改后"标准重装"，但运行时发现用的是2个月前的旧代码。
+
+**根本原因：** `uv tool uninstall` 不清理构建缓存，`uv tool install .` 会复用缓存的旧版本。
+
+**正确做法：**
+```bash
+# ❌ 错误 - 会用缓存的旧代码
+uv tool uninstall subtitle-translator && uv tool install .
+
+# ✅ 正确 - 强制重新编译
+uv tool uninstall subtitle-translator && uv cache clean && uv tool install . --force
 ```
 
 ## Major Upgrade v0.4.1: VAD Chunking Fixes
