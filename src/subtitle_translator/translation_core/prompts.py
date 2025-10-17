@@ -156,6 +156,10 @@ If provided, use the following reference data:
 - Always translate each segment individually without attempting to complete incomplete sentences. Maintain proper flow and context with adjacent subtitles as appropriate.
 
 ## Output Format
+
+### CRITICAL: Output Type Requirement
+**YOU MUST return a JSON object (dictionary), NOT an array or list.**
+
 Return a valid JSON object where each key (e.g., "1", "01") from the input maps to an object with the following structure:
 
 ```json
@@ -167,16 +171,49 @@ Return a valid JSON object where each key (e.g., "1", "01") from the input maps 
 }
 ```
 
-- Ensure the output key order matches that of the input and uses the exact string values.
-- If the input is empty or contains only non-speech elements after cleaning, set "optimized_subtitle" to an empty string and translate accordingly.
-- Do not add, omit, or renumber keys for any reason. Retain any non-sequential or duplicate keys.
-- Return strictly valid JSON with no extra fields, comments, or trailing commas.
-- Replace [TargetLanguage] with the specific language required by the context or task. If [TargetLanguage] is missing or ambiguous, return an error indicating a valid target language is needed.
+### Complete Example
+
+**Input:**
+```json
+{"1": "Hello world", "2": "Good morning everyone"}
+```
+
+**CORRECT Output (JSON object):**
+```json
+{
+  "1": {
+    "optimized_subtitle": "Hello world.",
+    "translation": "你好，世界。"
+  },
+  "2": {
+    "optimized_subtitle": "Good morning, everyone.",
+    "translation": "大家早上好。"
+  }
+}
+```
+
+**WRONG Output (array format - DO NOT USE):**
+```json
+[
+  {"id": "1", "optimized_subtitle": "Hello world.", "translation": "你好，世界。"},
+  {"id": "2", "optimized_subtitle": "Good morning, everyone.", "translation": "大家早上好。"}
+]
+```
+
+### Output Requirements
+- **MUST be a JSON object (dictionary) with keys matching input keys**
+- **DO NOT return an array/list format**
+- Ensure the output key order matches that of the input and uses the exact string values
+- If the input is empty or contains only non-speech elements after cleaning, set "optimized_subtitle" to an empty string and translate accordingly
+- Do not add, omit, or renumber keys for any reason. Retain any non-sequential or duplicate keys
+- Return strictly valid JSON with no extra fields, comments, or trailing commas
+- Replace [TargetLanguage] with the specific language required by the context or task
 
 After producing the output, validate that:
-- Output keys and their order exactly match the input.
-- JSON is valid and contains no extra fields or comments.
-- All required fields per subtitle are present.
+- **Output is a JSON object (NOT an array)**
+- Output keys exactly match the input keys
+- JSON is valid and contains no extra fields or comments
+- All required fields per subtitle are present
 If validation fails, self-correct and re-output strictly to specification.
 
 ## Standard Terminology (Do Not Change)
@@ -234,6 +271,10 @@ When provided, use the following reference inputs for guidance:
 After each substantive step (optimization, translation, review), validate outcomes in 1-2 lines and proceed or self-correct if validation fails.
 
 # Output Format
+
+### CRITICAL: Output Type Requirement
+**YOU MUST return a JSON object (dictionary), NOT an array or list.**
+
 Return your results as valid JSON in the form:
 {
   "<subtitle_number>": {
@@ -244,10 +285,50 @@ Return your results as valid JSON in the form:
   },
   ...
 }
-If the source content is empty or contains only non-speech material, ensure all output fields for that subtitle number are present as empty strings. Do not skip any input subtitle numbers, even if content is missing or duplicated. If reference data is absent or malformed, proceed without generating errors and output all required fields as strings.
+
+### Complete Example
+
+**Input:**
+```json
+{"1": "Hello world", "2": "Good morning"}
+```
+
+**CORRECT Output (JSON object):**
+```json
+{
+  "1": {
+    "optimized_subtitle": "Hello world.",
+    "translation": "你好，世界。",
+    "revise_suggestions": "Clear and accurate",
+    "revised_translation": "你好，世界。"
+  },
+  "2": {
+    "optimized_subtitle": "Good morning.",
+    "translation": "早上好。",
+    "revise_suggestions": "Consider adding context",
+    "revised_translation": "早上好。"
+  }
+}
+```
+
+**WRONG Output (array format - DO NOT USE):**
+```json
+[
+  {"id": "1", "optimized_subtitle": "...", "translation": "...", ...},
+  ...
+]
+```
+
+### Output Requirements
+- **MUST be a JSON object (dictionary), NOT an array**
+- Keys must match input subtitle numbers exactly
+- If the source content is empty or contains only non-speech material, ensure all output fields for that subtitle number are present as empty strings
+- Do not skip any input subtitle numbers, even if content is missing or duplicated
+- If reference data is absent or malformed, proceed without generating errors and output all required fields as strings
 
 ## Additional JSON Rules
 - Output must be valid JSON (no comments, trailing commas, or extra fields)
+- **Output must be a JSON object, not an array**
 - Output fields must always be strings
 - Key order can be natural JSON order
 
