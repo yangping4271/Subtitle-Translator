@@ -4,11 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Subtitle Translator is a command-line tool that integrates English video transcription and subtitle translation. It provides two main CLI commands:
-- `translate`: Full workflow from audio/video to bilingual subtitles  
-- `transcribe`: Transcription-only workflow
+Subtitle Translator is a command-line tool for English video transcription and multilingual subtitle translation. It provides two main CLI commands:
+- `translate`: Full workflow from English audio/video to bilingual subtitles in various target languages
+- `transcribe`: English transcription-only workflow
 
 The project is structured as a Python package using `uv` for dependency management and distribution via `uv tool install`. Current version: **0.5.0** (Major upgrade with intelligent NLP-powered sentence segmentation).
+
+**Language Support:**
+- **Source Language**: English only (for transcription)
+- **Target Languages**: Chinese, Japanese, Korean, French, German, Spanish, Portuguese, Italian, Russian, Arabic, Thai, Vietnamese, and more
 
 ## Architecture
 
@@ -50,7 +54,7 @@ src/subtitle_translator/
 
 **Transcription Engine**: Uses Parakeet MLX models optimized for Apple Silicon. Features model caching system (`model_cache.py`) for improved performance, automatic audio chunking for long files, supports word-level timestamps, and includes VAD-based intelligent chunking (`vad_chunker.py`) for optimal speech segmentation.
 
-**Translation Engine**: LLM-based translation supporting multiple models (OpenAI, etc.) with reflection mode for improved quality. Includes intelligent sentence splitting with three-tier fallback strategy: sentence-end punctuation → rule-based matching → forced segmentation. Supports translation optimization features and context-aware processing.
+**Translation Engine**: LLM-based translation supporting multiple models (OpenAI, etc.). Includes intelligent sentence splitting with three-tier fallback strategy: sentence-end punctuation → rule-based matching → forced segmentation. Supports translation optimization features and context-aware processing.
 
 **Universal Subtitle Processing System (v0.4.0)**: Revolutionary upgrade that supports both word-level and segment-level subtitles through a unified processing framework. Key innovations:
 - **Intelligent Detection**: Automatically identifies subtitle type (word-level vs segment-level)
@@ -154,9 +158,6 @@ This design separates concerns effectively: segmentation handles display constra
 - **Batch Size**: ~50 subtitle segments per batch
 - **Context Injection**: Each batch receives summarization results
 - **Error Correction**: Applies global ASR fixes consistently
-- **Quality Modes**:
-  - Standard mode: Direct translation with corrections
-  - Reflection mode: Initial translation + self-critique + revision
 - **Parallel Execution**: Multiple batches processed simultaneously
 - **Fallback Strategy**: Failed batches retry with single-segment processing
 
@@ -253,7 +254,6 @@ This architecture delivers several critical benefits:
 
 **Quality & Performance**
 - Parallel processing accelerates translation
-- Reflection mode enables self-improvement
 - Contextual information enhances translation quality
 - Intelligent segmentation improves readability
 
@@ -311,7 +311,10 @@ translate -i video.mp4  # Process single file
 transcribe audio.mp3    # Transcription only
 
 # Common options
-translate -i video.mp4 -t ja -r    # Translate to Japanese with reflection
+translate -i video.mp4 -t zh       # Translate to Simplified Chinese
+translate -i video.mp4 -t ja       # Translate to Japanese
+translate -i video.mp4 -t ko       # Translate to Korean
+translate -i video.mp4 -t fr       # Translate to French
 translate -i video.mp4 -d          # Debug mode
 transcribe video.mp4 --timestamps  # With word-level timestamps
 transcribe video.mp4 --vad          # With VAD intelligent chunking (default)
@@ -360,7 +363,18 @@ LLM_MODEL=gpt-4o-mini        # Default fallback
 ```
 
 ### Supported Languages
-Target languages use standard codes: `zh` (Chinese), `ja` (Japanese), `ko` (Korean), `en` (English), `fr` (French), etc.
+
+**Source Language:**
+- English only (for transcription)
+
+**Target Languages:**
+The system supports translation from English to multiple languages:
+- **Chinese**: `zh` (Simplified), `zh-cn` (Simplified), `zh-tw` (Traditional)
+- **Asian Languages**: `ja` (Japanese), `ko` (Korean), `th` (Thai), `vi` (Vietnamese)
+- **European Languages**: `fr` (French), `de` (German), `es` (Spanish), `pt` (Portuguese), `it` (Italian), `ru` (Russian)
+- **Other**: `ar` (Arabic), and more
+
+**Note**: The system is designed to transcribe English audio/video and translate to any supported target language.
 
 ## File Processing Logic
 

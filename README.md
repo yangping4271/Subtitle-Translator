@@ -2,18 +2,19 @@
 
 [English](./README.md) | [中文](./README_zh.md)
 
-A command-line tool that integrates English video transcription, subtitle translation. It transcribes English audio/video into subtitles, translates them into multiple languages, and generates bilingual ASS subtitle files.
+A command-line tool for English video transcription and multilingual subtitle translation. It transcribes English audio/video into subtitles, translates them into multiple target languages, and generates bilingual ASS subtitle files.
 
-> ⚠️ **Important**: The transcription function only supports English audio/video. If your video is in another language, please prepare an English SRT subtitle file first.
+> ⚠️ **Source Language**: This tool only supports **English** audio/video for transcription. If your content is in another language, please provide English SRT subtitles first.
 
 ## Features
 
-- **English Video Transcription**: Transcribes English audio/video to SRT subtitles using the Parakeet MLX model.
+- **English Audio/Video Transcription**: Uses Parakeet MLX model to transcribe English speech to SRT subtitles.
+- **Multilingual Translation**: Supports translating English subtitles into Chinese, Japanese, Korean, French, and many other languages.
 - **Intelligent Segmentation**: Multi-tier fallback strategies including punctuation-based and rule-based semantic splitting.
-- **AI-Powered Translation**: Supports various LLM models for translation into multiple languages.
-- **Bilingual Subtitles**: Automatically generates bilingual ASS subtitle files.
-- **Batch Processing**: Supports processing multiple files at once.
-- **Modular Configuration**: Allows configuring different models for sentence splitting, translation, and summarization.
+- **AI-Powered Translation**: Leverages various LLM models for high-quality translation.
+- **Bilingual Subtitles**: Automatically generates bilingual ASS subtitle files (English + target language).
+- **Batch Processing**: Processes multiple files simultaneously.
+- **Modular Configuration**: Configurable models for sentence splitting, translation, and summarization.
 
 ## Quick Start
 
@@ -41,11 +42,11 @@ translate
 # Process a single file
 translate -i video.mp4
 
-# Translate to other languages
-translate -i video.mp4 -t ja
-
-# Enable reflection mode for higher quality translation
-translate -i video.mp4 -r
+# Translate to different target languages (Chinese, Japanese, Korean, etc.)
+translate -i video.mp4 -t zh    # Chinese (Simplified)
+translate -i video.mp4 -t ja    # Japanese
+translate -i video.mp4 -t ko    # Korean
+translate -i video.mp4 -t fr    # French
 
 # Transcribe audio/video only (no translation)
 transcribe video.mp4
@@ -62,19 +63,19 @@ transcribe video.mp4 --output-format all
 
 ## Workflow
 
-### Full Workflow (translate command)
+### Full Workflow (English transcription + translation)
 ```
-Audio/Video → Transcribe → English SRT → Translate → Bilingual ASS Subtitles
-```
-
-### Translation-Only Workflow (with existing English subtitles)
-```
-English SRT → Translate → Bilingual ASS Subtitles
+English Audio/Video → Transcribe → English SRT → Translate → Bilingual ASS
 ```
 
-### Transcription-Only Workflow (transcribe command)
+### Translation-Only (with existing English subtitles)
 ```
-Audio/Video → Transcribe → Multiple Output Formats
+English SRT → Translate to Target Language → Bilingual ASS
+```
+
+### Transcription-Only (transcribe command)
+```
+English Audio/Video → Transcribe → SRT/TXT/VTT/JSON
 ```
 
 ## Supported Formats
@@ -122,7 +123,6 @@ Options:
   -o, --output_dir PATH    Output directory [default: Current directory]
   --model TEXT             Transcription model
   -m, --llm-model TEXT     LLM model
-  -r, --reflect            Enable reflection translation mode
 
 Commands:
   init                     Initialize configuration
@@ -144,8 +144,19 @@ Options:
   --fp32/--bf16                   Use FP32 precision [default: bf16]
 ```
 
-### Supported Translation Languages
-Supports translation into multiple languages. Common language codes: `zh` (Chinese), `ja` (Japanese), `ko` (Korean), `en` (English), `fr` (French), etc.
+### Supported Languages
+
+**Source Language:**
+- English only (for transcription)
+
+**Target Languages:**
+Supports translation from English to multiple languages:
+- **Chinese**: `zh` (Simplified), `zh-cn` (Simplified), `zh-tw` (Traditional)
+- **Asian Languages**: `ja` (Japanese), `ko` (Korean), `th` (Thai), `vi` (Vietnamese)
+- **European Languages**: `fr` (French), `de` (German), `es` (Spanish), `pt` (Portuguese), `it` (Italian), `ru` (Russian)
+- **Other**: `ar` (Arabic), and more
+
+> **Note**: The system is designed to transcribe English audio/video and translate to any supported target language.
 
 ## Configuration
 
