@@ -69,7 +69,7 @@ def precheck_model_availability(model: str, show_progress: bool = True, silent: 
 
 def process_single_file(
     input_file: Path, target_lang: str, output_dir: Path,
-    model: str, llm_model: Optional[str], reflect: bool,
+    model: str, llm_model: Optional[str],
     model_precheck_passed: Optional[bool] = None,
     batch_mode: bool = False, translator_service = None,
     preserve_intermediate: bool = False
@@ -173,7 +173,6 @@ def process_single_file(
             target_lang=target_lang,
             output_dir=output_dir,
             llm_model=llm_model,
-            reflect=reflect,
             skip_env_init=service_was_passed  # 如果服务是传入的（批量模式），跳过环境初始化
         )
         # 确保这里正确赋值
