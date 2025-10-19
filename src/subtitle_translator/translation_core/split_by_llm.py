@@ -198,7 +198,7 @@ def split_by_llm(text: str,
         result = response.choices[0].message.content
         if not result:
             raise Exception("API返回为空")
-        logger.debug(f"API返回结果: \n\n{result}\n")
+        logger.info(f"API返回结果: \n\n{result}\n")
 
         # 清理和分割文本 - 简化处理，保留原始格式
         result = re.sub(r'\n+', '', result)
@@ -242,7 +242,7 @@ def split_by_llm(text: str,
                 elif word_count <= tolerance_threshold:
                     new_sentences.append(segment)
                     stats['tolerated'] += 1
-                    logger.debug(f"✓ 轻度超标({word_count}/{max_word_count_english}字): {segment[:40]}...")
+                    logger.info(f"✓ 轻度超标({word_count}/{max_word_count_english}字): {segment[:40]}...")
 
                 # 层级3：强制优化层 (tolerance < x ≤ warning)
                 elif word_count <= warning_threshold:
@@ -368,33 +368,33 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
         from .spacy_splitter import spacy_split
         result = spacy_split(text, max_segments=3)
         if result and len(result) > 1:
-            logger.info(f"✅ [策略1] 使用spaCy语法分析分割: {len(result)}段")
+            # spacy_split内部已打印日志
             # 递归处理仍然超长的片段
             final_result = []
             for i, part in enumerate(result, 1):
                 part_words = count_words(part)
                 if part_words > max_words:
-                    logger.debug(f"   片段{i}仍超长({part_words}字)，递归处理")
+                    logger.info(f"   片段{i}仍超长({part_words}字)，递归处理")
                     final_result.extend(aggressive_split(part, max_words))
                 else:
                     final_result.append(part)
             return final_result
         else:
-            logger.debug("   spaCy未找到合适分割点，尝试下一策略")
+            logger.info("   spaCy未找到合适分割点，尝试下一策略")
     except ImportError:
-        logger.debug("   spaCy未安装，跳过NLP分析")
+        logger.info("   spaCy未安装，跳过NLP分析")
     except Exception as e:
-        logger.debug(f"   spaCy分割异常: {e}")
+        logger.info(f"   spaCy分割异常: {e}")
 
     # ============ 策略2: 句末标点分割 ============
     result = _split_by_end_punctuation(text, max_words)
     if len(result) > 1:
-        logger.info(f"✅ [策略2] 使用句末标点分割: {len(result)}段")
+        logger.info(f"✅ [策略2] 句末标点分割: {len(result)}段")
         for i, segment in enumerate(result, 1):
             logger.info(f"   片段{i}({count_words(segment)}字): {segment[:50]}...")
         return result
     else:
-        logger.debug("   未找到句末标点分割点，尝试下一策略")
+        logger.info("   未找到句末标点分割点，尝试下一策略")
 
     # ============ 策略3: 规则匹配分割（7层优先级） ============
     split_candidates = []

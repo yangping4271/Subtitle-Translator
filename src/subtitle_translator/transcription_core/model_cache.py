@@ -72,7 +72,7 @@ class SingleModelCache:
             if self.is_cached(model_id, dtype):
                 self._access_count += 1
                 self._last_access = time.time()
-                logger.debug(f"缓存命中: {model_id} ({dtype})")
+                logger.info(f"缓存命中: {model_id} ({dtype})")
                 return self._cached_model
             return None
     
@@ -123,14 +123,14 @@ class SingleModelCache:
         with self._cache_lock:
             self._batch_mode = True
             self._batch_ref_count += 1
-            logger.debug(f"进入批量模式，引用计数: {self._batch_ref_count}")
+            logger.info(f"进入批量模式，引用计数: {self._batch_ref_count}")
     
     def exit_batch_mode(self) -> None:
         """退出批量处理模式"""
         with self._cache_lock:
             if self._batch_ref_count > 0:
                 self._batch_ref_count -= 1
-                logger.debug(f"退出批量模式，引用计数: {self._batch_ref_count}")
+                logger.info(f"退出批量模式，引用计数: {self._batch_ref_count}")
                 
                 if self._batch_ref_count == 0:
                     self._batch_mode = False
@@ -245,7 +245,7 @@ def load_cached_model(model_id: str, dtype: mx.Dtype, loader_func, show_progress
             cache.set_model(model_id, dtype, optimized_model)
             return optimized_model, True
     except Exception as e:
-        logger.debug(f"存储优化缓存查找失败: {str(e)}")
+        logger.info(f"存储优化缓存查找失败: {str(e)}")
     
     # 所有缓存都未命中，需要实际加载模型
     if show_progress:

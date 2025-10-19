@@ -32,35 +32,9 @@ log_queue = queue.Queue()
 queue_handler = None
 _queue_listener = None
 
-# 全局debug状态管理
-_global_debug_mode = False
-_initialized_loggers = []  # 记录所有已创建的logger名称
-
 def get_log_file_path():
     """获取当前使用的日志文件路径"""
     return LOG_FILE
-
-def configure_all_loggers(debug_mode: bool):
-    """
-    全局配置所有已创建的logger的debug级别
-    
-    Args:
-        debug_mode: 是否启用debug模式
-    """
-    global _global_debug_mode, queue_handler
-    
-    # 更新全局debug状态
-    _global_debug_mode = debug_mode
-    
-    # 如果队列处理器已经存在，更新其级别
-    if queue_handler is not None:
-        target_level = logging.DEBUG if debug_mode else logging.INFO
-        queue_handler.update_level(target_level)
-        
-        # 同时更新所有已创建的logger
-        for logger_name in _initialized_loggers:
-            logger_instance = logging.getLogger(logger_name)
-            logger_instance.setLevel(target_level)
 
 def get_log_mode_info():
     """获取日志模式信息（开发模式或生产模式）"""
@@ -69,13 +43,6 @@ def get_log_mode_info():
         return "开发模式", "项目目录"
     else:
         return "生产模式", "用户目录"
-
-# 检查命令行参数中是否有-d或--debug
-def is_debug_mode():
-    return '-d' in sys.argv or '--debug' in sys.argv or os.environ.get('DEBUG', '').lower() in ('1', 'true', 'yes')
-
-# 日志配置
-# LOG_LEVEL = logging.DEBUG if is_debug_mode() else logging.INFO # 这一行将被移除
 
 class ColoredFormatter(logging.Formatter):
     """带颜色和emoji的日志格式化器"""
@@ -243,57 +210,44 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
         
         return [self._file_handler]
 
-def setup_logger(name: str, 
-                debug_mode: bool = None,
+def setup_logger(name: str,
                 log_fmt: str = '%(asctime)s [%(name)s] %(levelname)s: %(message)s',
                 datefmt: str = '%Y-%m-%d %H:%M:%S') -> logging.Logger:
     """
     创建并配置一个日志记录器。
-    支持全局debug状态管理和延迟配置。
+    所有日志统一使用INFO级别。
 
     参数：
     - name: 日志记录器的名称
-    - debug_mode: 是否启用调试模式。如果为None，则使用全局debug状态
     - log_fmt: 日志格式字符串
     - datefmt: 时间格式字符串
     """
-    global queue_handler, _global_debug_mode, _initialized_loggers
-    
-    # 记录这个logger，以便后续全局配置
-    if name not in _initialized_loggers:
-        _initialized_loggers.append(name)
-    
-    # 决定使用的debug模式：优先使用传入参数，否则使用全局状态
-    effective_debug_mode = debug_mode if debug_mode is not None else _global_debug_mode
-    level = logging.DEBUG if effective_debug_mode else logging.INFO
-    
+    global queue_handler
+
+    level = logging.INFO
+
     logger = logging.getLogger(name)
     logger.setLevel(level)
-    
+
     # 防止logger传播到根logger，避免重复输出
     logger.propagate = False
-    
+
     # 检查是否已经有处理器，如果有则直接返回，避免重复配置
     if logger.handlers:
         return logger
-    
+
     # 创建或更新队列处理器
     if queue_handler is None:
         queue_handler = QueueListenerHandler(log_queue, level)
         queue_handler.start_listener()
-    else:
-        # 如果队列处理器已存在，更新其级别以支持更细粒度的日志
-        # 使用更低的级别（DEBUG优先级更高）
-        if level < queue_handler._current_level:
-            queue_handler.update_level(level)
-    
+
     logger.addHandler(queue_handler)
-    
+
     # 设置特定库的日志级别为ERROR以减少日志噪音
     error_loggers = ["urllib3", "requests", "openai", "httpx", "httpcore", "ssl", "certifi"]
     for lib in error_loggers:
         logging.getLogger(lib).setLevel(logging.ERROR)
-    
+
     return logger
 
 def create_progress_logger(logger, total_steps, task_name="任务"):

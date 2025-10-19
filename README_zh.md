@@ -122,8 +122,7 @@ Options:
   --model TEXT             转录模型
   -m, --llm-model TEXT     LLM模型
   -r, --reflect            启用反思翻译模式
-  -d, --debug              调试模式
-  
+
 Commands:
   init                     初始化配置
 ```
