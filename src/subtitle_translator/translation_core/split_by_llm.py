@@ -259,19 +259,41 @@ def split_by_llm(text: str,
                         logger.warning(f"⚠️ 优化失败，接受原句({word_count}字)")
                         new_sentences.append(segment)
 
-                # 层级4：强制拆分层 (warning < x ≤ max)
+                # 层级4：智能拆分层 (warning < x ≤ max) - 先尝试智能分割，失败再强制等分
                 elif word_count <= max_threshold:
-                    logger.warning(f"🔨 强制拆分({word_count}/{max_word_count_english}字): {segment[:40]}...")
-                    split_results = force_equal_split(segment, max_word_count_english)
-                    stats['forced'] += 1
-                    new_sentences.extend(split_results)
+                    logger.warning(f"⚠️ 超出警告阈值({word_count}/{max_word_count_english}字): {segment[:40]}...")
+                    logger.info(f"🔧 尝试智能分割...")
+                    split_results = aggressive_split(segment, max_word_count_english)
 
-                # 层级5：拒绝层 (> max)
+                    if len(split_results) > 1:
+                        # 智能分割成功
+                        stats['optimized'] += 1
+                        logger.info(f"✅ 智能分割成功: 分为{len(split_results)}段")
+                        new_sentences.extend(split_results)
+                    else:
+                        # 智能分割失败，使用强制等分
+                        logger.warning(f"⚠️ 智能分割失败，使用强制等分")
+                        split_results = force_equal_split(segment, max_word_count_english)
+                        stats['forced'] += 1
+                        new_sentences.extend(split_results)
+
+                # 层级5：严重超标层 (> max) - 先尝试智能分割，失败再强制等分
                 else:
-                    logger.error(f"❌ 严重超标({word_count}/{max_word_count_english}字)，强制多次拆分: {segment[:40]}...")
-                    split_results = force_equal_split(segment, max_word_count_english)
-                    stats['rejected'] += 1
-                    new_sentences.extend(split_results)
+                    logger.error(f"❌ 严重超标({word_count}/{max_word_count_english}字): {segment[:40]}...")
+                    logger.info(f"🔧 尝试智能分割...")
+                    split_results = aggressive_split(segment, max_word_count_english)
+
+                    if len(split_results) > 1:
+                        # 智能分割成功
+                        stats['optimized'] += 1
+                        logger.info(f"✅ 智能分割成功: 分为{len(split_results)}段")
+                        new_sentences.extend(split_results)
+                    else:
+                        # 智能分割失败，使用强制等分
+                        logger.warning(f"⚠️ 智能分割失败，使用强制等分进行多次拆分")
+                        split_results = force_equal_split(segment, max_word_count_english)
+                        stats['rejected'] += 1
+                        new_sentences.extend(split_results)
 
         sentences = new_sentences
 
@@ -313,162 +335,17 @@ def split_by_llm(text: str,
             # 创建一个携带建议的自定义异常类型
             from .spliter import SmartSplitError
             raise SmartSplitError(error_msg, suggestions)
-        
-def split_by_common_words(text: str) -> List[str]:
-    """
-    改进的智能分割策略：依次尝试多种分割方法
-    
-    Args:
-        text: 需要分割的句子
-    Returns:
-        分割后的句子列表
-    """
-    text = text.strip()
-    words = text.split()
-    
-    # 如果句子太短，直接返回
-    if len(words) < 8:
-        return [text]
-    
-    logger.info(f"🔧 需要分割超长句: {count_words(text)}字 - {text[:50]}...")
-    
-    # 策略1: 使用 spaCy 语法分析分割
-    try:
-        from .spacy_splitter import spacy_split
-        result = spacy_split(text)
-        if result:
-            logger.info(f"✅ 使用spaCy语法分割: {len(result)}段")
-            for i, segment in enumerate(result, 1):
-                logger.info(f"   片段{i}({count_words(segment)}字): {segment}")
-            return result
-        else:
-            logger.debug("spaCy 未找到合适分割点")
-    except ImportError:
-        logger.debug("spaCy 模块导入失败")
-    except Exception as e:
-        logger.debug(f"spaCy 分割异常: {e}")
-    
-    # 策略2: 句末标点分割
-    result = split_by_punctuation_optimized(text)
-    if len(result) > 1:
-        logger.info(f"✅ 使用标点分割: {len(result)}段")
-        for i, segment in enumerate(result, 1):
-            logger.info(f"   片段{i}({count_words(segment)}字): {segment}")
-        return result
-    else:
-        logger.debug("标点分割未找到合适分割点")
-    
-    # 策略3: 改进的强制二分
-    result = force_smart_split(text)
-    logger.info(f"✅ 使用强制智能分割: {len(result)}段")
-    return result
-
-def split_by_punctuation_optimized(text: str) -> List[str]:
-    """
-    基于句末标点的优化分割
-    只在明确的句子结束处分割，确保每段有足够长度
-    """
-    # 只处理明确的句子结束标记
-    end_marks = [". ", "! ", "? "]
-    positions = []
-    
-    # 查找句子结束标记
-    for mark in end_marks:
-        start = 0
-        while True:
-            pos = text.find(mark, start)
-            if pos == -1:
-                break
-            # 检查不是小数点
-            if mark == ". " and pos > 0 and text[pos-1].isdigit():
-                start = pos + 1
-                continue
-            positions.append(pos + 1)  # 标点后的位置
-            start = pos + 1
-    
-    if not positions:
-        return [text]
-    
-    # 执行分割
-    positions.sort()
-    segments = []
-    start = 0
-    
-    for pos in positions:
-        segment = text[start:pos].strip()
-        # 确保每段至少有5个单词
-        if segment and count_words(segment) >= 5:
-            segments.append(segment)
-            start = pos
-    
-    # 处理最后一段
-    last_segment = text[start:].strip()
-    if last_segment:
-        if segments and count_words(last_segment) < 3:
-            # 最后一段太短，合并到前一段
-            segments[-1] += " " + last_segment
-        else:
-            segments.append(last_segment)
-    
-    return segments if len(segments) > 1 else [text]
-
-def force_smart_split(text: str) -> List[str]:
-    """
-    改进的强制分割策略
-    依次尝试：标点位置 -> 连接词位置 -> 中间位置
-    """
-    words = text.split()
-    mid_point = len(words) // 2
-    search_range = 8  # 扩大搜索范围
-
-    start_search = max(3, mid_point - search_range)
-    end_search = min(len(words) - 3, mid_point + search_range)
-
-    best_split = mid_point
-    split_reason = "中间位置"
-
-    # 优先级1: 寻找标点符号位置
-    for i in range(start_search, end_search + 1):
-        if i < len(words):
-            word = words[i-1].rstrip()
-            if word.endswith(('.', ',', ';', ':', '!', '?')):
-                best_split = i
-                split_reason = f"标点'{word[-1]}'"
-                break
-
-    # 优先级2: 寻找连接词位置
-    if split_reason == "中间位置":
-        connection_words = ["and", "but", "or", "so", "because", "when", "if", "while"]
-        for i in range(start_search, end_search + 1):
-            if i < len(words):
-                word = words[i].lower().strip(",.!?")
-                if word in connection_words:
-                    best_split = i
-                    split_reason = f"连接词'{word}'"
-                    break
-
-    # 执行分割
-    first_part = " ".join(words[:best_split])
-    second_part = " ".join(words[best_split:])
-
-    logger.info(f"强制分割在{split_reason}处:")
-    for i, segment in enumerate([first_part, second_part], 1):
-        logger.info(f"   片段{i}({count_words(segment)}字): {segment}")
-    return [first_part, second_part]
 
 
 def aggressive_split(text: str, max_words: int) -> List[str]:
     """
-    增强版智能分割：全句搜索最优分割点
+    增强版智能分割：多策略分层尝试
 
-    优先级排序：
-    1. 句号/问号/感叹号（完整句子边界）
-    2. 分号/冒号（强逻辑分隔）
-    3. 逗号 + 并列连词（and/but/or/so）
-    4. 从属连词（because/although/since/while等）
-    5. 关系代词（that/which/who/where/when）
-    6. 介词短语边界（of/in/on/at/with/for/by等）
-    7. 强制等分（最后手段）
+    策略优先级：
+    1. spaCy NLP语法分析（最智能，需要模型）
+    2. 句末标点分割（高质量，无需模型）
+    3. 规则匹配分割（7层优先级语义边界）
+    4. 强制等分（保底方案）
 
     Args:
         text: 需要分割的文本
@@ -486,7 +363,40 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
 
     logger.info(f"🔧 尝试智能分割: {word_count}字 -> 目标≤{max_words}字")
 
-    # 定义分割点候选和优先级
+    # ============ 策略1: spaCy NLP语法分析 ============
+    try:
+        from .spacy_splitter import spacy_split
+        result = spacy_split(text, max_segments=3)
+        if result and len(result) > 1:
+            logger.info(f"✅ [策略1] 使用spaCy语法分析分割: {len(result)}段")
+            # 递归处理仍然超长的片段
+            final_result = []
+            for i, part in enumerate(result, 1):
+                part_words = count_words(part)
+                if part_words > max_words:
+                    logger.debug(f"   片段{i}仍超长({part_words}字)，递归处理")
+                    final_result.extend(aggressive_split(part, max_words))
+                else:
+                    final_result.append(part)
+            return final_result
+        else:
+            logger.debug("   spaCy未找到合适分割点，尝试下一策略")
+    except ImportError:
+        logger.debug("   spaCy未安装，跳过NLP分析")
+    except Exception as e:
+        logger.debug(f"   spaCy分割异常: {e}")
+
+    # ============ 策略2: 句末标点分割 ============
+    result = _split_by_end_punctuation(text, max_words)
+    if len(result) > 1:
+        logger.info(f"✅ [策略2] 使用句末标点分割: {len(result)}段")
+        for i, segment in enumerate(result, 1):
+            logger.info(f"   片段{i}({count_words(segment)}字): {segment[:50]}...")
+        return result
+    else:
+        logger.debug("   未找到句末标点分割点，尝试下一策略")
+
+    # ============ 策略3: 规则匹配分割（7层优先级） ============
     split_candidates = []
 
     # 优先级1: 句子结束标记
@@ -544,7 +454,7 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
         first_part = " ".join(words[:best_pos]).strip()
         second_part = " ".join(words[best_pos:]).strip()
 
-        logger.info(f"✅ 智能分割在{reason}处 (优先级{priority}):")
+        logger.info(f"✅ [策略3] 规则匹配分割在{reason}处 (优先级{priority}):")
         logger.info(f"   片段1({count_words(first_part)}字): {first_part[:50]}...")
         logger.info(f"   片段2({count_words(second_part)}字): {second_part[:50]}...")
 
@@ -557,9 +467,77 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
                 result.append(part)
         return result
 
-    # 没有找到合适的分割点，使用强制等分
-    logger.warning("⚠️ 未找到语义边界，使用强制等分")
+    # ============ 策略4: 强制等分（保底） ============
+    logger.warning("⚠️ [策略4] 未找到语义边界，使用强制等分")
     return force_equal_split(text, max_words)
+
+
+def _split_by_end_punctuation(text: str, max_words: int) -> List[str]:
+    """
+    基于句末标点的优化分割（内部辅助函数）
+    只在明确的句子结束处分割，确保每段有足够长度
+
+    Args:
+        text: 需要分割的文本
+        max_words: 最大单词数限制
+
+    Returns:
+        分割后的句子列表，如果未找到合适分割点返回原句
+    """
+    # 只处理明确的句子结束标记
+    end_marks = [". ", "! ", "? "]
+    positions = []
+
+    # 查找句子结束标记
+    for mark in end_marks:
+        start = 0
+        while True:
+            pos = text.find(mark, start)
+            if pos == -1:
+                break
+            # 检查不是小数点
+            if mark == ". " and pos > 0 and text[pos-1].isdigit():
+                start = pos + 1
+                continue
+            positions.append(pos + 1)  # 标点后的位置
+            start = pos + 1
+
+    if not positions:
+        return [text]
+
+    # 执行分割
+    positions.sort()
+    segments = []
+    start = 0
+
+    for pos in positions:
+        segment = text[start:pos].strip()
+        # 确保每段至少有5个单词
+        if segment and count_words(segment) >= 5:
+            segments.append(segment)
+            start = pos
+
+    # 处理最后一段
+    last_segment = text[start:].strip()
+    if last_segment:
+        if segments and count_words(last_segment) < 3:
+            # 最后一段太短，合并到前一段
+            segments[-1] += " " + last_segment
+        else:
+            segments.append(last_segment)
+
+    # 验证分割结果：检查是否有片段超长
+    if len(segments) > 1:
+        all_valid = True
+        for segment in segments:
+            if count_words(segment) > max_words * 1.5:  # 允许50%容差
+                all_valid = False
+                break
+
+        if all_valid:
+            return segments
+
+    return [text]
 
 
 def force_equal_split(text: str, max_words: int) -> List[str]:
