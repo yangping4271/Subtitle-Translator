@@ -75,8 +75,8 @@ class SubtitleTranslatorService:
         elapsed_time = time.time() - start_time
         log_section_end(logger, "翻译环境初始化", elapsed_time, "✅")
 
-    def translate_srt(self, input_srt_path: Path, target_lang: str, output_dir: Path, 
-                      llm_model: Optional[str] = None, reflect: bool = False, skip_env_init: bool = False) -> Path:
+    def translate_srt(self, input_srt_path: Path, target_lang: str, output_dir: Path,
+                      llm_model: Optional[str] = None, skip_env_init: bool = False) -> Path:
         """翻译字幕文件"""
         logger = self._get_logger()
         try:
@@ -164,10 +164,9 @@ class SubtitleTranslatorService:
             
             # 翻译字幕
             translate_start_time = time.time()
-            translate_result = self._translate_subtitles(asr_data, summarize_result, reflect)
+            translate_result = self._translate_subtitles(asr_data, summarize_result)
             translate_time = time.time() - translate_start_time
-            mode_name = "🤔 反思翻译" if reflect else "🌍 常规翻译"
-            stage_times[mode_name] = translate_time
+            stage_times["🌍 常规翻译"] = translate_time
             
             # 保存字幕
             logger.info("💾 正在保存翻译结果...")
@@ -192,7 +191,6 @@ class SubtitleTranslatorService:
                 "输入文件": input_srt_path.name,
                 "字幕数量": len(asr_data.segments),
                 "目标语言": target_lang,
-                "翻译模式": "反思翻译" if reflect else "常规翻译",
                 "总耗时": f"{total_elapsed:.1f}秒"
             }
             log_stats(logger, final_stats, "任务完成统计")
@@ -231,31 +229,27 @@ class SubtitleTranslatorService:
         
         return summarize_result
 
-    def _translate_subtitles(self, asr_data: SubtitleData, summarize_result: dict, reflect: bool = False) -> list:
+    def _translate_subtitles(self, asr_data: SubtitleData, summarize_result: dict) -> list:
         """翻译字幕内容"""
         logger = self._get_logger()
         section_start_time = time.time()
-        mode_name = "反思翻译" if reflect else "常规翻译"
-        log_section_start(logger, f"字幕{mode_name}", "🌍")
-        
-        print(f"🌍 [bold magenta]{mode_name}中...[/bold magenta]")
-        
+        log_section_start(logger, "字幕翻译", "🌍")
+
+        print(f"🌍 [bold magenta]翻译中...[/bold magenta]")
+
         logger.info(f"🤖 使用模型: {self.config.translation_model}")
         logger.info(f"⚡ 线程数: {self.config.thread_num}")
-        
+
         try:
-            translator = SubtitleOptimizer(
-                config=self.config,
-                need_reflect=reflect
-            )
+            translator = SubtitleOptimizer(config=self.config)
             translate_result = translator.translate(asr_data, summarize_result)
-            
+
             # 获取优化统计
-            stats = self._get_optimization_stats(translator.batch_logs, reflect)
-            
+            stats = self._get_optimization_stats(translator.batch_logs)
+
             section_elapsed = time.time() - section_start_time
-            log_section_end(logger, f"字幕{mode_name}", section_elapsed, "🎉")
-            print(f"✅ [bold green]{mode_name}完成[/bold green]")
+            log_section_end(logger, "字幕翻译", section_elapsed, "🎉")
+            print(f"✅ [bold green]翻译完成[/bold green]")
             
             # 显示优化统计
             if stats['total_changes'] > 0:
@@ -264,8 +258,6 @@ class SubtitleTranslatorService:
                     print(f"   格式优化: [cyan]{stats['format_changes']}[/cyan] 项")
                 if stats['content_changes'] > 0:
                     print(f"   内容修改: [cyan]{stats['content_changes']}[/cyan] 项")
-                if stats['reflect_changes'] > 0:
-                    print(f"   反思优化: [cyan]{stats['reflect_changes']}[/cyan] 项")
                 if stats['wrong_changes'] > 0:
                     print(f"   [yellow]可疑替换: {stats['wrong_changes']} 项[/yellow]")
                 print(f"   总计: [cyan]{stats['total_changes']}[/cyan] 项优化")
@@ -278,7 +270,7 @@ class SubtitleTranslatorService:
             # 错误信息已经在processor.py中处理过了
             raise
 
-    def _get_optimization_stats(self, batch_logs: list, reflect: bool) -> dict:
+    def _get_optimization_stats(self, batch_logs: list) -> dict:
         """从batch_logs中获取优化统计信息"""
         
         def is_format_change_only(original, optimized):
@@ -310,14 +302,13 @@ class SubtitleTranslatorService:
         format_changes = 0
         content_changes = 0
         wrong_changes = 0
-        reflect_changes = 0
 
         # 遍历所有日志
         for log in batch_logs:
             if log["type"] == "content_optimization":
                 original = log["original"]
                 optimized = log["optimized"]
-                
+
                 # 分类统计
                 if is_format_change_only(original, optimized):
                     format_changes += 1
@@ -325,17 +316,13 @@ class SubtitleTranslatorService:
                     wrong_changes += 1
                 else:
                     content_changes += 1
-            
-            elif log["type"] == "reflect_translation":
-                reflect_changes += 1
 
-        total_changes = format_changes + content_changes + wrong_changes + reflect_changes
-        
+        total_changes = format_changes + content_changes + wrong_changes
+
         return {
             'format_changes': format_changes,
             'content_changes': content_changes,
             'wrong_changes': wrong_changes,
-            'reflect_changes': reflect_changes,
             'total_changes': total_changes
         }
 
