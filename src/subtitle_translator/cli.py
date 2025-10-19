@@ -92,7 +92,7 @@ def main(
         files_to_process = _get_batch_files(max_count, llm_model)
 
     # 批量处理文件
-    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, reflect, debug, preserve_intermediate)
+    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, reflect, preserve_intermediate)
 
 
 def _validate_target_language(target_lang: str):
@@ -173,8 +173,8 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
     return files_to_process
 
 
-def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path, 
-                        model: str, llm_model: Optional[str], reflect: bool, debug: bool, preserve_intermediate: bool):
+def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path,
+                        model: str, llm_model: Optional[str], reflect: bool, preserve_intermediate: bool):
     """批量处理文件"""
     from .transcription_core.model_cache import model_context
     
@@ -226,8 +226,8 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
             try:
                 # 根据实际情况传递批量模式标志
                 process_single_file(
-                    current_input_file, target_lang, output_dir, model, 
-                    llm_model, reflect, debug, model_precheck_passed,
+                    current_input_file, target_lang, output_dir, model,
+                    llm_model, reflect, model_precheck_passed,
                     batch_mode=is_batch_mode, translator_service=translator_service,
                     preserve_intermediate=preserve_intermediate
                 )

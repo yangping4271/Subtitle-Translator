@@ -342,10 +342,8 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
     增强版智能分割：多策略分层尝试
 
     策略优先级：
-    1. spaCy NLP语法分析（最智能，需要模型）
-    2. 句末标点分割（高质量，无需模型）
-    3. 规则匹配分割（7层优先级语义边界）
-    4. 强制等分（保底方案）
+    1. 规则匹配分割（7层优先级语义边界）
+    2. 强制等分（保底方案）
 
     Args:
         text: 需要分割的文本
@@ -363,40 +361,7 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
 
     logger.info(f"🔧 尝试智能分割: {word_count}字 -> 目标≤{max_words}字")
 
-    # ============ 策略1: spaCy NLP语法分析 ============
-    try:
-        from .spacy_splitter import spacy_split
-        result = spacy_split(text, max_segments=3)
-        if result and len(result) > 1:
-            # spacy_split内部已打印日志
-            # 递归处理仍然超长的片段
-            final_result = []
-            for i, part in enumerate(result, 1):
-                part_words = count_words(part)
-                if part_words > max_words:
-                    logger.info(f"   片段{i}仍超长({part_words}字)，递归处理")
-                    final_result.extend(aggressive_split(part, max_words))
-                else:
-                    final_result.append(part)
-            return final_result
-        else:
-            logger.info("   spaCy未找到合适分割点，尝试下一策略")
-    except ImportError:
-        logger.info("   spaCy未安装，跳过NLP分析")
-    except Exception as e:
-        logger.info(f"   spaCy分割异常: {e}")
-
-    # ============ 策略2: 句末标点分割 ============
-    result = _split_by_end_punctuation(text, max_words)
-    if len(result) > 1:
-        logger.info(f"✅ [策略2] 句末标点分割: {len(result)}段")
-        for i, segment in enumerate(result, 1):
-            logger.info(f"   片段{i}({count_words(segment)}字): {segment[:50]}...")
-        return result
-    else:
-        logger.info("   未找到句末标点分割点，尝试下一策略")
-
-    # ============ 策略3: 规则匹配分割（7层优先级） ============
+    # ============ 策略1: 规则匹配分割（7层优先级） ============
     split_candidates = []
 
     # 优先级1: 句子结束标记
@@ -411,36 +376,41 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
             if word.rstrip().endswith((';', ':')):
                 split_candidates.append((i + 1, 9, f"分隔'{word[-1]}'"))
 
-    # 优先级3: 逗号 + 并列连词
-    coordinating_conj = ["and", "but", "or", "so", "yet", "nor"]
-    for i in range(1, word_count - 2):
-        if words[i - 1].rstrip().endswith(','):
-            next_word = words[i].lower().strip(",.!?")
-            if next_word in coordinating_conj:
-                split_candidates.append((i, 8, f"逗号+'{next_word}'"))
+    # 优先级3: 逗号
+    for i, word in enumerate(words):
+        if i > 2 and i < word_count - 2:
+            if word.rstrip().endswith(','):
+                split_candidates.append((i + 1, 8, f"逗号"))
 
-    # 优先级4: 从属连词（在句中的位置）
+    # 优先级4: 并列连词
+    coordinating_conj = ["and", "but", "or", "so", "yet", "nor"]
+    for i in range(3, word_count - 2):
+        word = words[i].lower().strip(",.!?")
+        if word in coordinating_conj:
+            split_candidates.append((i, 7, f"并列连词'{word}'"))
+
+    # 优先级5: 从属连词（在句中的位置）
     subordinating_conj = ["because", "although", "though", "unless", "since",
                           "while", "whereas", "if", "when", "before", "after"]
     for i in range(3, word_count - 2):
         word = words[i].lower().strip(",.!?")
         if word in subordinating_conj:
-            split_candidates.append((i, 7, f"从属连词'{word}'"))
+            split_candidates.append((i, 6, f"从属连词'{word}'"))
 
-    # 优先级5: 关系代词（从句开始）
-    relative_pronouns = ["that", "which", "who", "whom", "whose", "where", "when"]
+    # 优先级6: 关系代词（从句开始）
+    relative_pronouns = ["that", "which", "who", "whom", "whose", "where", "when", "whether"]
     for i in range(3, word_count - 2):
         word = words[i].lower().strip(",.!?")
         if word in relative_pronouns:
-            split_candidates.append((i, 6, f"关系词'{word}'"))
+            split_candidates.append((i, 5, f"关系词'{word}'"))
 
-    # 优先级6: 介词短语（较长介词）
+    # 优先级7: 介词短语（较长介词）
     prepositions = ["of", "in", "on", "at", "with", "for", "by", "from",
                    "about", "during", "through", "between", "among"]
     for i in range(max(3, word_count // 3), min(word_count - 2, word_count * 2 // 3)):
         word = words[i].lower().strip(",.!?")
         if word in prepositions:
-            split_candidates.append((i, 5, f"介词'{word}'"))
+            split_candidates.append((i, 4, f"介词'{word}'"))
 
     # 如果找到候选点，选择最优的
     if split_candidates:
@@ -454,7 +424,7 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
         first_part = " ".join(words[:best_pos]).strip()
         second_part = " ".join(words[best_pos:]).strip()
 
-        logger.info(f"✅ [策略3] 规则匹配分割在{reason}处 (优先级{priority}):")
+        logger.info(f"✅ [策略1] 规则匹配分割在{reason}处 (优先级{priority}):")
         logger.info(f"   片段1({count_words(first_part)}字): {first_part[:50]}...")
         logger.info(f"   片段2({count_words(second_part)}字): {second_part[:50]}...")
 
@@ -467,77 +437,9 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
                 result.append(part)
         return result
 
-    # ============ 策略4: 强制等分（保底） ============
-    logger.warning("⚠️ [策略4] 未找到语义边界，使用强制等分")
+    # ============ 策略2: 强制等分（保底） ============
+    logger.warning("⚠️ [策略2] 未找到语义边界，使用强制等分")
     return force_equal_split(text, max_words)
-
-
-def _split_by_end_punctuation(text: str, max_words: int) -> List[str]:
-    """
-    基于句末标点的优化分割（内部辅助函数）
-    只在明确的句子结束处分割，确保每段有足够长度
-
-    Args:
-        text: 需要分割的文本
-        max_words: 最大单词数限制
-
-    Returns:
-        分割后的句子列表，如果未找到合适分割点返回原句
-    """
-    # 只处理明确的句子结束标记
-    end_marks = [". ", "! ", "? "]
-    positions = []
-
-    # 查找句子结束标记
-    for mark in end_marks:
-        start = 0
-        while True:
-            pos = text.find(mark, start)
-            if pos == -1:
-                break
-            # 检查不是小数点
-            if mark == ". " and pos > 0 and text[pos-1].isdigit():
-                start = pos + 1
-                continue
-            positions.append(pos + 1)  # 标点后的位置
-            start = pos + 1
-
-    if not positions:
-        return [text]
-
-    # 执行分割
-    positions.sort()
-    segments = []
-    start = 0
-
-    for pos in positions:
-        segment = text[start:pos].strip()
-        # 确保每段至少有5个单词
-        if segment and count_words(segment) >= 5:
-            segments.append(segment)
-            start = pos
-
-    # 处理最后一段
-    last_segment = text[start:].strip()
-    if last_segment:
-        if segments and count_words(last_segment) < 3:
-            # 最后一段太短，合并到前一段
-            segments[-1] += " " + last_segment
-        else:
-            segments.append(last_segment)
-
-    # 验证分割结果：检查是否有片段超长
-    if len(segments) > 1:
-        all_valid = True
-        for segment in segments:
-            if count_words(segment) > max_words * 1.5:  # 允许50%容差
-                all_valid = False
-                break
-
-        if all_valid:
-            return segments
-
-    return [text]
 
 
 def force_equal_split(text: str, max_words: int) -> List[str]:
