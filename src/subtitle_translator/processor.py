@@ -68,8 +68,8 @@ def precheck_model_availability(model: str, show_progress: bool = True, silent: 
 
 
 def process_single_file(
-    input_file: Path, target_lang: str, output_dir: Path, 
-    model: str, llm_model: Optional[str], reflect: bool, debug: bool,
+    input_file: Path, target_lang: str, output_dir: Path,
+    model: str, llm_model: Optional[str], reflect: bool,
     model_precheck_passed: Optional[bool] = None,
     batch_mode: bool = False, translator_service = None,
     preserve_intermediate: bool = False

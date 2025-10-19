@@ -9,7 +9,7 @@ A command-line tool that integrates English video transcription, subtitle transl
 ## Features
 
 - **English Video Transcription**: Transcribes English audio/video to SRT subtitles using the Parakeet MLX model.
-- **Intelligent NLP-Powered Segmentation**: Uses spaCy dependency parsing and multi-tier fallback strategies for semantic-aware sentence splitting.
+- **Intelligent Segmentation**: Multi-tier fallback strategies including punctuation-based and rule-based semantic splitting.
 - **AI-Powered Translation**: Supports various LLM models for translation into multiple languages.
 - **Bilingual Subtitles**: Automatically generates bilingual ASS subtitle files.
 - **Batch Processing**: Supports processing multiple files at once.
@@ -27,8 +27,6 @@ uv tool install .
 uv tool update-shell
 # Then restart your shell or run: source ~/.zshenv
 ```
-
-> **Note**: The spaCy English model (`en_core_web_sm`) is automatically installed as a dependency. No manual download required!
 
 ### Configuration
 ```bash
