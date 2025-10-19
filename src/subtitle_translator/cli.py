@@ -35,11 +35,10 @@ def main(
     ctx: typer.Context,
     input_file: Optional[Path] = typer.Option(None, "--input-file", "-i", help="要处理的单个文件路径，如不指定则批量处理当前目录。", exists=True, file_okay=True, dir_okay=False, readable=True),
     max_count: int = typer.Option(-1, "--count", "-n", help="最大处理文件数量，-1表示处理所有文件。"),
-    target_lang: str = typer.Option("zh", "--target_lang", "-t", help="目标翻译语言。支持的语言：zh(简体中文), zh-tw(繁体中文), ja(日文), ko(韩文), en(英文), fr(法文), de(德文), es(西班牙文), pt(葡萄牙文), ru(俄文), it(意大利文), ar(阿拉伯文), th(泰文), vi(越南文)等。"),
+    target_lang: str = typer.Option("zh", "--target_lang", "-t", help="目标翻译语言。支持：zh/zh-cn(简中), zh-tw(繁中), ja(日), ko(韩), fr(法), de(德), es(西), pt(葡), it(意), ru(俄), ar(阿), th(泰), vi(越)等。"),
     output_dir: Optional[Path] = typer.Option(None, "--output_dir", "-o", help="输出文件的目录，默认为当前目录。"),
     model: str = typer.Option(DEFAULT_TRANSCRIPTION_MODEL, "--model", help="用于转录的 Parakeet MLX 模型。"),
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
-    reflect: bool = typer.Option(False, "--reflect", "-r", help="启用反思翻译模式，提高翻译质量但会增加处理时间。"),
     preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
     version: bool = typer.Option(False, "--version", help="显示版本信息并退出。"),
 ):
@@ -71,9 +70,10 @@ def main(
         print(f"[bold red]❌ 目标语言参数错误![/bold red]")
         print(str(e))
         print(f"\n💡 [bold blue]使用示例:[/bold blue]")
-        print(f"   translate -t ja  # 翻译成日文")
-        print(f"   translate -t ko  # 翻译成韩文")
-        print(f"   translate -t fr  # 翻译成法文")
+        print(f"   translate -t zh     # 简体中文（默认）")
+        print(f"   translate -t ja     # 日文")
+        print(f"   translate -t ko     # 韩文")
+        print(f"   translate -t fr     # 法文")
         raise typer.Exit(code=1)
 
     # 设置输出目录
@@ -92,7 +92,7 @@ def main(
         files_to_process = _get_batch_files(max_count, llm_model)
 
     # 批量处理文件
-    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, reflect, preserve_intermediate)
+    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, preserve_intermediate)
 
 
 def _validate_target_language(target_lang: str):
@@ -127,7 +127,12 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
         # 移除扩展名
         base_name = re.sub(r'\.(srt|mp3|mp4)$', '', file)
         # 移除各种语言后缀
-        language_suffixes = [r'\.zh$', r'\.zh-cn$', r'\.zh-tw$', r'\.ja$', r'\.en$', r'\.ko$', r'\.fr$', r'\.de$', r'\.es$', r'\.pt$', r'\.ru$', r'\.it$', r'\.ar$', r'\.th$', r'\.vi$']
+        language_suffixes = [
+            r'\.zh$', r'\.zh-cn$', r'\.zh-tw$',  # 中文
+            r'\.ja$', r'\.ko$', r'\.th$', r'\.vi$',  # 亚洲语言
+            r'\.fr$', r'\.de$', r'\.es$', r'\.pt$', r'\.it$', r'\.ru$',  # 欧洲语言
+            r'\.ar$', r'\.en$'  # 其他
+        ]
         for suffix_pattern in language_suffixes:
             base_name = re.sub(suffix_pattern, '', base_name)
         base_names.add(base_name)
@@ -174,7 +179,7 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
 
 
 def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path,
-                        model: str, llm_model: Optional[str], reflect: bool, preserve_intermediate: bool):
+                        model: str, llm_model: Optional[str], preserve_intermediate: bool):
     """批量处理文件"""
     from .transcription_core.model_cache import model_context
     
@@ -227,7 +232,7 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
                 # 根据实际情况传递批量模式标志
                 process_single_file(
                     current_input_file, target_lang, output_dir, model,
-                    llm_model, reflect, model_precheck_passed,
+                    llm_model, model_precheck_passed,
                     batch_mode=is_batch_mode, translator_service=translator_service,
                     preserve_intermediate=preserve_intermediate
                 )
@@ -287,7 +292,12 @@ def _show_results(count: int, generated_ass_files: list, output_dir: Path, is_ba
             print(f"📺 [bold green]已生成 {len(generated_ass_files)} 个双语ASS文件[/bold green]")
         
         # 过滤掉语言特定的SRT文件
-        language_patterns = ['.zh.', '.zh-cn.', '.zh-tw.', '.ja.', '.en.', '.ko.', '.fr.', '.de.', '.es.', '.pt.', '.ru.', '.it.', '.ar.', '.th.', '.vi.']
+        language_patterns = [
+            '.zh.', '.zh-cn.', '.zh-tw.',  # 中文
+            '.ja.', '.ko.', '.th.', '.vi.',  # 亚洲语言
+            '.fr.', '.de.', '.es.', '.pt.', '.it.', '.ru.',  # 欧洲语言
+            '.ar.', '.en.'  # 其他
+        ]
         srt_files = [f for f in output_dir.glob("*.srt") if not any(pattern in f.name for pattern in language_patterns)]
         if srt_files:
             logger.info("原始字幕文件：")
