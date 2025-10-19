@@ -125,8 +125,7 @@ Options:
   --model TEXT             Transcription model
   -m, --llm-model TEXT     LLM model
   -r, --reflect            Enable reflection translation mode
-  -d, --debug              Debug mode
-  
+
 Commands:
   init                     Initialize configuration
 ```

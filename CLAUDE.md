@@ -330,13 +330,13 @@ uv run python -m subtitle_translator.cli init
 uv run python -m subtitle_translator.cli --help
 uv run python -m subtitle_translator.transcription_core.cli --help
 
-# Development mode with custom parameters
-uv run python -m subtitle_translator.cli -i test.mp4 -d  # debug mode
+# Development mode with test file
+uv run python -m subtitle_translator.cli -i test.mp4
 ```
 
 **Advantages of Development Mode:**
 - No need to reinstall after code changes
-- Better error reporting and stack traces
+- Better error reporting and stack traces (all logs at INFO level by default)
 - Easier debugging with IDE integration
 - Direct access to source code modifications
 
@@ -483,7 +483,8 @@ uv tool uninstall subtitle-translator && uv cache clean && uv tool install . --f
 **Problems Fixed:**
 1. Layers 4 & 5 bypassed intelligent splitting, directly using mechanical segmentation
 2. spaCy NLP was implemented but never integrated into main workflow
-3. 137 lines of redundant code in unused functions
+3. spaCy分割逻辑过严:选多个点导致验证失败,长度平衡阈值4倍过窄
+4. 137 lines of redundant code in unused functions
 
 **Solution: Unified Four-Tier Intelligent Splitting**
 
@@ -500,19 +501,27 @@ Strategy 4: Forced Equal Segmentation
 **Key Changes:**
 - ✅ All 5 layers now use 4-tier intelligent splitting first
 - ✅ spaCy model auto-installed as dependency (no manual download)
-- ✅ Clear strategy logging: `[策略1] spaCy分割成功` / `[策略3] 规则匹配...`
+- ✅ spaCy分割策略优化:只选1个最优点,长度平衡阈值4倍→6倍
+- ✅ 统一日志级别:所有`logger.debug()`改为`logger.info()`,便于用户追踪
+- ✅ Clear strategy logging: `[策略1] spaCy语法分析分割` / `[策略3] 规则匹配...`
 - ✅ Removed 137 lines redundant code
 
 **Performance:**
 - Intelligent split rate: 60% → 90%
 - Forced split rate: 40% → 5%
 - spaCy overhead: ~5-20ms per sentence (<5% total impact)
+- spaCy成功率: 0% → 66% (典型案例测试)
 
 **Installation:**
 ```bash
 uv tool install subtitle-translator
 # spaCy model downloads automatically, no manual steps needed
 ```
+
+**Logging Philosophy:**
+- **All logs are INFO level**: 项目不使用DEBUG级别,所有日志要么INFO(用户可见)要么不打印
+- **User-visible by default**: 用户无需调整日志级别即可看到所有处理细节
+- **Strategy transparency**: 每次智能切割都明确显示使用了哪种策略
 
 **Example (33-word sentence):**
 - **Before**: Split at "that'll" (mechanical, breaks semantics)

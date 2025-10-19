@@ -20,13 +20,13 @@ def _is_spacy_available() -> bool:
     global _spacy_available
     if _spacy_available is not None:
         return _spacy_available
-    
+
     try:
         import spacy
         _spacy_available = True
         return True
     except ImportError:
-        logger.debug("spaCy 未安装，将跳过语法分析分割")
+        logger.info("spaCy 未安装，将跳过语法分析分割")
         _spacy_available = False
         return False
 
@@ -35,20 +35,20 @@ def _load_spacy_model():
     global _nlp
     if _nlp is not None:
         return _nlp
-    
+
     if not _is_spacy_available():
         return None
-    
+
     try:
         import spacy
         _nlp = spacy.load("en_core_web_sm")
-        logger.debug("spaCy 英文模型加载成功")
+        logger.info("spaCy 英文模型加载成功")
         return _nlp
     except OSError:
-        logger.debug("未找到 en_core_web_sm 模型，跳过 spaCy 分割")
+        logger.info("未找到 en_core_web_sm 模型，跳过 spaCy 分割")
         return None
     except Exception as e:
-        logger.debug(f"spaCy 模型加载失败: {e}")
+        logger.info(f"spaCy 模型加载失败: {e}")
         return None
 
 def count_words(text: str) -> int:
@@ -105,27 +105,27 @@ def find_split_points(doc) -> List[Tuple[int, str, str]]:
 def validate_split(segments: List[str], min_words: int = 3) -> bool:
     """
     验证分割结果是否合理
-    
+
     Args:
         segments: 分割后的句子片段
         min_words: 每个片段的最小词数
-        
+
     Returns:
         True 如果分割合理
     """
     if len(segments) < 2:
         return False
-    
+
     # 检查每个片段的长度
     for segment in segments:
         if count_words(segment.strip()) < min_words:
             return False
-    
-    # 检查长度平衡性（最长不超过最短的4倍）
+
+    # 检查长度平衡性（最长不超过最短的6倍,放宽限制以提高成功率）
     lengths = [count_words(seg.strip()) for seg in segments]
-    if max(lengths) > min(lengths) * 4:
+    if max(lengths) > min(lengths) * 6:
         return False
-    
+
     return True
 
 def spacy_split(text: str, max_segments: int = 3) -> List[str]:
@@ -151,42 +151,46 @@ def spacy_split(text: str, max_segments: int = 3) -> List[str]:
         
         # 查找分割点
         split_points = find_split_points(doc)
-        
+
         if not split_points:
-            logger.debug("未找到合适的语法分割点")
+            logger.info("未找到合适的语法分割点")
             return []
-        
-        # 选择最佳分割点
+
+        # 选择最佳分割点（策略：只选1个最优点进行二分,避免切分过细）
         selected_points = []
-        
-        # 优先选择从属连词
+
+        # 策略1: 优先选择从属连词（语义最强的分割点）
         subordinate_points = [p for p in split_points if p[2] == "从属连词"]
         if subordinate_points:
-            selected_points.append(subordinate_points[0])
-        
-        # 如果需要更多分割点，添加并列连词
-        if len(selected_points) < max_segments - 1:
+            # 选择最接近句子中点的从属连词
+            tokens_list = list(doc)
+            mid_pos = len(tokens_list) // 2
+            best_point = min(subordinate_points, key=lambda p: abs(p[0] - mid_pos))
+            selected_points.append(best_point)
+            logger.info(f"选择从属连词分割点: {best_point}")
+
+        # 策略2: 如果没有从属连词,选择并列连词
+        elif len(split_points) > 0:
             conj_points = [p for p in split_points if p[2] == "并列连词+动词结构"]
             if conj_points:
-                # 选择距离已选点最远的并列连词
-                if selected_points:
-                    existing_pos = selected_points[0][0]
-                    best_conj = max(conj_points, key=lambda p: abs(p[0] - existing_pos))
-                else:
-                    best_conj = conj_points[0]
-                selected_points.append(best_conj)
-        
-        # 如果仍需要分割点，添加并列动词
-        if len(selected_points) < max_segments - 1:
-            verb_points = [p for p in split_points if p[2] == "并列动词"]
-            if verb_points and len(selected_points) < 2:
-                selected_points.append(verb_points[0])
-        
+                tokens_list = list(doc)
+                mid_pos = len(tokens_list) // 2
+                best_point = min(conj_points, key=lambda p: abs(p[0] - mid_pos))
+                selected_points.append(best_point)
+                logger.info(f"选择并列连词分割点: {best_point}")
+            else:
+                # 策略3: 选择并列动词
+                verb_points = [p for p in split_points if p[2] == "并列动词"]
+                if verb_points:
+                    tokens_list = list(doc)
+                    mid_pos = len(tokens_list) // 2
+                    best_point = min(verb_points, key=lambda p: abs(p[0] - mid_pos))
+                    selected_points.append(best_point)
+                    logger.info(f"选择并列动词分割点: {best_point}")
+
         if not selected_points:
+            logger.info("未选择任何分割点")
             return []
-        
-        # 按位置排序
-        selected_points.sort(key=lambda x: x[0])
         
         # 执行分割
         segments = []
@@ -206,14 +210,14 @@ def spacy_split(text: str, max_segments: int = 3) -> List[str]:
         # 验证分割结果
         if validate_split(segments):
             reason_info = ", ".join([f"{word}({reason})" for _, word, reason in selected_points])
-            logger.info(f"🧠 spaCy分割成功: {reason_info} -> {len(segments)}段")
+            logger.info(f"✅ [策略1] spaCy语法分析分割在{reason_info}处: {len(segments)}段")
             return segments
         else:
-            logger.debug("spaCy分割结果验证失败")
+            logger.info("spaCy分割结果验证失败")
             return []
-            
+
     except Exception as e:
-        logger.debug(f"spaCy分割异常: {e}")
+        logger.info(f"spaCy分割异常: {e}")
         return []
 
 def get_spacy_info() -> str:

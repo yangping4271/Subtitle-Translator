@@ -320,14 +320,14 @@ def process_by_llm(segments: List[SubtitleSegment],
     # 记录当前批次的单词数
     current_words = count_words(txt)
     batch_prefix = f"[批次{batch_index}]" if batch_index else ""
-    logger.debug(f"📝 {batch_prefix} 处理 {current_words} 个单词")
+    logger.info(f"📝 {batch_prefix} 处理 {current_words} 个单词")
     
     # 使用LLM拆分句子
     sentences = split_by_llm(txt, 
                            model=model, 
                            max_word_count_english=max_word_count_english,
                            batch_index=batch_index)
-    logger.debug(f"✂️ {batch_prefix} 提取 {len(sentences)} 个句子")
+    logger.info(f"✂️ {batch_prefix} 提取 {len(sentences)} 个句子")
     
     # 对当前分段进行合并处理
     merged_segments = merge_segments_based_on_sentences(segments, sentences)
@@ -488,7 +488,7 @@ def merge_segments(asr_data: SubtitleData,
         word_count = count_words(segment_text)
         batch_info.append(f"批次{i+1}: {word_count}字")
     
-    logger.debug(f"批次详情: {', '.join(batch_info)}")
+    logger.info(f"批次详情: {', '.join(batch_info)}")
     logger.info("🚀 开始并行断句处理...")
     
     # 多线程处理每个分段
@@ -517,7 +517,7 @@ def merge_segments(asr_data: SubtitleData,
     # 合并所有处理后的分段
     for i, segment in enumerate(processed_segments):
         all_segments.extend(segment)
-        logger.debug(f"📈 处理进度: {((i+1)/len(processed_segments)*100):.0f}% ({i+1}/{len(processed_segments)})")
+        logger.info(f"📈 处理进度: {((i+1)/len(processed_segments)*100):.0f}% ({i+1}/{len(processed_segments)})")
 
     all_segments.sort(key=lambda seg: seg.start_time)
 

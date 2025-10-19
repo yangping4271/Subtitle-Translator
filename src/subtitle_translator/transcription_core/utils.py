@@ -130,7 +130,7 @@ class ModelStorageOptimizer:
             with open(paths["metadata_file"], 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, indent=2)
             
-            logger.debug(f"已保存优化缓存: {model_id} ({dtype})")
+            logger.info(f"已保存优化缓存: {model_id} ({dtype})")
             
         except Exception as e:
             logger.warning(f"保存优化缓存失败: {e}")
@@ -158,7 +158,7 @@ class ModelStorageOptimizer:
             curr_weights = [(k, v.astype(dtype)) for k, v in curr_weights.items()]
             model.update(tree_unflatten(curr_weights))
             
-            logger.debug(f"从优化缓存加载模型成功: {model_id} ({dtype})")
+            logger.info(f"从优化缓存加载模型成功: {model_id} ({dtype})")
             return model
             
         except Exception as e:
@@ -173,7 +173,7 @@ class ModelStorageOptimizer:
             paths = self._get_optimized_paths(model_id, dtype)
             if paths["cache_dir"].exists():
                 shutil.rmtree(paths["cache_dir"])
-                logger.debug(f"已清理优化缓存: {model_id} ({dtype})")
+                logger.info(f"已清理优化缓存: {model_id} ({dtype})")
         except Exception as e:
             logger.warning(f"清理优化缓存失败: {e}")
     
@@ -251,7 +251,7 @@ def _check_endpoint_connectivity(endpoint: str) -> bool:
         response = requests.get(test_url, timeout=10)
         return response.status_code == 200
     except Exception as e:
-        logger.debug(f"端点 {endpoint} 连接测试失败: {e}")
+        logger.info(f"端点 {endpoint} 连接测试失败: {e}")
         return False
 
 def _find_best_hf_endpoint() -> str:
@@ -618,16 +618,16 @@ def _find_cached_model(hf_id_or_path: str) -> tuple[str, str]:
                 weight_path = optimized_model_dir / "optimized_weights.safetensors"
                 
                 if config_path.exists() and weight_path.exists():
-                    logger.debug(f"从存储优化缓存找到模型: {optimized_model_dir}")
+                    logger.info(f"从存储优化缓存找到模型: {optimized_model_dir}")
                     return str(config_path), str(weight_path)
         except Exception as e:
-            logger.debug(f"存储优化缓存检查失败: {e}")
+            logger.info(f"存储优化缓存检查失败: {e}")
     
     # 构建标准模型缓存路径
     model_cache_name = hf_id_or_path.replace("/", "--")
     model_cache_dir = cache_dir / "hub" / f"models--{model_cache_name}"
     
-    logger.debug(f"正在查找标准缓存模型: {model_cache_dir}")
+    logger.info(f"正在查找标准缓存模型: {model_cache_dir}")
     
     if not model_cache_dir.exists():
         raise FileNotFoundError(f"模型缓存目录不存在（标准缓存: {model_cache_dir}，优化缓存: {optimized_cache_dir}）")
@@ -643,7 +643,7 @@ def _find_cached_model(hf_id_or_path: str) -> tuple[str, str]:
         raise FileNotFoundError(f"没有找到模型快照")
     
     latest_snapshot = max(snapshot_dirs, key=lambda d: d.stat().st_mtime)
-    logger.debug(f"找到最新快照: {latest_snapshot}")
+    logger.info(f"找到最新快照: {latest_snapshot}")
     
     # 检查配置文件和权重文件
     config_path = latest_snapshot / "config.json"
@@ -654,8 +654,8 @@ def _find_cached_model(hf_id_or_path: str) -> tuple[str, str]:
     if not weight_path.exists():
         raise FileNotFoundError(f"缓存的权重文件不存在或未完整下载")
     
-    logger.debug(f"找到缓存的配置文件: {config_path}")
-    logger.debug(f"找到缓存的权重文件: {weight_path}")
+    logger.info(f"找到缓存的配置文件: {config_path}")
+    logger.info(f"找到缓存的权重文件: {weight_path}")
     
     return str(config_path), str(weight_path)
 
@@ -691,12 +691,12 @@ def _load_model_files(config_path: str, weight_path: str, silent: bool = False) 
         raise FileNotFoundError(f"权重文件不存在: {Path(weight_path).name}")
     
     try:
-        logger.debug(f"正在加载配置文件: {config_path}")
+        logger.info(f"正在加载配置文件: {config_path}")
         
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
             
-        logger.debug("模型文件加载成功")
+        logger.info("模型文件加载成功")
         return config, weight_path
         
     except json.JSONDecodeError as e:
@@ -800,7 +800,7 @@ def _load_model_original(
         except Exception as e:
             if show_progress:
                 console.print(f"🔍 [dim]存储优化缓存查找失败: {str(e)}[/dim]")
-            logger.debug(f"存储优化缓存查找失败: {str(e)}")
+            logger.info(f"存储优化缓存查找失败: {str(e)}")
     else:
         # 存储优化缓存已在上层检查过，直接跳过
         if show_progress:
@@ -827,7 +827,7 @@ def _load_model_original(
     except Exception as e:
         if show_progress:
             console.print(f"🔍 [dim]本地缓存不可用，将尝试其他方式[/dim]")
-        logger.debug(f"本地缓存查找失败: {str(e)}")
+        logger.info(f"本地缓存查找失败: {str(e)}")
     
     # 策略3: 尝试从指定的本地路径加载
     if config is None:
@@ -851,7 +851,7 @@ def _load_model_original(
         except Exception as e:
             if show_progress:
                 console.print(f"🔍 [dim]指定本地路径不可用，将尝试在线下载[/dim]")
-            logger.debug(f"本地路径加载失败: {str(e)}")
+            logger.info(f"本地路径加载失败: {str(e)}")
     
     # 策略4: 最后才从 Hugging Face Hub 下载（需要网络连接）
     if config is None:
@@ -964,10 +964,10 @@ def _load_model_original(
                     console.print("✅ [green]存储优化缓存已保存[/green] (下次加载将更快)")
                 else:
                     _storage_optimizer.save_optimized_model(hf_id_or_path, dtype, model, config, weight)
-                    logger.debug("存储优化缓存已保存")
+                    logger.info("存储优化缓存已保存")
             except Exception as e:
                 # 保存缓存失败不影响主流程
-                logger.debug(f"保存存储优化缓存失败: {e}")
+                logger.info(f"保存存储优化缓存失败: {e}")
                 if show_progress:
                     console.print("⚠️  [yellow]存储优化缓存保存失败，不影响模型使用[/yellow]")
         

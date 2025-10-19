@@ -589,7 +589,7 @@ class SubtitleOptimizer:
         subtitle_keys = sorted(map(int, original_subtitle.keys()))
         batch_info = f"[批次{batch_num}/{total_batches}]" if batch_num and total_batches else ""
         
-        logger.debug(f"🤔 {batch_info} 反思翻译 {len(subtitle_keys)} 条字幕")
+        logger.info(f"🤔 {batch_info} 反思翻译 {len(subtitle_keys)} 条字幕")
 
         max_retries = 2  # 最大重试次数
         current_try = 0
@@ -660,7 +660,7 @@ class SubtitleOptimizer:
                     logger.error(f"❌ {batch_info} 返回内容: {str(response_content)[:500]}")
                     raise Exception(f"LLM返回格式错误，期望dict，实际{type(response_content)}")
 
-                logger.debug(f"反思翻译API返回结果: {json.dumps(response_content, indent=4, ensure_ascii=False)}")
+                logger.info(f"反思翻译API返回结果: {json.dumps(response_content, indent=4, ensure_ascii=False)}")
 
                 # 如果完全没有返回结果，这是整批次的失败，需要重试
                 if not response_content:
@@ -783,7 +783,7 @@ class SubtitleOptimizer:
         subtitle_keys = sorted(map(int, original_subtitle.keys()))
         batch_info = f"[批次{batch_num}/{total_batches}]" if batch_num and total_batches else ""
         
-        logger.debug(f"🌍 {batch_info} 翻译 {len(subtitle_keys)} 条字幕")
+        logger.info(f"🌍 {batch_info} 翻译 {len(subtitle_keys)} 条字幕")
 
         max_retries = 2  # 最大重试次数
         current_try = 0
@@ -852,12 +852,12 @@ class SubtitleOptimizer:
                     logger.error(f"❌ {batch_info} 返回内容: {str(response_content)[:500]}")
                     raise Exception(f"LLM返回格式错误，期望dict，实际{type(response_content)}")
 
-                logger.debug(f"📥 {batch_info} API返回结果样例（前3条）:")
+                logger.info(f"📥 {batch_info} API返回结果样例（前3条）:")
                 # 只显示前3条翻译结果作为样例
                 sample_keys = list(response_content.keys())[:3] if response_content else []
                 for k in sample_keys:
                     if k in response_content:
-                        logger.debug(f"   ID {k}: {response_content[k]}")
+                        logger.info(f"   ID {k}: {response_content[k]}")
 
                 # 如果完全没有返回结果，这是整批次的失败，需要重试
                 if not response_content:
@@ -923,10 +923,10 @@ class SubtitleOptimizer:
                 
                 # 记录翻译示例（调试用）
                 if translated_subtitle:
-                    logger.debug(f"✅ {batch_info} 翻译完成示例:")
+                    logger.info(f"✅ {batch_info} 翻译完成示例:")
                     for item in translated_subtitle[:2]:  # 显示前2个翻译结果
-                        logger.debug(f"   原文: {item['optimized']}")
-                        logger.debug(f"   译文: {item['translation']}")
+                        logger.info(f"   原文: {item['optimized']}")
+                        logger.info(f"   译文: {item['translation']}")
 
                 return translated_subtitle
 

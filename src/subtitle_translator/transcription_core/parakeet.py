@@ -48,11 +48,11 @@ def get_optimal_chunk_duration(audio_duration_seconds: float, logger=None) -> Op
     try:
         import psutil
         memory_gb = psutil.virtual_memory().total / (1024**3)
-        logger.debug(f"psutil检测到系统内存: {memory_gb:.1f}GB")
+        logger.info(f"psutil检测到系统内存: {memory_gb:.1f}GB")
     except ImportError:
-        logger.debug("psutil不可用，尝试macOS原生方法")
+        logger.info("psutil不可用，尝试macOS原生方法")
     except Exception as e:
-        logger.debug(f"psutil检测失败: {e}")
+        logger.info(f"psutil检测失败: {e}")
     
     # 策略2: macOS原生sysctl（高效可靠）
     if memory_gb is None:
@@ -63,9 +63,9 @@ def get_optimal_chunk_duration(audio_duration_seconds: float, logger=None) -> Op
             if result.returncode == 0:
                 mem_bytes = int(result.stdout.split()[-1])
                 memory_gb = mem_bytes / (1024**3)
-                logger.debug(f"macOS sysctl检测到系统内存: {memory_gb:.1f}GB")
+                logger.info(f"macOS sysctl检测到系统内存: {memory_gb:.1f}GB")
         except Exception as e:
-            logger.debug(f"macOS内存检测失败: {e}")
+            logger.info(f"macOS内存检测失败: {e}")
     
     # 保险策略：合理默认值
     if memory_gb is None:
@@ -84,9 +84,9 @@ def get_optimal_chunk_duration(audio_duration_seconds: float, logger=None) -> Op
         if machine == 'arm64':
             is_apple_silicon = True
             chip_info = "Apple Silicon"
-            logger.debug(f"检测到ARM64架构: {machine}")
+            logger.info(f"检测到ARM64架构: {machine}")
     except Exception as e:
-        logger.debug(f"架构检测失败: {e}")
+        logger.info(f"架构检测失败: {e}")
     
     # 策略2: 获取详细芯片信息（sysctl更快更可靠）
     if is_apple_silicon:
@@ -98,9 +98,9 @@ def get_optimal_chunk_duration(audio_duration_seconds: float, logger=None) -> Op
                 brand_string = result.stdout.strip()
                 if 'Apple' in brand_string:
                     chip_info = brand_string
-                    logger.debug(f"获取到详细芯片信息: {brand_string}")
+                    logger.info(f"获取到详细芯片信息: {brand_string}")
         except Exception as e:
-            logger.debug(f"芯片信息获取失败: {e}")
+            logger.info(f"芯片信息获取失败: {e}")
     
     logger.info(f"💻 系统配置: {memory_gb:.1f}GB内存, {chip_info}")
     
@@ -388,7 +388,7 @@ class BaseParakeet(nn.Module):
                         chunk_result.tokens,
                         overlap_duration=overlap_duration,
                     )
-                    logger.debug(f"✅ 严格合并成功：精确匹配重叠区域")
+                    logger.info(f"✅ 严格合并成功：精确匹配重叠区域")
                 except RuntimeError as e:
                     logger.warning(f"🔄 严格合并未达标，启用智能合并：{e}")
                     try:

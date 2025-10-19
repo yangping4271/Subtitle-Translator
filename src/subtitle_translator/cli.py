@@ -13,7 +13,7 @@ from rich import print
 from .env_setup import setup_environment
 from .processor import process_single_file
 from .config_manager import init_config
-from .logger import setup_logger, get_log_file_path, get_log_mode_info, configure_all_loggers
+from .logger import setup_logger, get_log_file_path, get_log_mode_info
 from .transcription_core.utils import _find_cached_model, _check_network_connectivity, from_pretrained
 from .transcription_core import utils as transcription_utils
 
@@ -40,7 +40,6 @@ def main(
     model: str = typer.Option(DEFAULT_TRANSCRIPTION_MODEL, "--model", help="用于转录的 Parakeet MLX 模型。"),
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
     reflect: bool = typer.Option(False, "--reflect", "-r", help="启用反思翻译模式，提高翻译质量但会增加处理时间。"),
-    debug: bool = typer.Option(False, "--debug", "-d", help="启用调试日志级别，显示更详细的处理信息。"),
     preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
     version: bool = typer.Option(False, "--version", help="显示版本信息并退出。"),
 ):
@@ -50,15 +49,12 @@ def main(
         from .version_utils import get_simple_version_info
         print(get_simple_version_info())
         raise typer.Exit()
-    
+
     # 如果调用了子命令，就不执行主逻辑
     if ctx.invoked_subcommand is not None:
         return
-        
-    # 立即配置所有logger的debug级别（在setup_environment之前）
-    configure_all_loggers(debug)
-        
-    setup_environment(debug_mode=debug)
+
+    setup_environment()
     
     # 显示日志文件路径信息
     log_mode, log_location = get_log_mode_info()

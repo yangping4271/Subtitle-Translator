@@ -108,7 +108,7 @@ class SubtitleTranslatorService:
             logger.info("📂 正在加载字幕文件...")
             asr_data = load_subtitle(str(input_srt_path))
             logger.info(f"📊 字幕统计: 共 {len(asr_data.segments)} 条字幕")
-            logger.debug(f"字幕内容预览: {asr_data.to_txt()[:100]}...")  
+            logger.info(f"字幕内容预览: {asr_data.to_txt()[:100]}...")  
             
             # 检查字幕是否为空
             if len(asr_data.segments) == 0:
