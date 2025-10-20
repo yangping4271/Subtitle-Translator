@@ -271,9 +271,9 @@ def split_by_llm(text: str,
                         logger.info(f"✅ 智能分割成功: 分为{len(split_results)}段")
                         new_sentences.extend(split_results)
                     else:
-                        # 智能分割失败，使用强制等分
-                        logger.warning(f"⚠️ 智能分割失败，使用强制等分")
-                        split_results = force_equal_split(segment, max_word_count_english)
+                        # 智能分割失败，使用降级分割
+                        logger.warning(f"⚠️ 智能分割失败，使用降级分割")
+                        split_results = fallback_split(segment, max_word_count_english, warning_threshold)
                         stats['forced'] += 1
                         new_sentences.extend(split_results)
 
@@ -289,9 +289,9 @@ def split_by_llm(text: str,
                         logger.info(f"✅ 智能分割成功: 分为{len(split_results)}段")
                         new_sentences.extend(split_results)
                     else:
-                        # 智能分割失败，使用强制等分
-                        logger.warning(f"⚠️ 智能分割失败，使用强制等分进行多次拆分")
-                        split_results = force_equal_split(segment, max_word_count_english)
+                        # 智能分割失败，使用降级分割进行多次拆分
+                        logger.warning(f"⚠️ 智能分割失败，使用降级分割进行多次拆分")
+                        split_results = fallback_split(segment, max_word_count_english, warning_threshold)
                         stats['rejected'] += 1
                         new_sentences.extend(split_results)
 
@@ -339,18 +339,21 @@ def split_by_llm(text: str,
 
 def aggressive_split(text: str, max_words: int) -> List[str]:
     """
-    增强版智能分割：多策略分层尝试
+    智能分割：基于语义边界的拆分
 
-    策略优先级：
-    1. 规则匹配分割（6层优先级语义边界）
-    2. 强制等分（保底方案）
+    策略：
+    1. 优先基于标点符号（句号、分号、逗号等）
+    2. 其次基于连接词（并列连词、从属连词、关系代词）
+    3. 如果找不到合适的语义边界，返回原句（让调用方决定是否强制拆分）
 
     Args:
         text: 需要分割的文本
         max_words: 最大单词数限制
 
     Returns:
-        分割后的句子列表，每段尽量 ≤ max_words
+        分割后的句子列表
+        - 找到语义边界：返回多个片段（len ≥ 2）
+        - 找不到边界：返回原句 [text]（len = 1）
     """
     words = text.split()
     word_count = len(words)
@@ -422,34 +425,45 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
         logger.info(f"   片段1({count_words(first_part)}字): {first_part[:50]}...")
         logger.info(f"   片段2({count_words(second_part)}字): {second_part[:50]}...")
 
-        # 递归处理仍然超长的片段
+        # 递归处理仍然超长的片段（使用warning_threshold作为判断条件）
         result = []
+        # 计算warning_threshold（允许递归后的片段稍微超标）
+        warning_threshold = int(max_words * 1.5)
         for part in [first_part, second_part]:
-            if count_words(part) > max_words:
+            if count_words(part) > warning_threshold:
                 result.extend(aggressive_split(part, max_words))
             else:
                 result.append(part)
         return result
 
-    # ============ 策略2: 强制等分（保底） ============
-    logger.warning("⚠️ [策略2] 未找到语义边界，使用强制等分")
-    return force_equal_split(text, max_words)
+    # ============ 找不到语义边界，返回原句 ============
+    logger.warning("⚠️ 未找到语义边界，返回原句")
+    return [text]  # 返回单元素列表，让调用方决定下一步
 
 
-def force_equal_split(text: str, max_words: int) -> List[str]:
+def fallback_split(text: str, max_words: int, warning_threshold: int = None) -> List[str]:
     """
-    保底强制等分：确保每段 ≤ max_words
+    降级分割（兜底方案）：在理想切分点附近寻找语义边界
 
-    在理想等分点附近寻找最近的语义边界（标点或连接词）
-    如果找不到，则在词边界强制切分
+    策略：
+    1. 计算理想等分点（确保每段 ≤ max_words）
+    2. 在理想点前后5词范围内搜索最佳切分位置
+    3. 优先选择标点（句号、逗号等）
+    4. 其次选择连接词（and、but、when等）
+    5. 保底选择词边界
 
     Args:
         text: 需要分割的文本
-        max_words: 最大单词数限制
+        max_words: 最大单词数限制（目标值，如19）
+        warning_threshold: 警告阈值（如28），用于递归判断。如果为None，默认使用max_words*1.5
 
     Returns:
         分割后的句子列表，保证每段 ≤ max_words
     """
+    # 如果未提供warning_threshold，计算默认值
+    if warning_threshold is None:
+        warning_threshold = int(max_words * 1.5)
+
     words = text.split()
     word_count = len(words)
 
@@ -460,7 +474,7 @@ def force_equal_split(text: str, max_words: int) -> List[str]:
     if num_segments == 1:
         return [text]
 
-    logger.info(f"🔨 强制等分: {word_count}字 -> {num_segments}段 (每段≤{max_words}字)")
+    logger.info(f"🔨 降级分割: {word_count}字 -> {num_segments}段 (每段≤{max_words}字)")
 
     # 计算理想分割点
     segment_size = word_count / num_segments
@@ -514,17 +528,17 @@ def force_equal_split(text: str, max_words: int) -> List[str]:
         result.append(last_segment)
 
     # 输出分割结果
-    logger.info(f"✅ 强制等分完成: {len(result)}段")
+    logger.info(f"✅ 降级分割完成: {len(result)}段")
     for i, segment in enumerate(result, 1):
         seg_words = count_words(segment)
         logger.info(f"   片段{i}({seg_words}字): {segment[:50]}...")
         if seg_words > max_words:
             logger.warning(f"   ⚠️ 片段{i}仍超标，需再次分割")
 
-    # 验证：如果仍有超标片段，递归处理
+    # 验证：如果仍有超标片段，递归处理（使用warning_threshold作为判断条件）
     final_result = []
     for segment in result:
-        if count_words(segment) > max_words:
+        if count_words(segment) > warning_threshold:
             # 简单二分
             seg_words = segment.split()
             mid = len(seg_words) // 2
