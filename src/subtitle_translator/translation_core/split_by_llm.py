@@ -342,7 +342,7 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
     增强版智能分割：多策略分层尝试
 
     策略优先级：
-    1. 规则匹配分割（7层优先级语义边界）
+    1. 规则匹配分割（6层优先级语义边界）
     2. 强制等分（保底方案）
 
     Args:
@@ -361,7 +361,9 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
 
     logger.info(f"🔧 尝试智能分割: {word_count}字 -> 目标≤{max_words}字")
 
-    # ============ 策略1: 规则匹配分割（7层优先级） ============
+    # ============ 策略1: 规则匹配分割（6层优先级） ============
+    # 优先级设计原则：保护语义完整性，避免破坏不可分割的语义单元
+    # 已移除原优先级7（介词短语），因其容易破坏语义，实际触发率<1%
     split_candidates = []
 
     # 优先级1: 句子结束标记
@@ -403,14 +405,6 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
         word = words[i].lower().strip(",.!?")
         if word in relative_pronouns:
             split_candidates.append((i, 5, f"关系词'{word}'"))
-
-    # 优先级7: 介词短语（较长介词）
-    prepositions = ["of", "in", "on", "at", "with", "for", "by", "from",
-                   "about", "during", "through", "between", "among"]
-    for i in range(max(3, word_count // 3), min(word_count - 2, word_count * 2 // 3)):
-        word = words[i].lower().strip(",.!?")
-        if word in prepositions:
-            split_candidates.append((i, 4, f"介词'{word}'"))
 
     # 如果找到候选点，选择最优的
     if split_candidates:
