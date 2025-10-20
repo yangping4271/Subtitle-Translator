@@ -128,7 +128,7 @@ class SubtitleConfig:
     batch_size: int = 20
 
     # 断句长度控制配置（基于 max_word_count_english 的倍数，实现灵活的字数限制）
-    tolerance_multiplier: float = 1.15    # 容忍系数：轻度超标可接受（如19*1.15≈22字）
+    tolerance_multiplier: float = 1.2    # 容忍系数：轻度超标可接受（如19*1.2≈23字）
     warning_multiplier: float = 1.5       # 警告系数：需尝试优化分割（如19*1.5=29字）
     max_multiplier: float = 2.0           # 最大系数：强制拆分上限（如19*2.0=38字）
 
