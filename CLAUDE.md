@@ -274,6 +274,8 @@ This sophisticated pipeline architecture ensures professional-quality subtitle t
 ## Development Commands
 
 ### Installation and Setup
+
+#### Production Installation (End Users)
 ```bash
 # Install as a tool
 uv tool install .
@@ -281,26 +283,63 @@ uv tool install .
 # Update PATH (required after first install)
 uv tool update-shell
 source ~/.zshenv  # or restart shell
-
-# Development install with dependencies
-uv sync --dev
 ```
 
-### Reinstallation (Clean Install)
-
-**⚠️ 唯一可靠的重装方法（UV有缓存问题）：**
-
+#### Development Installation (Recommended for Developers)
 ```bash
-# ✅ 标准重装流程 - 任何代码修改后都用这个
-uv tool uninstall subtitle-translator
-uv cache clean              # 清理构建缓存（关键！）
-uv tool install . --force   # 强制重新编译
+# Install in editable mode - code changes take effect immediately
+uv tool install -e .
+
+# Update PATH (required after first install)
+uv tool update-shell
+source ~/.zshenv  # or restart shell
 ```
 
-**为什么必须这样：**
-- `uv tool uninstall` 不清理构建缓存
-- 不加 `--force` 会复用旧的缓存版本
-- 模型缓存（`~/.cache/huggingface/`）不受影响
+**Advantages of Editable Mode:**
+- ✅ **Global Access**: Use `translate` and `transcribe` from any directory
+- ✅ **Real-time Changes**: Code modifications take effect immediately, no reinstall needed
+- ✅ **Environment Isolation**: Independent virtual environment, no conflicts
+- ✅ **Best Development Experience**: Combines convenience of global tools with flexibility of development mode
+
+### When to Reinstall
+
+#### Editable Mode (Most Cases - No Reinstall Needed)
+```bash
+# ✅ These changes take effect immediately (no reinstall):
+# - Modify any Python source code (.py files)
+# - Update documentation (CLAUDE.md, README.md)
+# - Add/remove test files
+# - Modify configuration files (.env)
+
+# Just test directly:
+translate -i video.mp4  # ✅ Uses latest code automatically
+```
+
+#### Dependency or Metadata Changes (Reinstall Required)
+```bash
+# ⚠️ Only reinstall when you change:
+# - Dependencies in pyproject.toml
+# - Entry points in [project.scripts]
+# - Package metadata (version, etc.)
+
+# Reinstall command:
+uv tool install -e . --force
+```
+
+#### Production Release (Clean Install)
+```bash
+# For final testing before release:
+uv tool uninstall subtitle-translator
+uv cache clean              # Clear build cache
+uv tool install . --force   # Production install
+
+# Test production version
+translate -i test.mp4
+
+# Switch back to development:
+uv tool uninstall subtitle-translator
+uv tool install -e .
+```
 
 ### Running the Application
 ```bash
@@ -321,26 +360,34 @@ transcribe video.mp4 --vad          # With VAD intelligent chunking (default)
 transcribe video.mp4 --no-vad --chunk-duration 120  # Fixed 2-minute chunks
 ```
 
-### Development Mode Usage
-When developing or debugging, prefer using development mode over installed tools:
+### Development Workflow
+
+With editable mode installation (`uv tool install -e .`), development becomes streamlined:
 
 ```bash
-# Use development mode for testing configuration issues
-uv run python -m subtitle_translator.cli init
+# 1. Modify code in your editor
+vim src/subtitle_translator/cli.py
 
-# Use development mode for main commands
-uv run python -m subtitle_translator.cli --help
-uv run python -m subtitle_translator.transcription_core.cli --help
+# 2. Test immediately - no reinstall needed!
+translate -i video.mp4 -d
 
-# Development mode with test file
-uv run python -m subtitle_translator.cli -i test.mp4
+# 3. Debug with full access
+translate -i video.mp4 --help  # Shows your latest changes
+
+# 4. Work from any directory
+cd ~/Videos && translate -i test.mp4  # ✅ Works anywhere
 ```
 
-**Advantages of Development Mode:**
-- No need to reinstall after code changes
-- Better error reporting and stack traces (all logs at INFO level by default)
-- Easier debugging with IDE integration
-- Direct access to source code modifications
+**Alternative: Direct Module Execution**
+For specific debugging needs, you can still use `uv run`:
+
+```bash
+# When you need detailed stack traces
+uv run python -m subtitle_translator.cli -i test.mp4 -d
+
+# When testing without installation
+uv run python -m subtitle_translator.cli --help
+```
 
 ## Configuration
 
@@ -403,90 +450,100 @@ Recent optimizations include:
 uv run python -c "from subtitle_translator.translation_core.utils.test_openai import test_openai; test_openai()"
 
 # Verify configuration
-uv run python -m subtitle_translator.cli init --test
+translate init --test
 
-# Test with existing test files
-uv run python -m subtitle_translator.cli -i test_video.mp4 -d
+# Test with existing test files (editable mode - instant testing)
+translate -i test_video.mp4 -d
 ```
 
 The repository includes test files (`test_video.mp4`, `test_video.srt`, `test_video.ass`) for validation.
 
-#### Development Mode Recommendations
-For development and testing, **always prefer development mode** over installed tools:
-
-**Why Use Development Mode:**
-- ✅ No reinstallation needed after code changes
-- ✅ Real-time testing of modifications
-- ✅ Better error reporting and debugging
-- ✅ Immediate feedback on optimizations
-- ✅ Safer testing environment
-
-**Development Commands:**
-```bash
-# Configuration testing (preferred method)
-uv run python -m subtitle_translator.cli init
-
-# Main application testing
-uv run python -m subtitle_translator.cli --help
-uv run python -m subtitle_translator.cli -i test.mp4 -d
-
-# Transcription testing
-uv run python -m subtitle_translator.transcription_core.cli --help
-```
-
 #### Code Quality Verification
-After making changes, verify functionality using **development mode** (preferred):
+With editable mode, verify functionality instantly:
 
 ```bash
-# Verify imports and basic functionality
+# Quick component checks
+translate --version  # ✅ Instant verification
+
+# Test after code changes
+translate -i test.mp4  # ✅ No reinstall needed
+
+# Detailed debugging when needed
 uv run python -c "from subtitle_translator.config_manager import handle_user_abort, safe_prompt; print('✅ Configuration manager working')"
-
-# Test core components
-uv run python -c "from subtitle_translator.processor import process_single_file; print('✅ Core processor available')"
-
-# Validate transcription core
-uv run python -c "from subtitle_translator.transcription_core.parakeet import ParakeetModel; print('✅ Transcription engine ready')"
 ```
 
 #### Efficient Development Workflow
 
-**For Regular Development:**
+**Daily Development (Editable Mode - Recommended):**
 ```bash
-# 1. Make code changes
-# 2. Test in development mode (no reinstall needed)
-uv run python -m subtitle_translator.cli -i test.mp4 -d
+# One-time setup
+uv tool install -e .
 
-# 3. When ready for production testing, do standard reinstall
+# Daily workflow - no reinstalls needed!
+# 1. Edit code
+vim src/subtitle_translator/cli.py
+
+# 2. Test immediately (from any directory)
+cd ~/Videos && translate -i test.mp4 -d  # ✅ Uses latest code
+
+# 3. Debug mode
+translate -i test.mp4 -d  # ✅ Full debugging access
+
+# 4. Repeat - no reinstall ever needed for code changes
+```
+
+**Dependency Changes (Rare):**
+```bash
+# 1. Update pyproject.toml
+vim pyproject.toml
+
+# 2. Reinstall with new dependencies
+uv tool install -e . --force
+
+# 3. Back to normal development (no more reinstalls)
+translate -i test.mp4
+```
+
+**Production Testing (Before Release):**
+```bash
+# Test production build
 uv tool uninstall subtitle-translator
+uv cache clean
+uv tool install . --force
+translate -i final_test.mp4
+
+# Switch back to development
+uv tool uninstall subtitle-translator
+uv tool install -e .
+```
+
+### Best Practices Summary
+
+**Recommended Installation Method:**
+```bash
+# Development (editable mode - recommended)
+uv tool install -e .
+
+# Production (end users)
 uv tool install .
 ```
 
-**For Dependency Changes:**
-```bash
-# 1. Update pyproject.toml
-# 2. Sync development environment
-uv sync --dev
+**Key Advantages of Editable Mode:**
+- ✅ **Zero Reinstalls**: Code changes take effect immediately
+- ✅ **Global Access**: Works from any directory
+- ✅ **Full Debugging**: All development capabilities
+- ✅ **Production Ready**: Same tool interface as end users
 
-# 3. MUST use force reinstall for tool
-uv tool uninstall subtitle-translator
-uv cache clean  # Clear UV cache for new dependencies
-uv tool install . --force  # ✅ CRITICAL: Always use --force
-```
+**When to Use Each Method:**
+- **Editable Mode (`-e`)**: Active development, debugging, testing
+- **Production Mode**: Final release testing, distribution to users
+- **`uv run`**: Special debugging cases needing detailed stack traces
 
-### Critical Lessons: UV Cache Behavior
-
-**Real Case (October 2024):** 代码修改后"标准重装"，但运行时发现用的是2个月前的旧代码。
-
-**根本原因：** `uv tool uninstall` 不清理构建缓存，`uv tool install .` 会复用缓存的旧版本。
-
-**正确做法：**
-```bash
-# ❌ 错误 - 会用缓存的旧代码
-uv tool uninstall subtitle-translator && uv tool install .
-
-# ✅ 正确 - 强制重新编译
-uv tool uninstall subtitle-translator && uv cache clean && uv tool install . --force
-```
+**Critical Notes:**
+- Editable mode eliminates 95% of reinstallation needs
+- Only reinstall for dependency/metadata changes
+- Use `--force` when reinstalling to avoid cache issues
+- Model cache (`~/.cache/huggingface/`) is unaffected by reinstalls
 
 ## Major Upgrade v0.4.1: VAD Chunking Fixes
 
@@ -662,20 +719,62 @@ ffmpeg -f lavfi -i testsrc2=duration=30:size=1280x720:rate=30 -f lavfi -i sine=f
 ```
 
 ### Reinstallation Process
-The project now uses an **optimized reinstallation strategy**:
+The project uses **editable mode installation** for optimal development experience:
 
-1. **Standard reinstall** for most development (fast and efficient)
-2. **Development mode testing** to avoid unnecessary reinstalls  
-3. **Deep clean** only when encountering dependency issues
-4. **Selective cache cleaning** based on actual needs
+**Standard Development Setup:**
+```bash
+# One-time installation
+uv tool install -e .
+
+# No reinstalls needed for code changes!
+# Just edit and test immediately
+```
+
+**Special Cases Requiring Reinstall:**
+```bash
+# Dependency changes only
+uv tool install -e . --force
+
+# Production testing only
+uv tool uninstall subtitle-translator
+uv cache clean
+uv tool install . --force
+```
+
+**Key Benefits:**
+- Eliminates repetitive reinstallation cycles
+- Immediate feedback on code changes
+- Maintains production-ready global tool interface
+- Simplifies development workflow dramatically
 
 ### Quality Assurance and Maintenance
 
 #### Pre-Commit Workflow
-- **Development mode testing** → **Standard reinstall** → **Production testing** → **Version update** → **Commit code**
-- Always prefer development mode (`uv run`) for initial testing
-- Use standard reinstall for final validation
-- Only use deep clean when encountering specific issues
+**Editable Mode Simplified Workflow:**
+```bash
+# 1. Develop and test (no reinstalls)
+vim src/subtitle_translator/cli.py
+translate -i test.mp4 -d  # ✅ Instant testing
+
+# 2. Final validation (optional - only for major releases)
+uv tool uninstall subtitle-translator
+uv tool install . --force
+translate -i final_test.mp4
+
+# 3. Version update (if needed)
+vim pyproject.toml
+
+# 4. Commit code
+git add . && git commit -m "feat: description"
+
+# 5. Switch back to development
+uv tool install -e .
+```
+
+**Daily Development (Simplified):**
+- Edit code → Test immediately → Commit (no reinstalls!)
+- Only production install before major releases
+- Editable mode eliminates most workflow complexity
 
 #### Post-Commit Documentation Sync
 **Important**: After each code commit, review and update this CLAUDE.md file to maintain accuracy:
