@@ -81,9 +81,11 @@ English Audio/Video → Transcribe → SRT/TXT/VTT/JSON
 ## Supported Formats
 
 ### Input Formats
-- **Audio**: MP3, WAV, FLAC, M4A, AAC, etc.
-- **Video**: MP4, MOV, MKV, AVI, WebM, etc.
-- **Subtitles**: SRT format
+- **Subtitle Files**: `.srt` (skips transcription, directly translates)
+- **Audio Formats** (9 formats): `.mp3`, `.m4a`, `.wav`, `.flac`, `.aac`, `.ogg`, `.wma`, `.aiff`, `.opus`
+- **Video Formats** (11 formats): `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.flv`, `.wmv`, `.m4v`, `.mpeg`, `.mpg`, `.3gp`, `.ts`
+
+**Processing Priority**: `.srt` > audio formats > video formats (audio transcription is faster)
 
 ### Output Formats
 - **translate**: Generates `.srt` (English) and `.ass` (bilingual) files.

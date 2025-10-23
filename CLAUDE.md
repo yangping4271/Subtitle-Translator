@@ -426,11 +426,23 @@ The system supports translation from English to multiple languages:
 ## File Processing Logic
 
 The application processes files with intelligent file discovery:
-1. Scans for `.srt`, `.mp3`, `.mp4` files in current directory
+1. Scans for media files in current directory (see supported formats below)
 2. Groups files by base name (removes language suffixes)
 3. Skips files where `.ass` output already exists
-4. Prioritizes input: `.srt` > `.mp3` > `.mp4`
+4. Prioritizes input: `.srt` > **audio formats** > **video formats** (audio transcription is faster)
 5. Generates bilingual `.ass` files and preserves original `.srt`
+
+**Supported Formats:**
+- **Subtitle Files**: `.srt`
+- **Audio Formats** (9 formats): `.mp3`, `.m4a`, `.wav`, `.flac`, `.aac`, `.ogg`, `.wma`, `.aiff`, `.opus`
+- **Video Formats** (11 formats): `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.flv`, `.wmv`, `.m4v`, `.mpeg`, `.mpg`, `.3gp`, `.ts`
+
+**Processing Priority Example:**
+```
+video.srt   # ✅ 1st priority: Skip transcription, directly translate
+video.m4a   # ✅ 2nd priority: Fast audio transcription
+video.mp4   # ⏭️  Skipped: Higher priority file (m4a) exists
+```
 
 ## Version Management and Testing
 

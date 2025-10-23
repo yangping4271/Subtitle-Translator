@@ -110,7 +110,16 @@ def _natural_sort_key(s: str):
 
 def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
     """获取批量处理的文件列表"""
-    MEDIA_EXTENSIONS = ["*.srt", "*.mp3", "*.mp4"]
+    MEDIA_EXTENSIONS = [
+        "*.srt",  # 字幕文件
+        # 音频格式（优先级高于视频）
+        "*.mp3", "*.m4a", "*.wav", "*.flac", "*.aac",
+        "*.ogg", "*.wma", "*.aiff", "*.opus",
+        # 视频格式
+        "*.mp4", "*.avi", "*.mov", "*.mkv", "*.webm",
+        "*.flv", "*.wmv", "*.m4v", "*.mpeg", "*.mpg",
+        "*.3gp", "*.ts"
+    ]
 
     # 查找所有媒体文件
     media_files = []
@@ -118,14 +127,22 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
         media_files.extend(glob.glob(pattern))
     
     if not media_files:
-        print("[bold red]当前目录没有找到需要处理的文件 (*.srt, *.mp3, *.mp4)。[/bold red]")
+        print("[bold red]当前目录没有找到需要处理的媒体文件。[/bold red]")
+        print("[dim]支持的格式：[/dim]")
+        print("[dim]  • 字幕文件: .srt[/dim]")
+        print("[dim]  • 音频文件: .mp3, .m4a, .wav, .flac, .aac, .ogg, .wma, .aiff, .opus[/dim]")
+        print("[dim]  • 视频文件: .mp4, .avi, .mov, .mkv, .webm, .flv, .wmv, .m4v, .mpeg, .mpg, .3gp, .ts[/dim]")
         raise typer.Exit(code=1)
     
     # 提取基础文件名并去重排序
     base_names = set()
     for file in media_files:
         # 移除扩展名
-        base_name = re.sub(r'\.(srt|mp3|mp4)$', '', file)
+        base_name = re.sub(
+            r'\.(srt|mp3|m4a|wav|flac|aac|ogg|wma|aiff|opus|'
+            r'mp4|avi|mov|mkv|webm|flv|wmv|m4v|mpeg|mpg|3gp|ts)$',
+            '', file, flags=re.IGNORECASE
+        )
         # 移除各种语言后缀
         language_suffixes = [
             r'\.zh$', r'\.zh-cn$', r'\.zh-tw$',  # 中文
@@ -149,9 +166,17 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
             print(f"INFO: {base_name}.ass 已存在，跳过处理。")
             continue
         
-        # 确定输入文件优先级：srt > mp3 > mp4
+        # 确定输入文件优先级：srt > 音频 > 视频（音频转录更快）
         input_file_found = None
-        for ext in ['.srt', '.mp3', '.mp4']:
+        # 音频格式列表（按常用程度排序）
+        audio_exts = ['.mp3', '.m4a', '.wav', '.flac', '.aac',
+                      '.ogg', '.wma', '.aiff', '.opus']
+        # 视频格式列表（按常用程度排序）
+        video_exts = ['.mp4', '.avi', '.mov', '.mkv', '.webm',
+                      '.flv', '.wmv', '.m4v', '.mpeg', '.mpg',
+                      '.3gp', '.ts']
+
+        for ext in ['.srt'] + audio_exts + video_exts:
             candidate = Path(f"{base_name}{ext}")
             if candidate.exists():
                 input_file_found = candidate
