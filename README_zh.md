@@ -81,9 +81,11 @@ transcribe video.mp4 --output-format all
 ## 支持的格式
 
 ### 输入格式
-- **音频**: MP3, WAV, FLAC, M4A, AAC 等
-- **视频**: MP4, MOV, MKV, AVI, WebM 等
-- **字幕**: SRT 格式
+- **字幕文件**: `.srt`（跳过转录，直接翻译）
+- **音频格式**（9种格式）: `.mp3`, `.m4a`, `.wav`, `.flac`, `.aac`, `.ogg`, `.wma`, `.aiff`, `.opus`
+- **视频格式**（11种格式）: `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.flv`, `.wmv`, `.m4v`, `.mpeg`, `.mpg`, `.3gp`, `.ts`
+
+**处理优先级**: `.srt` > 音频格式 > 视频格式（音频转录速度更快）
 
 ### 输出格式
 - **translate**: 生成 `.srt` (英文) 和 `.ass` (双语) 文件
