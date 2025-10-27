@@ -1,3 +1,4 @@
+import re
 from typing import Dict, Optional
 from pathlib import Path
 from openai import OpenAI
@@ -97,6 +98,10 @@ class SubtitleSummarizer:
                 raise Exception("API响应格式异常")
             
             summary = response.choices[0].message.content
+
+            # 移除<think>和</think>标签
+            summary = re.sub(r'<think>.*?</think>', '', summary, flags=re.DOTALL)
+
             return {
                 "summary": summary
             }

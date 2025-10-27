@@ -200,6 +200,9 @@ def split_by_llm(text: str,
             raise Exception("API返回为空")
         logger.info(f"API返回结果: \n\n{result}\n")
 
+        # 0. 首先移除<think>和</think>标签
+        result = re.sub(r'<think>.*?</think>', '', result, flags=re.DOTALL)
+
         # 清理和分割文本 - 简化处理，保留原始格式
         result = re.sub(r'\n+', '', result)
         
