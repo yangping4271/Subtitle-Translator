@@ -24,6 +24,7 @@ All supported use cases are in the unit tests
 
 import os
 import json
+import re
 from typing import Any, Dict, List, Optional, Union, TextIO, Tuple
 from ...logger import setup_logger
 
@@ -769,15 +770,22 @@ def clean_llm_response(response: str) -> str:
 
 def parse_llm_response(response: str) -> Dict:
     """解析LLM返回的JSON响应
-    
+
     Args:
         response: LLM返回的原始响应字符串
-        
+
     Returns:
         解析后的JSON对象，如果解析失败则返回空字典
     """
-    # 1. 首先尝试清理三引号并直接解析
-    cleaned = clean_llm_response(response)
+    # 0. 首先移除<think>和</think>标签
+    cleaned = response
+    # 移除所有<think>标签及其内容
+    cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL)
+    # 清理可能的空行
+    cleaned = re.sub(r'\n+', '\n', cleaned)
+
+    # 1. 然后尝试清理三引号并直接解析
+    cleaned = clean_llm_response(cleaned)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as e:
@@ -796,7 +804,7 @@ def parse_llm_response(response: str) -> Dict:
                 fixed_json = fixed_json.replace(',\n]', '\n]')
                 # 修复缺少引号的值
                 fixed_json = fixed_json.replace('": translation', '": "translation')
-                
+
                 # 再次尝试解析
                 return json.loads(fixed_json)
             except Exception as e2:

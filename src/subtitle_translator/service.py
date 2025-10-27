@@ -61,7 +61,12 @@ class SubtitleTranslatorService:
             # 对 API 密钥进行脱敏处理
             api_key = self.config.openai_api_key
             if api_key:
-                masked_key = api_key[:10] + '*' * (len(api_key) - 10) if len(api_key) > 10 else '*' * len(api_key)
+                if len(api_key) > 12:
+                    # 对于长密钥，显示前6个和后6个字符，中间用 * 省略
+                    masked_key = f"{api_key[:6]}{'*' * 8}{api_key[-6:]}"
+                else:
+                    # 对于短密钥，全部用 * 替代
+                    masked_key = '*' * len(api_key)
                 print(f"   密钥: [cyan]{masked_key}[/cyan]")
             else:
                 print(f"   密钥: [red]未设置[/red]")
