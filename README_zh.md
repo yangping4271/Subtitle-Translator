@@ -30,8 +30,21 @@ uv tool update-shell
 ```
 
 ### 配置
+
+在项目目录创建 `.env` 文件并配置API密钥：
+
 ```bash
-translate init  # 一键配置API密钥
+# API 基础URL
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# API 密钥
+OPENAI_API_KEY=your-api-key-here
+
+# 模型配置
+SPLIT_MODEL=gpt-4o-mini
+TRANSLATION_MODEL=gpt-4o
+SUMMARY_MODEL=gpt-4o-mini
+LLM_MODEL=gpt-4o-mini
 ```
 
 ### 基本使用
@@ -125,9 +138,6 @@ Options:
   -o, --output_dir PATH    输出目录 [default: 当前目录]
   --model TEXT             转录模型
   -m, --llm-model TEXT     LLM模型
-
-Commands:
-  init                     初始化配置
 ```
 
 ### transcribe 命令
@@ -162,26 +172,11 @@ Options:
 
 ## 配置
 
-### 快速配置
-```bash
-translate init
-```
-
-交互式配置包括：
-- LLM 服务的 API 密钥设置
-- 不同任务的模型配置
-- **Hugging Face 镜像站配置**（提高模型下载速度）
-
-### 手动配置
-创建 `.env` 文件：
+在当前目录创建 `.env` 文件：
 ```bash
 # OpenAI API 配置（必需）
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
-
-# Hugging Face 镜像站配置（可选，提高下载速度）
-# 推荐国内用户或与 huggingface.co 连接较慢的用户使用
-HF_ENDPOINT=https://hf-mirror.com
 
 # 模型配置
 SPLIT_MODEL=gpt-4o-mini      # 断句模型
@@ -189,37 +184,6 @@ TRANSLATION_MODEL=gpt-4o     # 翻译模型
 SUMMARY_MODEL=gpt-4o-mini    # 总结模型
 LLM_MODEL=gpt-4o-mini        # 默认模型
 ```
-
-### Hugging Face 镜像站配置
-
-为了提高模型下载的可靠性和速度，特别是对国内用户，可以配置 Hugging Face 镜像站：
-
-#### 方式一：交互式配置
-```bash
-translate init
-# 在提示是否使用 Hugging Face 镜像站时选择 "是"
-```
-
-#### 方式二：环境变量
-```bash
-export HF_ENDPOINT=https://hf-mirror.com
-```
-
-#### 方式三：添加到 .env 文件
-```bash
-# 在你的 .env 文件中添加这一行
-HF_ENDPOINT=https://hf-mirror.com
-```
-
-#### 支持的镜像站
-- **hf-mirror.com**（推荐国内用户使用）
-- **huggingface.co**（官方地址，默认）
-- 自定义镜像站地址
-
-系统会自动检测网络连通性并选择最佳下载方式：
-1. **huggingface-cli** + 配置的镜像站（如可用）
-2. **hf_hub_download** + 配置的镜像站
-3. **自动故障转移**：主镜像站失败时自动切换到备用镜像站
 
 ## 开发
 
