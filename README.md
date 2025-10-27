@@ -30,8 +30,21 @@ uv tool update-shell
 ```
 
 ### Configuration
+
+Create `.env` file in your project directory:
+
 ```bash
-translate init  # One-click API key configuration
+# API Base URL
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# API Key
+OPENAI_API_KEY=your-api-key-here
+
+# Model Configuration
+SPLIT_MODEL=gpt-4o-mini
+TRANSLATION_MODEL=gpt-4o
+SUMMARY_MODEL=gpt-4o-mini
+LLM_MODEL=gpt-4o-mini
 ```
 
 ### Basic Usage
@@ -125,9 +138,6 @@ Options:
   -o, --output_dir PATH    Output directory [default: Current directory]
   --model TEXT             Transcription model
   -m, --llm-model TEXT     LLM model
-
-Commands:
-  init                     Initialize configuration
 ```
 
 ### transcribe Command
@@ -140,7 +150,6 @@ Options:
   --output-format [txt|srt|vtt|json|all]  Output format [default: srt]
   --output-template TEXT          Filename template [default: {filename}]
   --timestamps/--no-timestamps    Output word-level timestamps [default: False]
-  --chunk-duration FLOAT          Chunk duration in seconds [default: 120.0]
   --overlap-duration FLOAT        Overlap duration in seconds [default: 15.0]
   -v, --verbose                   Show detailed information
   --fp32/--bf16                   Use FP32 precision [default: bf16]
@@ -162,26 +171,11 @@ Supports translation from English to multiple languages:
 
 ## Configuration
 
-### Quick Configuration
-```bash
-translate init
-```
-
-The interactive configuration includes:
-- API key setup for LLM services
-- Model configuration for different tasks
-- **Hugging Face mirror configuration** (for improved model download speeds)
-
-### Manual Configuration
-Create a `.env` file:
+Create `.env` file in the project root directory:
 ```bash
 # OpenAI API Configuration (required)
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
-
-# Hugging Face Mirror Configuration (optional, improves download speed)
-# Recommended for users in China or with slow connections to huggingface.co
-HF_ENDPOINT=https://hf-mirror.com
 
 # Model Configuration
 SPLIT_MODEL=gpt-4o-mini      # Sentence splitting model
@@ -189,37 +183,6 @@ TRANSLATION_MODEL=gpt-4o     # Translation model
 SUMMARY_MODEL=gpt-4o-mini    # Summarization model
 LLM_MODEL=gpt-4o-mini        # Default model
 ```
-
-### Hugging Face Mirror Configuration
-
-For improved model download reliability and speed, especially for users in China, you can configure a Hugging Face mirror:
-
-#### Option 1: Interactive Configuration
-```bash
-translate init
-# Choose "yes" when prompted about Hugging Face mirror configuration
-```
-
-#### Option 2: Environment Variable
-```bash
-export HF_ENDPOINT=https://hf-mirror.com
-```
-
-#### Option 3: Add to .env file
-```bash
-# Add this line to your .env file
-HF_ENDPOINT=https://hf-mirror.com
-```
-
-#### Supported Mirrors
-- **hf-mirror.com** (Recommended for China users)
-- **huggingface.co** (Official, default)
-- Custom mirror endpoints
-
-The system automatically detects network connectivity and chooses the best download method:
-1. **huggingface-cli** + configured mirror (if available)
-2. **hf_hub_download** + configured mirror
-3. **Automatic fallback** to alternative mirrors if the primary fails
 
 ## Development
 

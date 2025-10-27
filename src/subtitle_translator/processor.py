@@ -48,16 +48,27 @@ def precheck_model_availability(model: str, show_progress: bool = True, silent: 
         except:
             # 本地没有指定模型的缓存，检查网络连接
             if show_progress and not silent:
-                print("📥 [yellow]模型需要下载，检查网络连接...[/yellow]")
-            
+                print("📥 [yellow]转录模型需要下载[/yellow]")
+                print("   模型: mlx-community/parakeet-tdt-0.6b-v2")
+                print("   大小: ~1.2GB")
+                print("   说明: 首次使用需下载，后续将使用缓存")
+                print()
+                print("🔍 [dim]检查网络连接...[/dim]")
+
             if not _check_network_connectivity():
                 if show_progress and not silent:
                     print("❌ [red]网络连接失败，无法下载模型[/red]")
-                    print("💡 [dim]建议：检查网络连接或配置 HF 镜像站[/dim]")
+                    print()
+                    print("💡 [bold blue]解决方法:[/bold blue]")
+                    print("   1. 检查网络连接是否正常")
+                    print("   2. 确认可以访问 huggingface.co")
+                    print("   3. 如有代理，请确保已正确配置")
+                    print()
                 return False
-            
+
             if show_progress and not silent:
-                print("✅ [green]网络连接正常，首次使用时会自动下载模型[/green]")
+                print("✅ [green]网络正常，处理时将自动下载模型[/green]")
+                print()
             return True
             
     except Exception as e:

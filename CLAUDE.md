@@ -23,8 +23,7 @@ The codebase has a modular architecture with two core processing engines:
 src/subtitle_translator/
 ├── cli.py                    # Main translate command entry point
 ├── processor.py              # Core file processing logic
-├── config_manager.py         # Configuration and API key management
-├── env_setup.py             # Environment validation
+├── env_setup.py             # Environment configuration and validation
 ├── logger.py                # Centralized logging
 ├── service.py               # High-level service coordination
 ├── transcription_core/      # Parakeet MLX transcription engine
@@ -63,7 +62,7 @@ src/subtitle_translator/
 - **Zero API Cost Increase**: Reuses existing batch processing framework after conversion
 - **Precise Timestamp Allocation**: More accurate than simple proportional distribution
 
-**Configuration System**: Environment-based configuration with interactive setup via `translate init`. Supports per-model configuration for splitting, translation, and summarization tasks.
+**Configuration System**: Simplified environment-based configuration loaded from project root directory (`.env` file). Automatically locates project root via `.git` or `pyproject.toml`. Supports per-model configuration for splitting, translation, and summarization tasks.
 
 ### Translation Pipeline Architecture
 
@@ -344,7 +343,6 @@ uv tool install -e .
 ### Running the Application
 ```bash
 # Using installed tool
-translate init           # Configure API keys
 translate               # Batch process current directory
 translate -i video.mp4  # Process single file
 transcribe audio.mp3    # Transcription only
@@ -391,16 +389,12 @@ uv run python -m subtitle_translator.cli --help
 
 ## Configuration
 
-The application requires API configuration via `.env` file or interactive setup:
+The application requires API configuration via `.env` file in the project root directory:
 
 ### Required Environment Variables
 ```bash
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
-
-# Hugging Face Download Configuration (optional)
-# Improves model download reliability and speed, especially for users in China
-HF_ENDPOINT=https://hf-mirror.com
 
 # Model Configuration
 SPLIT_MODEL=gpt-4o-mini      # Sentence splitting
@@ -461,9 +455,6 @@ Recent optimizations include:
 # Test API connectivity
 uv run python -c "from subtitle_translator.translation_core.utils.test_openai import test_openai; test_openai()"
 
-# Verify configuration
-translate init --test
-
 # Test with existing test files (editable mode - instant testing)
 translate -i test_video.mp4 -d
 ```
@@ -481,7 +472,7 @@ translate --version  # ✅ Instant verification
 translate -i test.mp4  # ✅ No reinstall needed
 
 # Detailed debugging when needed
-uv run python -c "from subtitle_translator.config_manager import handle_user_abort, safe_prompt; print('✅ Configuration manager working')"
+uv run python -c "from subtitle_translator.env_setup import setup_environment; setup_environment(); print('✅ Environment configuration working')"
 ```
 
 #### Efficient Development Workflow

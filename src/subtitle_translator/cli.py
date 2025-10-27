@@ -12,8 +12,7 @@ from rich import print
 
 from .env_setup import setup_environment
 from .processor import process_single_file
-from .config_manager import init_config
-from .logger import setup_logger, get_log_file_path, get_log_mode_info
+from .logger import setup_logger
 from .transcription_core.utils import _find_cached_model, _check_network_connectivity, from_pretrained
 from .transcription_core import utils as transcription_utils
 
@@ -25,8 +24,7 @@ logger = setup_logger(__name__)
 
 
 app = typer.Typer(
-    help="一个集成了语音转录、字幕翻译和格式转换的命令行工具",
-    epilog="💡 首次使用请运行: translate init 来配置API密钥"
+    help="一个集成了语音转录、字幕翻译和格式转换的命令行工具"
 )
 
 
@@ -54,14 +52,7 @@ def main(
         return
 
     setup_environment()
-    
-    # 显示日志文件路径信息
-    log_mode, log_location = get_log_mode_info()
-    log_path = get_log_file_path()
-    print(f"📝 [dim]日志模式: {log_mode} ({log_location})[/dim]")
-    print(f"📝 [dim]日志文件: {log_path}[/dim]")
-    print()  # 空行分隔
-    
+
     # 早期验证目标语言代码，提供友好错误信息
     try:
         _validate_target_language(target_lang)
@@ -508,24 +499,6 @@ def version():
     
     console = Console()
     display_version_info(console)
-
-
-@app.command("init")
-def init():
-    """初始化全局配置 - 检查当前目录.env文件或交互式输入配置"""
-    import traceback
-    print("🚀 开始初始化配置...")
-    try:
-        # 设置环境时允许缺少配置
-        setup_environment(allow_missing_config=True)
-        init_config()
-        print("✅ 配置初始化完成")
-    except Exception as e:
-        logger.error(f"配置初始化失败: {e}")
-        print(f"[bold red]❌ 配置初始化失败: {e}[/bold red]")
-        print(f"[bold red]详细错误信息:[/bold red]")
-        traceback.print_exc()
-        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
