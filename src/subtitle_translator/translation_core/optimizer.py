@@ -290,11 +290,6 @@ class SubtitleOptimizer:
                     else:
                         translated_subtitles[k] = item["translation"]
                 
-                # 显示进度（每完成25%显示一次）
-                progress_percentage = completed / total * 100
-                if completed == 1 or completed == total or progress_percentage % 25 < (100 / total):
-                    logger.info(f"🚀 翻译进度: {progress_percentage:.0f}% ({completed}/{total})")
-                    
             except Exception as e:
                 failed_chunk = chunk_map[future]
                 logger.error(f"❌ 批次翻译失败: {e}")
@@ -571,7 +566,6 @@ class SubtitleOptimizer:
                 logger.info(f"📥 {batch_info} LLM原始返回数据:\n{raw_response}")
 
                 response_content = parse_llm_response(raw_response)
-                logger.info(f"📥 {batch_info} 解析后的数据类型: {type(response_content)}")
 
                 # 🔧 类型检查和自动修复
                 if isinstance(response_content, list):
@@ -606,12 +600,6 @@ class SubtitleOptimizer:
                     logger.error(f"❌ {batch_info} 返回内容: {str(response_content)[:500]}")
                     raise Exception(f"LLM返回格式错误，期望dict，实际{type(response_content)}")
 
-                logger.info(f"📥 {batch_info} API返回结果样例（前3条）:")
-                # 只显示前3条翻译结果作为样例
-                sample_keys = list(response_content.keys())[:3] if response_content else []
-                for k in sample_keys:
-                    if k in response_content:
-                        logger.info(f"   ID {k}: {response_content[k]}")
 
                 # 如果完全没有返回结果，这是整批次的失败，需要重试
                 if not response_content:
@@ -675,12 +663,6 @@ class SubtitleOptimizer:
                             'optimized': translated_text['optimized']
                         })
                 
-                # 记录翻译示例（调试用）
-                if translated_subtitle:
-                    logger.info(f"✅ {batch_info} 翻译完成示例:")
-                    for item in translated_subtitle[:2]:  # 显示前2个翻译结果
-                        logger.info(f"   原文: {item['optimized']}")
-                        logger.info(f"   译文: {item['translation']}")
 
                 return translated_subtitle
 
