@@ -3,8 +3,9 @@
 """
 import time
 import string
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from rich import print
 
@@ -125,47 +126,114 @@ class SubtitleTranslatorService:
             
             print(f"📊 [bold blue]加载完成[/bold blue]")
             
-            # 智能断句处理 - 统一处理策略（v0.4.0 重大升级）
+            # 并行预处理阶段：断句和总结同时进行（v0.5.x 性能优化）
             # 借鉴VideoCaptioner的解决方案：统一转换为单词级别后进行断句
-            # 优势：1) 复用现有批量框架 2) 无额外API成本 3) 时间戳精确分配
-            split_time = 0
-            section_start_time = time.time()
-            log_section_start(logger, "字幕断句处理", "✂️")
-            
-            # 检查字幕类型并统一转换为单词级别
-            if asr_data.is_word_timestamp():
-                print(f"✂️ [bold yellow]检测到单词级别字幕，进行智能断句...[/bold yellow]")
-                logger.info("检测到单词级别时间戳，执行合并断句")
-            else:
-                print(f"✂️ [bold yellow]检测到片段级别字幕，转换为单词级别后进行断句...[/bold yellow]")
-                logger.info("检测到片段级别时间戳，先转换为单词级别")
-                # 统一转换为单词级别字幕（核心创新功能）
-                # 使用音素级时间戳分配，支持多语言处理
-                asr_data = asr_data.split_to_word_segments()
-                logger.info(f"转换完成，生成 {len(asr_data.segments)} 个单词级别片段")
-            
-            # 执行统一的断句处理流程
-            # 现在所有字幕都是单词级别，可以使用相同的批量处理策略
-            model = self.config.split_model
-            logger.info(f"🤖 使用模型: {model}")
-            logger.info(f"📏 句子长度限制: {self.config.max_word_count_english} 字")
-            
-            asr_data = merge_segments(asr_data, model=model, 
-                                   num_threads=self.config.thread_num, 
-                                   save_split=None)
-            
-            split_time = time.time() - section_start_time
-            log_section_end(logger, "字幕断句处理", split_time, "✅")
-            print(f"✅ [bold green]断句完成[/bold green] (优化为 [cyan]{len(asr_data.segments)}[/cyan] 句)")
-            
-            if split_time > 0:
-                stage_times["✂️  智能断句"] = split_time
-            
-            # 获取字幕摘要
-            summary_start_time = time.time()
-            summarize_result = self._get_subtitle_summary(asr_data, str(input_srt_path.resolve()))
-            summary_time = time.time() - summary_start_time
-            stage_times["🔍 内容分析"] = summary_time
+            # 优势：1) 复用现有批量框架 2) 无额外API成本 3) 时间戳精确分配 4) 并行处理节省时间
+            preprocessing_start_time = time.time()
+            log_section_start(logger, "并行预处理阶段", "⚡")
+
+            print(f"⚡ [bold cyan]启动并行预处理：断句 + 内容分析...[/bold cyan]")
+
+            # 准备原始字幕内容用于总结（断句前）
+            original_subtitle_content = asr_data.to_txt()
+
+            # 启动断句任务
+            def execute_splitting(asr_data_copy: SubtitleData) -> Tuple[SubtitleData, float]:
+                """执行断句处理的任务函数"""
+                section_start_time = time.time()
+                log_section_start(logger, "字幕断句处理", "✂️")
+
+                # 检查字幕类型并统一转换为单词级别
+                if asr_data_copy.is_word_timestamp():
+                    print(f"✂️ [bold yellow]检测到单词级别字幕，进行智能断句...[/bold yellow]")
+                    logger.info("检测到单词级别时间戳，执行合并断句")
+                else:
+                    print(f"✂️ [bold yellow]检测到片段级别字幕，转换为单词级别后进行断句...[/bold yellow]")
+                    logger.info("检测到片段级别时间戳，先转换为单词级别")
+                    # 统一转换为单词级别字幕（核心创新功能）
+                    # 使用音素级时间戳分配，支持多语言处理
+                    asr_data_copy = asr_data_copy.split_to_word_segments()
+                    logger.info(f"转换完成，生成 {len(asr_data_copy.segments)} 个单词级别片段")
+
+                # 执行统一的断句处理流程
+                # 现在所有字幕都是单词级别，可以使用相同的批量处理策略
+                model = self.config.split_model
+                logger.info(f"🤖 使用模型: {model}")
+                logger.info(f"📏 句子长度限制: {self.config.max_word_count_english} 字")
+
+                asr_data_copy = merge_segments(asr_data_copy, model=model,
+                                             num_threads=self.config.thread_num,
+                                             save_split=None)
+
+                split_time = time.time() - section_start_time
+                log_section_end(logger, "字幕断句处理", split_time, "✅")
+                print(f"✅ [bold green]断句完成[/bold green] (优化为 [cyan]{len(asr_data_copy.segments)}[/cyan] 句)")
+
+                return asr_data_copy, split_time
+
+            # 启动总结任务
+            def execute_summarization(subtitle_content: str, input_file: str) -> Tuple[dict, float]:
+                """执行总结处理的任务函数"""
+                summary_start_time = time.time()
+                summarize_result = self._get_subtitle_summary(subtitle_content, input_file, is_parallel=True)
+                summary_time = time.time() - summary_start_time
+                return summarize_result, summary_time
+
+            # 并行执行断句和总结任务
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                # 提交任务
+                split_future = executor.submit(execute_splitting, asr_data)
+                summary_future = executor.submit(execute_summarization, original_subtitle_content, str(input_srt_path.resolve()))
+
+                # 等待任务完成并处理结果
+                try:
+                    # 获取断句结果
+                    asr_data, split_time = split_future.result()
+                    stage_times["✂️  智能断句"] = split_time
+
+                    # 获取总结结果
+                    summarize_result, summary_time = summary_future.result()
+                    stage_times["🔍 内容分析"] = summary_time
+
+                except Exception as e:
+                    # 处理并行任务中的异常
+                    logger.error(f"❌ 并行预处理任务失败: {str(e)}")
+
+                    # 安全地检查任务异常
+                    split_exception = None
+                    summary_exception = None
+
+                    try:
+                        split_exception = split_future.exception()
+                    except Exception:
+                        pass
+
+                    try:
+                        summary_exception = summary_future.exception()
+                    except Exception:
+                        pass
+
+                    if split_exception:
+                        error_msg = f"断句任务失败: {split_exception}"
+                        logger.error(f"❌ {error_msg}")
+                        from .translation_core.spliter import SmartSplitError
+                        raise SmartSplitError(error_msg) from split_exception
+
+                    if summary_exception:
+                        error_msg = f"内容分析任务失败: {summary_exception}"
+                        logger.error(f"❌ {error_msg}")
+                        from .translation_core.spliter import SummaryError
+                        raise SummaryError(error_msg) from summary_exception
+
+                    # 未知异常
+                    raise e
+
+            preprocessing_time = time.time() - preprocessing_start_time
+            log_section_end(logger, "并行预处理阶段", preprocessing_time, "🎉")
+            print(f"🎉 [bold green]并行预处理完成[/bold green] (总耗时: [cyan]{preprocessing_time:.1f}s[/cyan])")
+
+            # 添加并行处理统计
+            stage_times["⚡ 并行预处理"] = preprocessing_time
             
             # 翻译字幕
             translate_start_time = time.time()
@@ -217,21 +285,28 @@ class SubtitleTranslatorService:
             logger.exception("详细错误信息:")
             raise
 
-    def _get_subtitle_summary(self, asr_data: SubtitleData, input_file: str) -> dict:
-        """获取字幕内容摘要"""
+    def _get_subtitle_summary(self, subtitle_content: str, input_file: str, is_parallel: bool = False) -> dict:
+        """获取字幕内容摘要
+
+        Args:
+            subtitle_content: 字幕内容文本
+            input_file: 输入文件路径
+            is_parallel: 是否为并行调用模式
+        """
         logger = self._get_logger()
-        section_start_time = time.time()
-        log_section_start(logger, "字幕内容分析", "🔍")
-        print(f"🔍 [bold cyan]内容分析中...[/bold cyan]")
-        
+
+        # 在并行模式下，不重复输出日志头部信息
+        if not is_parallel:
+            print(f"🔍 [bold cyan]内容分析中...[/bold cyan]")
+
         logger.info(f"🤖 使用模型: {self.config.summary_model}")
-        summarize_result = self.summarizer.summarize(asr_data.to_txt(), input_file)
+        summarize_result = self.summarizer.summarize(subtitle_content, input_file)
         logger.info(f"总结字幕内容:\n{summarize_result.get('summary')}\n")
-        
-        section_elapsed = time.time() - section_start_time
-        log_section_end(logger, "字幕内容分析", section_elapsed, "✅")
-        print(f"✅ [bold green]内容分析完成[/bold green]")
-        
+
+        # 在并行模式下，不重复输出完成信息
+        if not is_parallel:
+            print(f"✅ [bold green]内容分析完成[/bold green]")
+
         return summarize_result
 
     def _translate_subtitles(self, asr_data: SubtitleData, summarize_result: dict) -> list:
@@ -334,11 +409,34 @@ class SubtitleTranslatorService:
     def _format_time_stats(self, stages: dict, total_time: float) -> None:
         """格式化显示时间统计"""
         print(f"⏱️  [bold blue]耗时统计:[/bold blue]")
-        
+
+        # 检查是否有并行处理阶段
+        has_parallel = "⚡ 并行预处理" in stages
+
+        if has_parallel:
+            print(f"   📊 [bold yellow]并行优化效果:[/bold yellow]")
+
+            # 计算并行处理的优化效果
+            parallel_time = stages.get("⚡ 并行预处理", 0)
+            split_time = stages.get("✂️  智能断句", 0)
+            summary_time = stages.get("🔍 内容分析", 0)
+
+            if split_time > 0 and summary_time > 0:
+                serial_time = split_time + summary_time  # 串行处理需要的时间
+                time_saved = serial_time - parallel_time  # 节省的时间
+                efficiency_gain = (time_saved / serial_time) * 100 if serial_time > 0 else 0
+
+                print(f"      ⚡ 并行处理: [cyan]{parallel_time:.1f}s[/cyan]")
+                print(f"      📏 断句时间: [dim]{split_time:.1f}s[/dim]")
+                print(f"      🔍 分析时间: [dim]{summary_time:.1f}s[/dim]")
+                print(f"      ⏱️  串行耗时: [dim]{serial_time:.1f}s[/dim]")
+                print(f"      💡 节省时间: [green]{time_saved:.1f}s[/green] ([green]{efficiency_gain:.0f}%[/green])")
+                print()
+
         # 按执行顺序显示各阶段（保持字典插入顺序）
         for stage_name, elapsed_time in stages.items():
-            if elapsed_time > 0:
+            if elapsed_time > 0 and stage_name != "⚡ 并行预处理":  # 并行处理已单独显示
                 percentage = (elapsed_time / total_time) * 100
                 print(f"   {stage_name}: [cyan]{elapsed_time:.1f}s[/cyan] ([dim]{percentage:.0f}%[/dim])")
-        
+
         print(f"   [bold]总计: [cyan]{total_time:.1f}s[/cyan][/bold]") 
