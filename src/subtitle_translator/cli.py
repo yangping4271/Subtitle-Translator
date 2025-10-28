@@ -154,7 +154,6 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
         # 跳过已存在.ass文件的
         ass_file = Path(f"{base_name}.ass")
         if ass_file.exists():
-            print(f"INFO: {base_name}.ass 已存在，跳过处理。")
             continue
         
         # 确定输入文件优先级：srt > 音频 > 视频（音频转录更快）
@@ -307,20 +306,7 @@ def _show_results(count: int, generated_ass_files: list, output_dir: Path, is_ba
                 logger.info(f"  {f.name}")
             print(f"📺 [bold green]已生成 {len(generated_ass_files)} 个双语ASS文件[/bold green]")
         
-        # 过滤掉语言特定的SRT文件
-        language_patterns = [
-            '.zh.', '.zh-cn.', '.zh-tw.',  # 中文
-            '.ja.', '.ko.', '.th.', '.vi.',  # 亚洲语言
-            '.fr.', '.de.', '.es.', '.pt.', '.it.', '.ru.',  # 欧洲语言
-            '.ar.', '.en.'  # 其他
-        ]
-        srt_files = [f for f in output_dir.glob("*.srt") if not any(pattern in f.name for pattern in language_patterns)]
-        if srt_files:
-            logger.info("原始字幕文件：")
-            for f in srt_files:
-                logger.info(f"  {f.name}")
-    
-    logger.info("处理完毕！")
+        logger.info("处理完毕！")
 
 
 @app.command("model")
