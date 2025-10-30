@@ -147,8 +147,18 @@ def process_single_file(
 
             # 将转录结果保存为 SRT，使用 timestamps=True 获得更精细的时间戳
             srt_content = to_srt(result, timestamps=True)
+
+            # 确保输出目录存在
+            temp_srt_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # 验证输出路径可写
+            if not temp_srt_path.parent.exists():
+                raise RuntimeError(f"转录输出目录不存在: {temp_srt_path.parent}")
+
+            logger.info(f"转录SRT将保存到: {temp_srt_path}")
             with open(temp_srt_path, "w", encoding="utf-8") as f:
                 f.write(srt_content)
+            logger.info(f"转录SRT已保存: {temp_srt_path}")
 
             # 统计字幕数量并显示时间统计
             sentence_count = len(result.sentences)

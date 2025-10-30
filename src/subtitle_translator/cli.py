@@ -2,6 +2,7 @@
 主命令行接口模块 - 简洁清晰的CLI入口
 """
 import glob
+import os
 import re
 import typer
 from pathlib import Path
@@ -72,9 +73,24 @@ def main(
     # 设置输出目录
     if output_dir is None:
         output_dir = Path.cwd()
-    
+        logger.info(f"使用默认输出目录: {output_dir}")
+    else:
+        logger.info(f"使用指定输出目录: {output_dir}")
+
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"输出目录已解析为: {output_dir}")
+
+    # 验证输出目录是否可写
+    if not output_dir.exists():
+        logger.error(f"输出目录不存在: {output_dir}")
+        print(f"[bold red]❌ 输出目录不存在: {output_dir}[/bold red]")
+        raise typer.Exit(code=1)
+
+    if not os.access(output_dir, os.W_OK):
+        logger.error(f"输出目录不可写: {output_dir}")
+        print(f"[bold red]❌ 输出目录不可写: {output_dir}[/bold red]")
+        raise typer.Exit(code=1)
 
     # 获取要处理的文件列表
     if input_file:
