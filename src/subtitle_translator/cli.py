@@ -39,6 +39,7 @@ def main(
     model: str = typer.Option(DEFAULT_TRANSCRIPTION_MODEL, "--model", help="用于转录的 Parakeet MLX 模型。"),
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
     preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="预览模式，只显示将要处理的文件信息而不实际执行翻译。"),
     version: bool = typer.Option(False, "--version", help="显示版本信息并退出。"),
 ):
     """字幕翻译工具主命令"""
@@ -78,12 +79,18 @@ def main(
     # 获取要处理的文件列表
     if input_file:
         files_to_process = [input_file]
+        batch_input_dir = input_file.parent
         logger.info(f"开始处理单个文件: {input_file.name}")
         print(f"开始处理单个文件: [bold cyan]{input_file.name}[/bold cyan]")
     else:
         # 确定批量处理的输入目录
         batch_input_dir = input_dir if input_dir else Path.cwd()
         files_to_process = _get_batch_files(max_count, llm_model, batch_input_dir)
+
+    # 处理预览模式
+    if dry_run:
+        _show_dry_run_summary(files_to_process, target_lang, output_dir, model, llm_model, batch_input_dir)
+        raise typer.Exit(code=0)
 
     # 批量处理文件
     _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, preserve_intermediate)
@@ -202,6 +209,111 @@ def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path) 
         print(f"使用LLM模型: [bold cyan]{llm_model}[/bold cyan]")
 
     return files_to_process
+
+
+def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: Path,
+                         model: str, llm_model: Optional[str], input_dir: Path):
+    """显示预览模式的文件处理信息"""
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich import box
+
+    console = Console()
+
+    # 标题
+    console.print("\n[bold blue]🔍 预览模式 - 将要处理的文件信息[/bold blue]\n")
+
+    # 基本信息
+    info_table = Table(show_header=False, box=box.ROUNDED, expand=False)
+    info_table.add_column("项目", style="cyan", width=15)
+    info_table.add_column("值", style="white")
+
+    info_table.add_row("📁 输入目录", str(input_dir))
+    info_table.add_row("📂 输出目录", str(output_dir))
+    info_table.add_row("🎯 目标语言", target_lang)
+
+    # 显示模型配置
+    if llm_model:
+        info_table.add_row("🤖 LLM模型", llm_model)
+
+    needs_transcription = any(f.suffix.lower() != '.srt' for f in files_to_process)
+    if needs_transcription:
+        info_table.add_row("🎙️  转录模型", model)
+
+    console.print(info_table)
+    console.print()
+
+    # 文件列表
+    if files_to_process:
+        file_table = Table(title="📄 发现的文件列表", box=box.ROUNDED)
+        file_table.add_column("序号", style="cyan", width=6, justify="right")
+        file_table.add_column("文件名", style="white")
+        file_table.add_column("类型", style="yellow")
+        file_table.add_column("大小", style="green", justify="right")
+        file_table.add_column("处理方式", style="magenta")
+
+        for idx, file_path in enumerate(files_to_process, 1):
+            file_name = file_path.name
+            file_ext = file_path.suffix.lower()
+
+            # 确定文件类型
+            if file_ext == '.srt':
+                file_type = "字幕文件"
+                process_type = "直接翻译"
+            elif file_ext in ['.mp3', '.m4a', '.wav', '.flac', '.aac', '.ogg', '.wma', '.aiff', '.opus']:
+                file_type = "音频文件"
+                process_type = "转录+翻译"
+            elif file_ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpeg', '.mpg', '.3gp', '.ts']:
+                file_type = "视频文件"
+                process_type = "转录+翻译"
+            else:
+                file_type = "未知类型"
+                process_type = "未知"
+
+            # 获取文件大小
+            try:
+                file_size = file_path.stat().st_size
+                if file_size < 1024:
+                    size_str = f"{file_size} B"
+                elif file_size < 1024 * 1024:
+                    size_str = f"{file_size / 1024:.1f} KB"
+                else:
+                    size_str = f"{file_size / (1024 * 1024):.1f} MB"
+            except:
+                size_str = "未知"
+
+            file_table.add_row(str(idx), file_name, file_type, size_str, process_type)
+
+        console.print(file_table)
+
+        # 统计信息
+        total_size = sum(f.stat().st_size for f in files_to_process if f.exists())
+        srt_count = sum(1 for f in files_to_process if f.suffix.lower() == '.srt')
+        media_count = len(files_to_process) - srt_count
+
+        summary = f"""
+[bold]📊 处理统计:[/bold]
+• 总文件数: {len(files_to_process)} 个
+• 字幕文件: {srt_count} 个 (直接翻译)
+• 音视频文件: {media_count} 个 (转录+翻译)
+• 总大小: {total_size / (1024 * 1024):.1f} MB
+        """
+        console.print(Panel(summary.strip(), title="[bold green]处理概览[/bold green]", border_style="green"))
+
+    else:
+        console.print("[bold yellow]⚠️  没有发现可处理的文件[/bold yellow]")
+
+    # 提示信息
+    tip_panel = Panel(
+        "[bold cyan]💡 提示:[/bold cyan]\n"
+        "• 移除 [bold magenta]--dry-run[/bold magenta] 参数以开始实际处理\n"
+        "• 使用 [bold magenta]--count N[/bold magenta] 限制处理文件数量\n"
+        "• 使用 [bold magenta]--output-dir[/bold magenta] 指定输出目录",
+        title="[bold]操作指南[/bold]",
+        border_style="cyan"
+    )
+    console.print("\n", tip_panel)
 
 
 def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path,
