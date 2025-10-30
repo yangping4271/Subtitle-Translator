@@ -72,8 +72,13 @@ def main(
 
     # 设置输出目录
     if output_dir is None:
-        output_dir = Path.cwd()
-        logger.info(f"使用默认输出目录: {output_dir}")
+        # 智能默认输出目录：如果指定了输入目录，则使用输入目录；否则使用当前目录
+        if input_dir:
+            output_dir = input_dir
+            logger.info(f"使用输入目录作为输出目录: {output_dir}")
+        else:
+            output_dir = Path.cwd()
+            logger.info(f"使用当前目录作为输出目录: {output_dir}")
     else:
         logger.info(f"使用指定输出目录: {output_dir}")
 
