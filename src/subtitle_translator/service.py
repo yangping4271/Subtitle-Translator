@@ -247,11 +247,29 @@ class SubtitleTranslatorService:
             target_lang_output_path = output_dir / f"{base_name}.{target_lang}.srt"
             english_output_path = output_dir / f"{base_name}.en.srt"
 
+            # 验证输出目录
+            logger.info(f"翻译文件将保存到目录: {output_dir}")
+            logger.info(f"目标语言文件: {target_lang_output_path}")
+            logger.info(f"英文文件: {english_output_path}")
+
+            # 确保输出目录存在
+            output_dir.mkdir(parents=True, exist_ok=True)
+
             asr_data.save_translations_to_files(
                 translate_result,
                 str(english_output_path),
                 str(target_lang_output_path)
             )
+
+            # 验证文件是否成功保存
+            if not target_lang_output_path.exists():
+                raise RuntimeError(f"目标语言翻译文件保存失败: {target_lang_output_path}")
+            if not english_output_path.exists():
+                raise RuntimeError(f"英文翻译文件保存失败: {english_output_path}")
+
+            logger.info(f"翻译文件已保存:")
+            logger.info(f"  - 目标语言: {target_lang_output_path}")
+            logger.info(f"  - 英文: {english_output_path}")
             
             total_elapsed = time.time() - task_start_time
             
