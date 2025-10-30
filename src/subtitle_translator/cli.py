@@ -101,6 +101,8 @@ def main(
     else:
         # 确定批量处理的输入目录
         batch_input_dir = input_dir if input_dir else Path.cwd()
+        # 确保使用绝对路径，避免相对路径在显示时造成混淆
+        batch_input_dir = batch_input_dir.resolve()
         files_to_process = _get_batch_files(max_count, llm_model, batch_input_dir)
 
     # 处理预览模式
