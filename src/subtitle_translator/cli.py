@@ -31,10 +31,11 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    input_file: Optional[Path] = typer.Option(None, "--input-file", "-i", help="要处理的单个文件路径，如不指定则批量处理当前目录。", exists=True, file_okay=True, dir_okay=False, readable=True),
+    input_file: Optional[Path] = typer.Option(None, "--input-file", "-i", help="要处理的单个文件路径，如不指定则批量处理当前目录或指定目录。", exists=True, file_okay=True, dir_okay=False, readable=True),
+    input_dir: Optional[Path] = typer.Option(None, "--input-dir", help="批量处理时指定输入目录，不指定则使用当前目录。", exists=True, file_okay=False, dir_okay=True, readable=True),
     max_count: int = typer.Option(-1, "--count", "-n", help="最大处理文件数量，-1表示处理所有文件。"),
-    target_lang: str = typer.Option("zh", "--target_lang", "-t", help="目标翻译语言。支持：zh/zh-cn(简中), zh-tw(繁中), ja(日), ko(韩), fr(法), de(德), es(西), pt(葡), it(意), ru(俄), ar(阿), th(泰), vi(越)等。"),
-    output_dir: Optional[Path] = typer.Option(None, "--output_dir", "-o", help="输出文件的目录，默认为当前目录。"),
+    target_lang: str = typer.Option("zh", "--target-lang", "-t", help="目标翻译语言。支持：zh/zh-cn(简中), zh-tw(繁中), ja(日), ko(韩), fr(法), de(德), es(西), pt(葡), it(意), ru(俄), ar(阿), th(泰), vi(越)等。"),
+    output_dir: Optional[Path] = typer.Option(None, "--output-dir", "-o", help="输出文件的目录，默认为当前目录。"),
     model: str = typer.Option(DEFAULT_TRANSCRIPTION_MODEL, "--model", help="用于转录的 Parakeet MLX 模型。"),
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
     preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
@@ -80,7 +81,9 @@ def main(
         logger.info(f"开始处理单个文件: {input_file.name}")
         print(f"开始处理单个文件: [bold cyan]{input_file.name}[/bold cyan]")
     else:
-        files_to_process = _get_batch_files(max_count, llm_model)
+        # 确定批量处理的输入目录
+        batch_input_dir = input_dir if input_dir else Path.cwd()
+        files_to_process = _get_batch_files(max_count, llm_model, batch_input_dir)
 
     # 批量处理文件
     _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, preserve_intermediate)
@@ -99,7 +102,7 @@ def _natural_sort_key(s: str):
     return [int(p) if p.isdigit() else p.casefold() for p in parts]
 
 
-def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
+def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path) -> list:
     """获取批量处理的文件列表"""
     MEDIA_EXTENSIONS = [
         "*.srt",  # 字幕文件
@@ -112,13 +115,16 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
         "*.3gp", "*.ts"
     ]
 
-    # 查找所有媒体文件
+    # 确保input_dir是绝对路径
+    input_dir = input_dir.resolve()
+
+    # 查找所有媒体文件（使用绝对路径）
     media_files = []
     for pattern in MEDIA_EXTENSIONS:
-        media_files.extend(glob.glob(pattern))
+        media_files.extend(glob.glob(str(input_dir / pattern)))
     
     if not media_files:
-        print("[bold red]当前目录没有找到需要处理的媒体文件。[/bold red]")
+        print(f"[bold red]{input_dir} 目录中没有找到需要处理的媒体文件。[/bold red]")
         print("[dim]支持的格式：[/dim]")
         print("[dim]  • 字幕文件: .srt[/dim]")
         print("[dim]  • 音频文件: .mp3, .m4a, .wav, .flac, .aac, .ogg, .wma, .aiff, .opus[/dim]")
@@ -127,12 +133,17 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
     
     # 提取基础文件名并去重排序
     base_names = set()
-    for file in media_files:
+    for file_path in media_files:
+        # 转换为Path对象并获取相对于input_dir的路径
+        file = Path(file_path)
+        relative_path = file.relative_to(input_dir)
+        file_name = relative_path.name
+
         # 移除扩展名
         base_name = re.sub(
             r'\.(srt|mp3|m4a|wav|flac|aac|ogg|wma|aiff|opus|'
             r'mp4|avi|mov|mkv|webm|flv|wmv|m4v|mpeg|mpg|3gp|ts)$',
-            '', file, flags=re.IGNORECASE
+            '', file_name, flags=re.IGNORECASE
         )
         # 移除各种语言后缀
         language_suffixes = [
@@ -152,10 +163,10 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
     files_to_process = []
     for base_name in base_names:
         # 跳过已存在.ass文件的
-        ass_file = Path(f"{base_name}.ass")
+        ass_file = input_dir / f"{base_name}.ass"
         if ass_file.exists():
             continue
-        
+
         # 确定输入文件优先级：srt > 音频 > 视频（音频转录更快）
         input_file_found = None
         # 音频格式列表（按常用程度排序）
@@ -167,11 +178,11 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
                       '.3gp', '.ts']
 
         for ext in ['.srt'] + audio_exts + video_exts:
-            candidate = Path(f"{base_name}{ext}")
+            candidate = input_dir / f"{base_name}{ext}"
             if candidate.exists():
                 input_file_found = candidate
                 break
-        
+
         if input_file_found:
             files_to_process.append(input_file_found)
             print(f"📄 发现文件 [cyan]{input_file_found}[/cyan]")
@@ -181,15 +192,15 @@ def _get_batch_files(max_count: int, llm_model: Optional[str]) -> list:
     if not files_to_process:
         print("[bold yellow]没有找到需要处理的新文件。[/bold yellow]")
         raise typer.Exit(code=0)
-    
+
     # 应用数量限制
     if max_count > 0:
         files_to_process = files_to_process[:max_count]
-    
+
     print(f"[bold green]开始批量翻译处理，共{len(files_to_process)}个文件...[/bold green]")
     if llm_model:
         print(f"使用LLM模型: [bold cyan]{llm_model}[/bold cyan]")
-    
+
     return files_to_process
 
 
