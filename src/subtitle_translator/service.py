@@ -431,29 +431,9 @@ class SubtitleTranslatorService:
         # 检查是否有并行处理阶段
         has_parallel = "⚡ 并行预处理" in stages
 
-        if has_parallel:
-            print(f"   📊 [bold yellow]并行优化效果:[/bold yellow]")
-
-            # 计算并行处理的优化效果
-            parallel_time = stages.get("⚡ 并行预处理", 0)
-            split_time = stages.get("✂️  智能断句", 0)
-            summary_time = stages.get("🔍 内容分析", 0)
-
-            if split_time > 0 and summary_time > 0:
-                serial_time = split_time + summary_time  # 串行处理需要的时间
-                time_saved = serial_time - parallel_time  # 节省的时间
-                efficiency_gain = (time_saved / serial_time) * 100 if serial_time > 0 else 0
-
-                print(f"      ⚡ 并行处理: [cyan]{parallel_time:.1f}s[/cyan]")
-                print(f"      📏 断句时间: [dim]{split_time:.1f}s[/dim]")
-                print(f"      🔍 分析时间: [dim]{summary_time:.1f}s[/dim]")
-                print(f"      ⏱️  串行耗时: [dim]{serial_time:.1f}s[/dim]")
-                print(f"      💡 节省时间: [green]{time_saved:.1f}s[/green] ([green]{efficiency_gain:.0f}%[/green])")
-                print()
-
         # 按执行顺序显示各阶段（保持字典插入顺序）
         for stage_name, elapsed_time in stages.items():
-            if elapsed_time > 0 and stage_name != "⚡ 并行预处理":  # 并行处理已单独显示
+            if elapsed_time > 0 and stage_name != "⚡ 并行预处理":  # 并行处理不单独显示
                 percentage = (elapsed_time / total_time) * 100
                 print(f"   {stage_name}: [cyan]{elapsed_time:.1f}s[/cyan] ([dim]{percentage:.0f}%[/dim])")
 
