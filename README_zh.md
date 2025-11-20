@@ -196,7 +196,36 @@ uv run python -m subtitle_translator.cli --help
 
 # 运行转录功能
 uv run python -m subtitle_translator.transcription_core.cli --help
+
+# 运行字幕服务器
+uv run python -m subtitle_translator.cli serve --help
 ```
+
+## Chrome 扩展与字幕服务器
+
+本项目包含一个 Chrome 扩展，用于在 YouTube 视频上显示本地字幕。
+
+### 1. 安装扩展
+1. 打开 Chrome 并访问 `chrome://extensions/`
+2. 开启右上角的 **开发者模式**
+3. 点击 **加载已解压的扩展程序** 并选择本项目中的 `extension/` 目录
+
+### 2. 启动字幕服务器
+扩展程序需要本地服务器来访问您的字幕文件。
+
+```bash
+# 启动服务器 (默认服务当前目录和 ~/Downloads)
+translate serve
+
+# 服务指定目录
+translate serve --dir ~/Movies/Subtitles --dir ~/Downloads
+```
+
+### 3. 使用方法
+1. 将您的 `.ass` 或 `.srt` 文件放入被服务的目录中。
+2. 将文件命名为 YouTube 视频 ID (例如 `dQw4w9WgXcQ.ass`)。
+3. 打开 YouTube 视频，扩展程序将自动加载字幕。
+
 
 ## 许可证
 

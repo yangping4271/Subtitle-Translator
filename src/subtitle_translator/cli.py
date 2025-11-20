@@ -6,16 +6,14 @@ import os
 import re
 import typer
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from typing_extensions import Annotated
 
 from rich import print
 
 from .env_setup import setup_environment
-from .processor import process_single_file
+from .env_setup import setup_environment
 from .logger import setup_logger
-from .transcription_core.utils import _find_cached_model, _check_network_connectivity, from_pretrained
-from .transcription_core import utils as transcription_utils
 
 # 默认转录模型
 DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
@@ -391,6 +389,7 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
             
             try:
                 # 根据实际情况传递批量模式标志
+                from .processor import process_single_file
                 process_single_file(
                     current_input_file, target_lang, output_dir, model,
                     llm_model, model_precheck_passed,
@@ -528,6 +527,7 @@ def model_cmd(
         try:
             # 尝试查找本地缓存
             try:
+                from .transcription_core.utils import _find_cached_model
                 config_path, weight_path = _find_cached_model(model_id)
                 console.print(f"✅ [green]模型已缓存[/green]: [bold]{model_id}[/bold]")
                 console.print(f"📄 配置文件: [dim]{config_path}[/dim]")
@@ -543,6 +543,7 @@ def model_cmd(
                 console.print("💡 你可以使用 'translate model download' 命令预下载模型")
                 
                 # 检查网络连接
+                from .transcription_core.utils import _check_network_connectivity
                 if _check_network_connectivity():
                     console.print("🌐 网络连接正常，模型将在首次使用时自动下载")
                 else:
@@ -563,6 +564,7 @@ def model_cmd(
             
             # 检查是否已经缓存
             try:
+                from .transcription_core.utils import _find_cached_model
                 _find_cached_model(model_id)
                 console.print(f"✅ [green]模型已存在于本地缓存[/green]")
                 return
@@ -570,6 +572,7 @@ def model_cmd(
                 pass
             
             # 下载模型
+            from .transcription_core.utils import from_pretrained
             model = from_pretrained(model_id, show_progress=True)
             console.print(f"\n🎉 [bold green]模型预下载完成![/bold green]")
             console.print(f"📍 模型已保存到本地缓存，后续使用时将直接加载")
@@ -623,6 +626,24 @@ def model_cmd(
         console.print("   translate model clean                                   # 清理缓存")
 
 
+
+@app.command("serve")
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Server host"),
+    port: int = typer.Option(8888, "--port", "-p", help="Server port"),
+    subtitle_dirs: Optional[List[str]] = typer.Option(None, "--dir", "-d", help="Subtitle directories"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug mode")
+):
+    """Start the local subtitle server for YouTube SubtitlePlus extension."""
+    from .server.app import run_server
+    
+    if not subtitle_dirs:
+        # Default to current directory and Downloads
+        subtitle_dirs = [".", "~/Downloads", "~/subtitles"]
+        
+    run_server(host, port, subtitle_dirs, debug)
+
+
 @app.command("version")
 def version():
     """显示版本信息"""
@@ -634,4 +655,4 @@ def version():
 
 
 if __name__ == "__main__":
-    app() 
+    app()

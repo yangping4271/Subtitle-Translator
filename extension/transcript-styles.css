@@ -1,0 +1,115 @@
+/* Button Wrapper */
+.YTSP-button-wrapper {
+    position: relative;
+    margin-right: 8px;
+    display: flex;
+    background-color: transparent;
+    text-rendering: optimizeLegibility !important;
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+    align-items: center;
+}
+
+.YTSP-button-wrapper:hover {
+    background-color: rgba(255, 255, 255, .1);
+    border-radius: 24px;
+}
+
+.YTSP-button-wrapper:active {
+    background-color: rgba(255, 255, 255, .2);
+    border-radius: 24px;
+}
+
+html:not([dark]) .YTSP-button-wrapper:hover {
+    background-color: rgba(0, 0, 0, .1);
+}
+
+html:not([dark]) .YTSP-button-wrapper:active {
+    background-color: rgba(0, 0, 0, .2);
+}
+
+/* Button Style */
+.YTSP-button-style {
+    width: 40px;
+    height: 40px;
+    font-family: -apple-system, system-ui, "Roboto", "Arial", sans-serif;
+    font-size: 24px;
+    display: inline-block;
+    position: relative;
+    box-sizing: border-box;
+    vertical-align: middle;
+    color: white;
+    outline: none;
+    background: transparent;
+    margin: 0;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html:not([dark]) .YTSP-button-style {
+    color: black;
+}
+
+/* Tooltip */
+.YTSP-button-tooltip {
+    visibility: hidden;
+    background-color: black;
+    color: white;
+    text-align: center;
+    border-radius: 2px;
+    padding: 6px 8px;
+    position: absolute;
+    z-index: 2053;
+    top: 120%;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    white-space: nowrap;
+    font-size: 12px;
+    font-family: -apple-system, "Roboto", "Arial", sans-serif;
+    border-top: solid 1px white;
+    border-bottom: solid 1px black;
+    transition: opacity 0.2s;
+}
+
+.YTSP-button-tooltip-arrow {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: transparent transparent black transparent;
+}
+
+/* Notification */
+.YTSP-overlay {
+    position: fixed;
+    display: flex;
+    z-index: 2053;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, .5);
+    backdrop-filter: blur(5px);
+    pointer-events: none; /* Allow clicking through if transparent, but here it blocks. Logic in JS handles removal. */
+}
+
+.YTSP-notification {
+    background: hsl(0, 0%, 7%);
+    padding: 20px 30px;
+    border-radius: 8px;
+    border: 1px solid hsl(0, 0%, 18.82%);
+    max-width: 80%;
+    text-align: center;
+    font-family: -apple-system, "Roboto", "Arial", sans-serif;
+    font-size: 16px;
+    color: white;
+    user-select: none;
+    pointer-events: auto;
+}

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube本地字幕</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <!-- 精简的标题栏 -->
+        <div class="header">
+            <div class="header-content">
+                <div class="app-info">
+                    <h1>🎥 YouTube字幕助手</h1>
+                    <span class="version">v1.0.0</span>
+                </div>
+                <!-- 主开关 -->
+                <label class="master-toggle">
+                    <input type="checkbox" id="subtitleToggle">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <!-- 标签页导航 -->
+        <div class="tab-navigation">
+            <button class="tab-button active" data-tab="files">
+                <span class="tab-icon">📁</span>
+                <span class="tab-text">文件管理</span>
+            </button>
+            <button class="tab-button" data-tab="settings">
+                <span class="tab-icon">⚙️</span>
+                <span class="tab-text">样式设定</span>
+            </button>
+            <button class="tab-button" data-tab="about">
+                <span class="tab-icon">ℹ️</span>
+                <span class="tab-text">关于</span>
+            </button>
+        </div>
+
+        <!-- 标签页内容 -->
+        <div class="main-content">
+            <!-- 文件管理标签页 -->
+            <div class="tab-content active" id="filesTab">
+                <!-- 字幕统计区域 -->
+                <div class="subtitle-stats">
+                    <div class="status-card">
+                        <div class="status-content">
+                            <div class="status-info">
+                                <span class="status-flag">🇺🇸</span>
+                                <span class="status-label">英文</span>
+                                <span class="status-count" id="englishCount">0条</span>
+                            </div>
+                            <div class="status-divider"></div>
+                            <div class="status-info">
+                                <span class="status-flag">🇨🇳</span>
+                                <span class="status-label">中文</span>
+                                <span class="status-count" id="chineseCount">0条</span>
+                            </div>
+                        </div>
+                        <div class="action-buttons">
+                            <button class="action-btn clear-btn" id="clearButton" title="清除所有字幕">
+                                <span>🗑️</span>
+                            </button>
+                            <button class="action-btn reset-btn" id="forceResetButton" title="重置扩展">
+                                <span>🔄</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 字幕上传方式选择 -->
+                <div class="upload-mode-tabs">
+                    <div class="tab-selector">
+                        <button class="mode-tab active" data-mode="auto">
+                            <span class="tab-icon">🤖</span>
+                            <span class="tab-text">自动加载</span>
+                        </button>
+                        <button class="mode-tab" data-mode="bilingual">
+                            <span class="tab-text">双语ASS</span>
+                        </button>
+                        <button class="mode-tab" data-mode="separate">
+                            <span class="tab-icon">📑</span>
+                            <span class="tab-text">分别上传</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 自动加载模式 -->
+                <div class="upload-content active" id="autoMode">
+                    <div class="auto-load-card">
+                        <!-- 状态指示卡片 -->
+                        <div class="server-status-card" id="serverStatus">
+                            <div class="status-display">
+                                <div class="status-indicator" id="statusIndicator">
+                                    <div class="status-circle">
+                                        <span class="status-icon" id="statusIcon">⚡</span>
+                                    </div>
+                                    <div class="status-info">
+                                        <div class="status-title" id="statusText">检查服务器状态中...</div>
+                                        <div class="status-subtitle" id="statusSubtext">正在连接本地服务器</div>
+                                    </div>
+                                </div>
+                                <button class="status-test-btn" id="testServer" title="测试连接">
+                                    <span class="test-icon">🔍</span>
+                                    <span class="test-text">测试</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 主控制区域 -->
+                        <div class="auto-control-section">
+                            <div class="control-header">
+                                <div class="control-title">
+                                    <span class="control-icon">🤖</span>
+                                    <span>自动字幕加载</span>
+                                </div>
+                                <label class="main-toggle">
+                                    <input type="checkbox" id="autoLoadToggle">
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            
+                            <!-- 当前视频信息 -->
+                            <div class="current-video-display" id="currentVideoInfo">
+                                <div class="video-info-row">
+                                    <span class="video-label">🎬 当前视频</span>
+                                    <span class="video-id" id="currentVideoId">未检测到视频</span>
+                                </div>
+                                <div class="load-status-row">
+                                    <span class="load-label">字幕状态</span>
+                                    <span class="load-status" id="autoLoadStatus">等待检测</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 可折叠的服务器配置 -->
+                        <div class="config-section">
+                            <button class="config-toggle" id="configToggle">
+                                <span class="config-arrow">▶</span>
+                                <span>服务器配置</span>
+                                <span class="config-hint">点击展开设置</span>
+                            </button>
+                            
+                            <div class="config-panel" id="configPanel">
+                                <div class="config-input-group">
+                                    <label for="serverUrl" class="config-label">
+                                        <span class="config-icon">🌐</span>
+                                        <span>服务器地址</span>
+                                    </label>
+                                    <input type="text" id="serverUrl" value="http://127.0.0.1:8888" 
+                                           placeholder="http://127.0.0.1:8888" class="config-input">
+                                </div>
+                                
+                                <div class="config-help">
+                                    <div class="help-item">
+                                        <span class="help-number">1</span>
+                                        <span class="help-text">启动本地字幕服务器</span>
+                                    </div>
+                                    <div class="help-item">
+                                        <span class="help-number">2</span>
+                                        <span class="help-text">字幕文件名设为视频ID</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ASS双语字幕上传区 -->
+                <div class="upload-content" id="bilingualMode">
+                    <div class="ass-upload-card">
+                        <div class="ass-card-header">
+                            <div class="ass-title">
+                                <span class="ass-icon">✨</span>
+                                <span>ASS双语字幕文件</span>
+                            </div>
+                            <div class="ass-subtitle">一个文件包含英文+中文双语字幕</div>
+                        </div>
+                        
+                        <div class="ass-drop-zone" id="assUploadArea">
+                            <div class="ass-drop-content">
+                                <div class="ass-drop-icon">🎬</div>
+                                <div class="ass-drop-text">
+                                    <strong>拖拽ASS文件到此处或点击选择</strong>
+                                    <p>支持包含Default和Secondary样式的ASS字幕文件</p>
+                                </div>
+                            </div>
+                            <input type="file" id="assFileInput" accept=".ass" hidden>
+                        </div>
+
+                        <div class="ass-file-status" id="assFileStatus" style="display: none;">
+                            <div class="status-header">
+                                <span class="status-icon">📄</span>
+                                <span class="status-filename" id="assFileName"></span>
+                                <button class="status-remove" id="assRemove" title="移除ASS文件">🗑️</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 分别上传模式 -->
+                <div class="upload-content" id="separateMode">
+                    <div class="separate-upload-header">
+                        <div class="separate-title">
+                            <span class="separate-icon">📑</span>
+                            <span>分别上传字幕文件</span>
+                        </div>
+                        <div class="separate-subtitle">分别选择英文和中文字幕文件</div>
+                    </div>
+                    
+                    <div class="file-upload-section">
+                    <!-- 英文字幕 -->
+                    <div class="file-card" id="englishCard">
+                        <div class="file-header">
+                            <span class="file-flag">🇺🇸</span>
+                            <span class="file-type">英文字幕</span>
+                            <span class="file-formats">SRT/VTT</span>
+                        </div>
+                        <div class="file-drop-zone" id="englishUploadArea">
+                            <div class="drop-content">
+                                <div class="drop-icon">📄</div>
+                                <div class="drop-text">
+                                    <strong>拖拽或点击上传</strong>
+                                    <p>选择英文字幕文件</p>
+                                </div>
+                            </div>
+                            <input type="file" id="englishFileInput" accept=".srt,.vtt" hidden>
+                        </div>
+                        <div class="file-info" id="englishFileInfo">
+                            <span class="file-name" id="englishFileName" title="">未选择文件</span>
+                            <button class="file-remove" id="englishRemove" style="display: none;" title="移除此文件">×</button>
+                        </div>
+                    </div>
+
+                    <!-- 中文字幕 -->
+                    <div class="file-card" id="chineseCard">
+                        <div class="file-header">
+                            <span class="file-flag">🇨🇳</span>
+                            <span class="file-type">中文字幕</span>
+                            <span class="file-formats">SRT/VTT</span>
+                        </div>
+                        <div class="file-drop-zone" id="chineseUploadArea">
+                            <div class="drop-content">
+                                <div class="drop-icon">📄</div>
+                                <div class="drop-text">
+                                    <strong>拖拽或点击上传</strong>
+                                    <p>选择中文字幕文件</p>
+                                </div>
+                            </div>
+                            <input type="file" id="chineseFileInput" accept=".srt,.vtt" hidden>
+                        </div>
+                        <div class="file-info" id="chineseFileInfo">
+                            <span class="file-name" id="chineseFileName" title="">未选择文件</span>
+                            <button class="file-remove" id="chineseRemove" style="display: none;" title="移除此文件">×</button>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 样式设定标签页 -->
+            <div class="tab-content" id="settingsTab">
+                <!-- 语言切换区 -->
+                <div class="language-switcher">
+                    <div class="switch-header">
+                        <span class="switch-label">当前语言</span>
+                    </div>
+                    <div class="language-buttons">
+                        <button class="lang-btn active" data-lang="english" id="englishTab">
+                            <span class="lang-flag">🇺🇸</span>
+                            <span class="lang-name">English</span>
+                        </button>
+                        <button class="lang-btn" data-lang="chinese" id="chineseTab">
+                            <span class="lang-flag">🇨🇳</span>
+                            <span class="lang-name">中文</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 详细设置 -->
+                <div class="settings-card">
+                    <div class="settings-header">
+                        <span>⚙️ 详细设置</span>
+                        <button class="reset-btn" id="resetSettings" title="恢复默认">
+                            <span>🔄</span>
+                        </button>
+                    </div>
+                    
+                    <div class="settings-grid">
+                        <!-- 字体大小 -->
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <span class="setting-icon">📏</span>
+                                <span class="setting-name">字体大小</span>
+                                <span class="setting-value" id="fontSizeValue">30px</span>
+                            </div>
+                            <input type="range" id="fontSize" min="16" max="72" value="30" class="setting-slider">
+                        </div>
+
+                        <!-- 字体颜色 -->
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <span class="setting-icon">🎨</span>
+                                <span class="setting-name">字体颜色</span>
+                                <span class="color-preview" id="colorPreview"></span>
+                            </div>
+                            <div class="color-selector">
+                                <select id="fontColorPreset" class="setting-select">
+                                    <option value="#ffffff">白色</option>
+                                    <option value="#ffff00">黄色</option>
+                                    <option value="#00ff00">绿色</option>
+                                    <option value="#ff0000">红色</option>
+                                    <option value="#0000ff">蓝色</option>
+                                    <option value="#ffa500">橙色</option>
+                                    <option value="#800080">紫色</option>
+                                    <option value="#ffc0cb">粉色</option>
+                                    <option value="custom">自定义...</option>
+                                </select>
+                                <input type="color" id="fontColor" value="#ffffff" class="color-picker" style="display: none;">
+                            </div>
+                        </div>
+
+                        <!-- 字体类型 -->
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <span class="setting-icon">🎭</span>
+                                <span class="setting-name">字体类型</span>
+                            </div>
+                            <select id="fontFamily" class="setting-select">
+                                <!-- 动态填充 -->
+                            </select>
+                        </div>
+
+                        <!-- 字体粗细 -->
+                        <div class="setting-item">
+                            <div class="setting-label">
+                                <span class="setting-icon">💪</span>
+                                <span class="setting-name">字体粗细</span>
+                            </div>
+                            <select id="fontWeight" class="setting-select">
+                                <option value="300">细体</option>
+                                <option value="400">正常</option>
+                                <option value="700" selected>粗体</option>
+                                <option value="900">最粗</option>
+                            </select>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- 关于标签页 -->
+            <div class="tab-content" id="aboutTab">
+                <div class="about-card">
+                    <div class="app-logo">
+                        <div class="logo-icon">🎥</div>
+                        <div class="logo-text">
+                            <h3>YouTube字幕助手</h3>
+                            <span class="version">v1.0.0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="feature-list">
+                        <div class="feature-item">
+                            <span class="feature-icon">🌍</span>
+                            <span class="feature-text">双语字幕显示</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">🎨</span>
+                            <span class="feature-text">自定义样式</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">📱</span>
+                            <span class="feature-text">全屏适配</span>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">⚡</span>
+                            <span class="feature-text">实时同步</span>
+                        </div>
+                    </div>
+                    
+                    <div class="about-actions">
+                        <button class="about-btn" id="helpLink">
+                            <span>❓</span>
+                            <span>使用帮助</span>
+                        </button>
+                        <button class="about-btn" id="feedbackLink">
+                            <span>📨</span>
+                            <span>反馈意见</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="tips-card">
+                    <div class="tips-header">
+                        <span>💡 使用技巧</span>
+                    </div>
+                    <div class="tip-item">
+                        <span class="tip-number">1</span>
+                        <span class="tip-text">支持SRT和VTT格式字幕文件</span>
+                    </div>
+                    <div class="tip-item">
+                        <span class="tip-number">2</span>
+                        <span class="tip-text">拖拽文件到上传区域即可加载</span>
+                    </div>
+                    <div class="tip-item">
+                        <span class="tip-number">3</span>
+                        <span class="tip-text">开启同步设置可统一调整样式</span>
+                    </div>
+                    <div class="tip-item">
+                        <span class="tip-number">4</span>
+                        <span class="tip-text">在全屏模式下效果更佳</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 配置必须在其他脚本之前加载 -->
+    <script src="config.js"></script>
+    <script src="subtitle-parser.js"></script>
+    <script src="popup.js"></script>
+</body>
+</html>
