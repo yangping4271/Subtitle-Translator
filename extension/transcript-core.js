@@ -10,7 +10,8 @@
         fileNamingFormat: 'title-channel',
         includeTimestamps: true,
         includeChapterHeaders: true,
-        settingsGuide: false
+        settingsGuide: false,
+        autoOpenTranscript: true
     };
 
     // Helper to get the main video element container
@@ -191,6 +192,29 @@
         });
     }
 
+    function openTranscript() {
+        // Try to find the "Show transcript" button and click it
+        const transcriptButton = document.querySelector('#button-container button[aria-label="Show transcript"]') ||
+            document.querySelector('button[aria-label="Show transcript"]');
+
+        if (transcriptButton) {
+            transcriptButton.click();
+            return true;
+        }
+
+        // If button not found, try to force open via Main World script
+        const engagementPanelSelector = 'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]';
+        const engagementPanel = document.querySelector(engagementPanelSelector);
+
+        if (engagementPanel) {
+            // Dispatch event to be caught by inject.js in the Main World
+            window.dispatchEvent(new CustomEvent('YTSP_OpenTranscript'));
+            return true;
+        }
+
+        return false;
+    }
+
     function handleTranscriptAction(callback) {
         const watchFlexyElement = getWatchFlexyElement();
         if (!watchFlexyElement) return;
@@ -202,30 +226,31 @@
             return;
         }
 
-        // 2. Try to find the "Show transcript" button and click it
-        const transcriptButton = document.querySelector('#button-container button[aria-label="Show transcript"]') ||
-            document.querySelector('button[aria-label="Show transcript"]');
-
-        if (transcriptButton) {
-            transcriptButton.click();
+        if (openTranscript()) {
             showNotification('Opening transcript...');
             waitForTranscript(callback);
+        } else {
+            alert('Transcript unavailable or cannot be found.\nEnsure the video has a transcript.');
+        }
+    }
+
+    function checkAndOpenTranscript() {
+        if (!USER_CONFIG.autoOpenTranscript) return;
+        
+        // Simple check if we are on a watch page
+        if (!location.href.includes('/watch')) return;
+
+        const watchFlexyElement = getWatchFlexyElement();
+        if (!watchFlexyElement) return;
+
+        // Check if transcript is already loaded/visible
+        const transcriptContainer = watchFlexyElement.querySelector('ytd-transcript-segment-list-renderer #segments-container');
+        if (transcriptContainer && transcriptContainer.children.length > 0) {
             return;
         }
-
-        // 3. If button not found, try to force open via Main World script
-        const engagementPanelSelector = 'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-searchable-transcript"]';
-        const engagementPanel = document.querySelector(engagementPanelSelector);
-
-        if (engagementPanel) {
-            showNotification('Forcing transcript panel open...');
-            // Dispatch event to be caught by inject.js in the Main World
-            window.dispatchEvent(new CustomEvent('YTSP_OpenTranscript'));
-            waitForTranscript(callback);
-            return;
-        }
-
-        alert('Transcript unavailable or cannot be found.\nEnsure the video has a transcript.');
+        
+        // Attempt to open
+        openTranscript();
     }
 
     function waitForTranscript(callback, retries = 0) {
@@ -338,6 +363,9 @@
     // Initialize
     function init() {
         createButtons();
+        
+        // Initial check for auto-open
+        setTimeout(checkAndOpenTranscript, 2000);
 
         // Observe for navigation or DOM changes that might remove our buttons
         const observer = new MutationObserver(() => {
@@ -346,6 +374,17 @@
             }
         });
         observer.observe(document.body, { childList: true, subtree: true });
+
+        // URL change observer for auto-open
+        let lastUrl = location.href;
+        new MutationObserver(() => {
+            if (location.href !== lastUrl) {
+                lastUrl = location.href;
+                if (location.href.includes('/watch')) {
+                    setTimeout(checkAndOpenTranscript, 2500);
+                }
+            }
+        }).observe(document.body, { childList: true, subtree: true });
     }
 
     if (document.readyState === 'loading') {
