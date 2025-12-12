@@ -2,6 +2,8 @@ import datetime
 import json
 import os
 import time
+import glob
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -559,7 +561,16 @@ def main_callback(
                     raise typer.Exit(code=1)
                 audio_files.append(file_path)
     
-    # 如果没有提供音频文件，显示帮助信息
+    # 如果没有提供音频文件，尝试扫描当前目录
+    if not audio_files:
+        print("[dim]未指定输入文件，扫描当前目录...[/dim]")
+        try:
+            audio_files = _scan_media_files(Path.cwd())
+        except typer.Exit as e:
+            # 如果扫描也没找到文件，会抛出Exit异常
+            raise e
+
+    # 如果仍然没有音频文件（理论上_scan_media_files会处理这种情况，但为了保险起见）
     if not audio_files:
         print("[bold red]错误: 请提供要转录的音频文件[/bold red]")
         print("\n💡 [bold blue]使用示例:[/bold blue]")
@@ -583,6 +594,69 @@ def main_callback(
         verbose=verbose,
         fp32=fp32
     )
+
+def _scan_media_files(input_dir: Path) -> List[Path]:
+    """扫描目录下的媒体文件，排除已有字幕的文件"""
+    # 媒体文件扩展名
+    MEDIA_EXTENSIONS = [
+        # 音频格式
+        "*.mp3", "*.m4a", "*.wav", "*.flac", "*.aac",
+        "*.ogg", "*.wma", "*.aiff", "*.opus",
+        # 视频格式
+        "*.mp4", "*.avi", "*.mov", "*.mkv", "*.webm",
+        "*.flv", "*.wmv", "*.m4v", "*.mpeg", "*.mpg",
+        "*.3gp", "*.ts"
+    ]
+
+    # 确保input_dir是绝对路径
+    input_dir = input_dir.resolve()
+
+    # 查找所有媒体文件
+    media_files = []
+    for pattern in MEDIA_EXTENSIONS:
+        media_files.extend(glob.glob(str(input_dir / pattern)))
+    
+    if not media_files:
+        print(f"[bold red]{input_dir} 目录中没有找到需要处理的媒体文件。[/bold red]")
+        raise typer.Exit(code=1)
+    
+    # 过滤掉已有字幕的文件
+    files_to_process = []
+    
+    # 提取基础文件名并去重排序
+    # 这里我们需要保留原始文件路径，所以不能像translate那样只存basename
+    # 我们用basename来检查是否有对应的subtitle文件
+    
+    # 排序文件列表
+    media_files.sort()
+    
+    for file_path in media_files:
+        file = Path(file_path)
+        
+        # 检查是否存在对应的字幕文件 (.srt 或 .ass)
+        # 注意：这里简化处理，只检查同名不同后缀的情况
+        # translate命令中的逻辑比较复杂，这里先做最基础的检查
+        has_subtitle = False
+        for sub_ext in ['.srt', '.ass', '.vtt']:
+            if (file.parent / (file.stem + sub_ext)).exists():
+                has_subtitle = True
+                break
+        
+        if not has_subtitle:
+            files_to_process.append(file)
+    
+    if not files_to_process:
+        print("[bold yellow]目录下所有媒体文件均已有字幕，没有需要处理的新文件。[/bold yellow]")
+        raise typer.Exit(code=0)
+        
+    print(f"[bold green]发现 {len(files_to_process)} 个待转录文件：[/bold green]")
+    for f in files_to_process[:5]:
+        print(f"  - {f.name}")
+    if len(files_to_process) > 5:
+        print(f"  ... 等共 {len(files_to_process)} 个文件")
+    print()
+        
+    return files_to_process
 
 
 @app.command("model")
