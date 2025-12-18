@@ -193,7 +193,7 @@ def main(
     timestamps: Annotated[
         bool,
         typer.Option(help="在 srt/vtt 格式中输出词级时间戳"),
-    ] = False,
+    ] = True,
     chunk_duration: Annotated[
         float,
         typer.Option(
@@ -500,7 +500,7 @@ def main_callback(
     timestamps: Annotated[
         bool,
         typer.Option(help="在 srt/vtt 格式中输出词级时间戳"),
-    ] = False,
+    ] = True,
     chunk_duration: Annotated[
         float,
         typer.Option(

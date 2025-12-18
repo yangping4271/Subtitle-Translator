@@ -1,4 +1,5 @@
 import logging
+import gc
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -131,16 +132,16 @@ def get_optimal_chunk_duration(audio_duration_seconds: float, logger=None) -> Op
     else:
         # Intel/其他平台策略（更保守）
         if memory_gb >= 32:
-            chunk_duration = min(15 * 60, audio_duration_seconds * 0.5)
+            chunk_duration = min(10 * 60, audio_duration_seconds * 0.4)
             strategy = "Intel高性能"
         elif memory_gb >= 16:
-            chunk_duration = min(10 * 60, audio_duration_seconds * 0.4)
+            chunk_duration = min(8 * 60, audio_duration_seconds * 0.3)
             strategy = "Intel平衡"
         elif memory_gb >= 8:
-            chunk_duration = min(6 * 60, audio_duration_seconds * 0.3)
+            chunk_duration = min(4 * 60, audio_duration_seconds * 0.2)
             strategy = "Intel保守"
         else:
-            chunk_duration = min(4 * 60, audio_duration_seconds * 0.25)
+            chunk_duration = min(2 * 60, audio_duration_seconds * 0.2)
             strategy = "Intel超保守"
     
     # 5. 确保最小分块不少于2分钟（避免过度分块）
@@ -410,6 +411,23 @@ class BaseParakeet(nn.Module):
                         logger.warning(f"🆘 使用保险合并：直接添加{added_tokens}个token（可能有重复）")
             else:
                 all_tokens = chunk_result.tokens
+            
+            # 关键优化：每个chunk处理完后强制清理显存和内存
+            # 这对于长音频处理至关重要，防止内存泄漏和显存溢出
+            try:
+                # 1. 强制清理MLX计算图缓存
+                mx.clear_cache()
+                
+                # 2. 强制Python垃圾回收
+                # 显式删除不再需要的临时变量
+                del chunk_mel
+                del chunk_result
+                gc.collect()
+                
+                if (start // (chunk_samples - overlap_samples)) % 5 == 0:
+                     logger.debug(f"🧹 执行定期内存清理 (Chunk {start})")
+            except Exception as e:
+                logger.warning(f"内存清理警告: {e}")
 
         result = sentences_to_result(tokens_to_sentences(all_tokens))
         logger.info(f"🎯 转录完成: {len(all_tokens)}个token，{len(result.sentences)}个句子")
