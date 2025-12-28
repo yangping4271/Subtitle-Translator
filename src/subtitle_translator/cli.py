@@ -39,6 +39,7 @@ def main(
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
     preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
     dry_run: bool = typer.Option(False, "--dry-run", help="预览模式，只显示将要处理的文件信息而不实际执行翻译。"),
+    transcribe: bool = typer.Option(False, "--transcribe", help="当找不到字幕文件时，是否允许进行语音转录。"),
     version: bool = typer.Option(False, "--version", help="显示版本信息并退出。"),
 ):
     """字幕翻译工具主命令"""
@@ -97,6 +98,14 @@ def main(
 
     # 获取要处理的文件列表
     if input_file:
+        # 单文件模式下的转录检查
+        if input_file.suffix.lower() != '.srt' and not transcribe:
+            logger.error(f"未启用转录功能，无法处理非字幕文件: {input_file.name}")
+            print(f"[bold red]❌ 未启用转录功能![/bold red]")
+            print(f"文件 [cyan]{input_file.name}[/cyan] 需要转录才能处理。")
+            print(f"请添加 [bold magenta]--transcribe[/bold magenta] 参数以启用转录功能。")
+            raise typer.Exit(code=1)
+
         files_to_process = [input_file]
         batch_input_dir = input_file.parent
         logger.info(f"开始处理单个文件: {input_file.name}")
@@ -106,7 +115,7 @@ def main(
         batch_input_dir = input_dir if input_dir else Path.cwd()
         # 确保使用绝对路径，避免相对路径在显示时造成混淆
         batch_input_dir = batch_input_dir.resolve()
-        files_to_process = _get_batch_files(max_count, llm_model, batch_input_dir)
+        files_to_process = _get_batch_files(max_count, llm_model, batch_input_dir, transcribe)
 
     # 处理预览模式
     if dry_run:
@@ -130,18 +139,22 @@ def _natural_sort_key(s: str):
     return [int(p) if p.isdigit() else p.casefold() for p in parts]
 
 
-def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path) -> list:
+def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path, transcribe: bool) -> list:
     """获取批量处理的文件列表"""
-    MEDIA_EXTENSIONS = [
-        "*.srt",  # 字幕文件
-        # 音频格式（优先级高于视频）
-        "*.mp3", "*.m4a", "*.wav", "*.flac", "*.aac",
-        "*.ogg", "*.wma", "*.aiff", "*.opus",
-        # 视频格式
-        "*.mp4", "*.avi", "*.mov", "*.mkv", "*.webm",
-        "*.flv", "*.wmv", "*.m4v", "*.mpeg", "*.mpg",
-        "*.3gp", "*.ts"
-    ]
+    if transcribe:
+        MEDIA_EXTENSIONS = [
+            "*.srt",  # 字幕文件
+            # 音频格式（优先级高于视频）
+            "*.mp3", "*.m4a", "*.wav", "*.flac", "*.aac",
+            "*.ogg", "*.wma", "*.aiff", "*.opus",
+            # 视频格式
+            "*.mp4", "*.avi", "*.mov", "*.mkv", "*.webm",
+            "*.flv", "*.wmv", "*.m4v", "*.mpeg", "*.mpg",
+            "*.3gp", "*.ts"
+        ]
+    else:
+        # 如果不启用转录，只查找字幕文件
+        MEDIA_EXTENSIONS = ["*.srt"]
 
     # 确保input_dir是绝对路径
     input_dir = input_dir.resolve()
