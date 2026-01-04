@@ -167,7 +167,7 @@ If provided, use the following reference data:
 - Using the cleaned and corrected original text, translate each subtitle into [TargetLanguage].
 - Ensure contextual and technical accuracy in the translation, keeping the content natural and faithful to the meaning and structure.
 - Preserve formatting, numbers, and symbols exactly.
-- Technical terms should remain untranslated unless a glossary mapping is provided, in which case the glossary translation is used. Consistency in term translation is essential.
+- When translating technical terms, if a target language equivalent exists, translate it and distinguish it by keeping the original term in parentheses (e.g., "Generative AI" -> "生成式 AI (Generative AI)"). If no standard equivalent exists, keep the original term. Consistency in term translation is essential.
 - Always translate each segment individually without attempting to complete incomplete sentences. Maintain proper flow and context with adjacent subtitles as appropriate.
 
 ## Output Format
