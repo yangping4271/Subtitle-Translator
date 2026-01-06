@@ -651,8 +651,8 @@ def serve(
     from .server.app import run_server
     
     if not subtitle_dirs:
-        # Default to current directory and Downloads
-        subtitle_dirs = [".", "~/Downloads", "~/subtitles"]
+        # Default to ~/subtitles (priority) and ~/Downloads
+        subtitle_dirs = ["~/subtitles", "~/Downloads", "."]
         
     run_server(host, port, subtitle_dirs, debug)
 

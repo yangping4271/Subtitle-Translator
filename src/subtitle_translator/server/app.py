@@ -11,6 +11,13 @@ from pathlib import Path
 from typing import List, Optional
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+import threading
+
+# Import core functionality
+from ..processor import process_single_file
+from ..service import SubtitleTranslatorService
+from ..cli import DEFAULT_TRANSCRIPTION_MODEL
+from ..env_setup import setup_environment
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -177,6 +184,72 @@ def create_app(server: SubtitleServer) -> Flask:
         return jsonify({
             "success": True,
             "info": info
+        })
+
+    @app.route('/subtitle/process', methods=['POST'])
+    def process_subtitle():
+        """Process a subtitle file (save and translate)."""
+        data = request.json
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+            
+        video_id = data.get('video_id')
+        content = data.get('content')
+        target_lang = data.get('target_lang', 'zh') # Default to Chinese
+        
+        if not video_id or not content:
+            return jsonify({"error": "Missing video_id or content"}), 400
+            
+        logger.info(f"Received processing request for video: {video_id}, target: {target_lang}")
+        
+        # 1. Determine output directory (use the first available directory)
+        output_dir = None
+        for d in server.subtitle_dirs:
+            if d.exists():
+                output_dir = d
+                break
+        
+        if not output_dir:
+            return jsonify({"error": "No valid subtitle directory found"}), 500
+            
+        # 2. Save SRT file
+        srt_file = output_dir / f"{video_id}.srt"
+        try:
+            with open(srt_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            logger.info(f"Saved SRT file: {srt_file}")
+        except Exception as e:
+            logger.error(f"Failed to save SRT file: {e}")
+            return jsonify({"error": f"Failed to save SRT file: {e}"}), 500
+            
+        # 3. Process in a separate thread to avoid blocking
+        def run_processing(input_file, t_lang, out_dir):
+            try:
+                # Ensure environment is set up (logger, env vars)
+                setup_environment(allow_missing_config=True) # Allow missing config to avoid exit(1) if something is wrong
+                
+                # Initialize service if needed (though process_single_file handles it)
+                # We use default models for now
+                process_single_file(
+                    input_file=input_file,
+                    target_lang=t_lang,
+                    output_dir=out_dir,
+                    model=DEFAULT_TRANSCRIPTION_MODEL,
+                    llm_model=None, # Use default from env
+                    model_precheck_passed=True # Skip check for SRT input
+                )
+                logger.info(f"Successfully processed video {video_id}")
+            except Exception as e:
+                logger.error(f"Error processing video {video_id}: {e}")
+
+        # Start processing in background
+        thread = threading.Thread(target=run_processing, args=(srt_file, target_lang, output_dir))
+        thread.start()
+        
+        return jsonify({
+            "success": True,
+            "message": "Processing started",
+            "file_path": str(srt_file)
         })
 
     @app.route('/list')

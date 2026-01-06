@@ -5,7 +5,8 @@
     const USER_CONFIG = {
         buttonIcons: {
             download: '↓',
-            copy: '📋'
+            copy: '📋',
+            translate: '🌐'
         },
         fileNamingFormat: 'title-channel',
         includeTimestamps: true,
@@ -236,7 +237,7 @@
 
     function checkAndOpenTranscript() {
         if (!USER_CONFIG.autoOpenTranscript) return;
-        
+
         // Simple check if we are on a watch page
         if (!location.href.includes('/watch')) return;
 
@@ -248,7 +249,7 @@
         if (transcriptContainer && transcriptContainer.children.length > 0) {
             return;
         }
-        
+
         // Attempt to open
         openTranscript();
     }
@@ -275,6 +276,104 @@
 
     function handleCopyClick() {
         handleTranscriptAction(selectAndCopyTranscript);
+    }
+
+    function handleTranslateClick() {
+        handleTranscriptAction(sendTranscriptToServer);
+    }
+
+    function sendTranscriptToServer() {
+        const srtContent = getTranscriptSRT();
+        if (!srtContent) {
+            showNotification('Transcript is empty or not loaded.');
+            return;
+        }
+
+        const { videoId } = getVideoInfo();
+        if (!videoId) {
+            showNotification('Could not determine Video ID.');
+            return;
+        }
+
+        showNotification('Sending to local translator...');
+
+        // Configuration - could be moved to USER_CONFIG or retrieved from extension settings
+        const SERVER_URL = 'http://127.0.0.1:8888/subtitle/process';
+
+        fetch(SERVER_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                video_id: videoId,
+                content: srtContent,
+                target_lang: 'zh' // Default to Chinese for now, could be configurable
+            })
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    showNotification('Translation started! Waiting for result...');
+                    pollForTranslation(videoId);
+                } else {
+                    showNotification(`Error: ${data.error}`);
+                }
+            })
+            .catch(error => {
+                console.error('Translation request failed:', error);
+                showNotification('Failed to connect to local server. Is "translate serve" running?');
+            });
+    }
+
+    function pollForTranslation(videoId) {
+        let attempts = 0;
+        const maxAttempts = 60; // 2 minutes (2s * 60)
+        const interval = 2000;
+
+        const SERVER_URL = 'http://127.0.0.1:8888';
+
+        const poll = setInterval(() => {
+            attempts++;
+
+            fetch(`${SERVER_URL}/subtitle/${videoId}/info`)
+                .then(res => {
+                    if (!res.ok) return null;
+                    return res.json();
+                })
+                .then(data => {
+                    if (data && data.success && data.info) {
+                        // Check if the format is ASS (meaning translation is done)
+                        // If it's SRT, it might be the raw file we just uploaded, so we keep waiting
+                        if (data.info.format.toLowerCase() === '.ass') {
+                            clearInterval(poll);
+                            showNotification('Translation complete! Loading subtitles...');
+
+                            // Trigger content.js to load the subtitle
+                            window.dispatchEvent(new CustomEvent('YTSP_TriggerAutoLoad', {
+                                detail: { videoId }
+                            }));
+                            return;
+                        }
+                    }
+
+                    if (attempts >= maxAttempts) {
+                        clearInterval(poll);
+                        showNotification('Translation timed out. Please try loading manually.');
+                    }
+                })
+                .catch(err => {
+                    console.error('Polling error:', err);
+                    if (attempts >= maxAttempts) {
+                        clearInterval(poll);
+                    }
+                });
+        }, interval);
     }
 
     function buttonLocation(buttons, callback) {
@@ -354,6 +453,12 @@
                 text: USER_CONFIG.buttonIcons.copy,
                 clickHandler: handleCopyClick,
                 tooltip: 'Copy Transcript to Clipboard'
+            },
+            {
+                id: 'transcript-translate-button',
+                text: USER_CONFIG.buttonIcons.translate,
+                clickHandler: handleTranslateClick,
+                tooltip: 'Translate with Local Server'
             }
         ];
 
@@ -363,7 +468,7 @@
     // Initialize
     function init() {
         createButtons();
-        
+
         // Initial check for auto-open
         setTimeout(checkAndOpenTranscript, 2000);
 
