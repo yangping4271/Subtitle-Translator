@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Subtitle Translator (Standalone)",
+  "version": "1.0.0",
+  "description": "Chrome独立字幕翻译插件 - 直接调用OpenAI API翻译YouTube字幕，无需本地服务器",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "YouTube Subtitle Translator"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.youtube.com/*"
+      ],
+      "js": [
+        "config.js",
+        "translator.js",
+        "subtitle-parser.js",
+        "transcript-core.js",
+        "content.js"
+      ],
+      "css": [
+        "subtitle-overlay.css",
+        "transcript-styles.css"
+      ],
+      "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "*://www.youtube.com/*"
+      ],
+      "js": [
+        "inject.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
