@@ -1796,14 +1796,6 @@ class PopupController {
     }
 
     initApiSettingsUI() {
-        // 填充模型选择下拉框
-        const llmModelSelect = document.getElementById('llmModel');
-        if (llmModelSelect && typeof SUPPORTED_MODELS !== 'undefined') {
-            llmModelSelect.innerHTML = SUPPORTED_MODELS.map(m =>
-                `<option value="${m.value}">${m.text}</option>`
-            ).join('');
-        }
-
         // 填充目标语言下拉框
         const targetLangSelect = document.getElementById('targetLanguage');
         if (targetLangSelect && typeof SUPPORTED_LANGUAGES !== 'undefined') {
@@ -1820,27 +1812,12 @@ class PopupController {
         const apiBaseUrl = document.getElementById('apiBaseUrl');
         const apiKey = document.getElementById('apiKey');
         const llmModel = document.getElementById('llmModel');
-        const customModel = document.getElementById('customModel');
         const targetLanguage = document.getElementById('targetLanguage');
 
         if (apiBaseUrl) apiBaseUrl.value = this.apiConfig.openaiBaseUrl;
         if (apiKey) apiKey.value = this.apiConfig.openaiApiKey;
+        if (llmModel) llmModel.value = this.apiConfig.llmModel;
         if (targetLanguage) this.setSelectValue(targetLanguage, this.apiConfig.targetLanguage);
-
-        // 处理模型选择
-        if (llmModel) {
-            const modelExists = Array.from(llmModel.options).some(opt => opt.value === this.apiConfig.llmModel);
-            if (modelExists) {
-                this.setSelectValue(llmModel, this.apiConfig.llmModel);
-                if (customModel) customModel.style.display = 'none';
-            } else {
-                this.setSelectValue(llmModel, 'custom');
-                if (customModel) {
-                    customModel.style.display = 'block';
-                    customModel.value = this.apiConfig.llmModel;
-                }
-            }
-        }
 
         // 检查API状态
         if (this.apiConfig.openaiApiKey) {
@@ -1873,21 +1850,10 @@ class PopupController {
             });
         }
 
-        // LLM模型选择
+        // LLM模型输入
         const llmModel = document.getElementById('llmModel');
-        const customModel = document.getElementById('customModel');
         if (llmModel) {
-            llmModel.addEventListener('change', (e) => {
-                if (e.target.value === 'custom') {
-                    if (customModel) customModel.style.display = 'block';
-                } else {
-                    if (customModel) customModel.style.display = 'none';
-                    this.apiConfig.llmModel = e.target.value;
-                }
-            });
-        }
-        if (customModel) {
-            customModel.addEventListener('change', (e) => {
+            llmModel.addEventListener('input', (e) => {
                 this.apiConfig.llmModel = e.target.value.trim();
             });
         }
@@ -1924,20 +1890,12 @@ class PopupController {
         const apiBaseUrl = document.getElementById('apiBaseUrl');
         const apiKey = document.getElementById('apiKey');
         const llmModel = document.getElementById('llmModel');
-        const customModel = document.getElementById('customModel');
         const targetLanguage = document.getElementById('targetLanguage');
 
         if (apiBaseUrl) this.apiConfig.openaiBaseUrl = apiBaseUrl.value.trim();
         if (apiKey) this.apiConfig.openaiApiKey = apiKey.value.trim();
+        if (llmModel) this.apiConfig.llmModel = llmModel.value.trim();
         if (targetLanguage) this.apiConfig.targetLanguage = targetLanguage.value;
-
-        if (llmModel) {
-            if (llmModel.value === 'custom' && customModel) {
-                this.apiConfig.llmModel = customModel.value.trim();
-            } else {
-                this.apiConfig.llmModel = llmModel.value;
-            }
-        }
 
         await this.saveApiConfig();
     }

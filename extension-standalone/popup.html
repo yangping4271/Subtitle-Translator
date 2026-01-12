@@ -105,7 +105,7 @@
                                     </div>
                                     <div class="status-info">
                                         <div class="status-title" id="statusText">检查API配置中...</div>
-                                        <div class="status-subtitle" id="statusSubtext">请先配置OpenAI API</div>
+                                        <div class="status-subtitle" id="statusSubtext">请先配置 API</div>
                                     </div>
                                 </div>
                                 <button class="status-test-btn" id="testServer" title="测试API连接">
@@ -151,7 +151,7 @@
                             <div class="config-help" style="padding: 12px;">
                                 <div class="help-item">
                                     <span class="help-number">1</span>
-                                    <span class="help-text">在「API设置」中配置您的OpenAI API</span>
+                                    <span class="help-text">在「API设置」中配置您的 API</span>
                                 </div>
                                 <div class="help-item">
                                     <span class="help-number">2</span>
@@ -264,7 +264,7 @@
             <div class="tab-content" id="apiTab">
                 <div class="settings-card">
                     <div class="settings-header">
-                        <span>🔑 OpenAI API配置</span>
+                        <span>🔑 API 配置</span>
                     </div>
 
                     <div class="settings-grid">
@@ -298,13 +298,8 @@
                                 <span class="setting-icon">🤖</span>
                                 <span class="setting-name">翻译模型</span>
                             </div>
-                            <div class="model-input-wrapper">
-                                <select id="llmModel" class="setting-select">
-                                    <!-- 动态填充 -->
-                                </select>
-                                <input type="text" id="customModel" class="config-input" placeholder="输入自定义模型名称"
-                                    style="display: none;">
-                            </div>
+                            <input type="text" id="llmModel" class="config-input" placeholder="gpt-4o-mini"
+                                value="gpt-4o-mini">
                         </div>
 
                         <!-- Target Language -->
