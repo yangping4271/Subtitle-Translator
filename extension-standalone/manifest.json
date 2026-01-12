@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Subtitle Translator (Standalone)",
-  "version": "1.0.0",
-  "description": "Chrome独立字幕翻译插件 - 直接调用OpenAI API翻译YouTube字幕，无需本地服务器",
+  "name": "YouTube 字幕翻译",
+  "version": "1.1.0",
+  "description": "AI 驱动的 YouTube 字幕翻译工具",
   "permissions": [
     "activeTab",
     "storage"

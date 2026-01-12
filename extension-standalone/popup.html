@@ -1,19 +1,21 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>YouTube字幕翻译器</title>
     <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
     <div class="container">
         <!-- 精简的标题栏 -->
         <div class="header">
             <div class="header-content">
                 <div class="app-info">
-                    <h1>🎬 字幕翻译器</h1>
-                    <span class="version">v1.0.0 独立版</span>
+                    <h1>🎬 字幕翻译</h1>
+                    <span class="version">v1.1.0</span>
                 </div>
                 <!-- 主开关 -->
                 <label class="master-toggle">
@@ -124,7 +126,7 @@
                                     <span>🚀 开始翻译</span>
                                 </button>
                             </div>
-                            
+
                             <!-- 当前视频信息 -->
                             <div class="current-video-display" id="currentVideoInfo">
                                 <div class="video-info-row">
@@ -174,7 +176,7 @@
                             </div>
                             <div class="ass-subtitle">一个文件包含英文+中文双语字幕</div>
                         </div>
-                        
+
                         <div class="ass-drop-zone" id="assUploadArea">
                             <div class="ass-drop-content">
                                 <div class="ass-drop-icon">🎬</div>
@@ -205,53 +207,55 @@
                         </div>
                         <div class="separate-subtitle">分别选择英文和中文字幕文件</div>
                     </div>
-                    
-                    <div class="file-upload-section">
-                    <!-- 英文字幕 -->
-                    <div class="file-card" id="englishCard">
-                        <div class="file-header">
-                            <span class="file-flag">🇺🇸</span>
-                            <span class="file-type">英文字幕</span>
-                            <span class="file-formats">SRT/VTT</span>
-                        </div>
-                        <div class="file-drop-zone" id="englishUploadArea">
-                            <div class="drop-content">
-                                <div class="drop-icon">📄</div>
-                                <div class="drop-text">
-                                    <strong>拖拽或点击上传</strong>
-                                    <p>选择英文字幕文件</p>
-                                </div>
-                            </div>
-                            <input type="file" id="englishFileInput" accept=".srt,.vtt" hidden>
-                        </div>
-                        <div class="file-info" id="englishFileInfo">
-                            <span class="file-name" id="englishFileName" title="">未选择文件</span>
-                            <button class="file-remove" id="englishRemove" style="display: none;" title="移除此文件">×</button>
-                        </div>
-                    </div>
 
-                    <!-- 中文字幕 -->
-                    <div class="file-card" id="chineseCard">
-                        <div class="file-header">
-                            <span class="file-flag">🇨🇳</span>
-                            <span class="file-type">中文字幕</span>
-                            <span class="file-formats">SRT/VTT</span>
-                        </div>
-                        <div class="file-drop-zone" id="chineseUploadArea">
-                            <div class="drop-content">
-                                <div class="drop-icon">📄</div>
-                                <div class="drop-text">
-                                    <strong>拖拽或点击上传</strong>
-                                    <p>选择中文字幕文件</p>
-                                </div>
+                    <div class="file-upload-section">
+                        <!-- 英文字幕 -->
+                        <div class="file-card" id="englishCard">
+                            <div class="file-header">
+                                <span class="file-flag">🇺🇸</span>
+                                <span class="file-type">英文字幕</span>
+                                <span class="file-formats">SRT/VTT</span>
                             </div>
-                            <input type="file" id="chineseFileInput" accept=".srt,.vtt" hidden>
+                            <div class="file-drop-zone" id="englishUploadArea">
+                                <div class="drop-content">
+                                    <div class="drop-icon">📄</div>
+                                    <div class="drop-text">
+                                        <strong>拖拽或点击上传</strong>
+                                        <p>选择英文字幕文件</p>
+                                    </div>
+                                </div>
+                                <input type="file" id="englishFileInput" accept=".srt,.vtt" hidden>
+                            </div>
+                            <div class="file-info" id="englishFileInfo">
+                                <span class="file-name" id="englishFileName" title="">未选择文件</span>
+                                <button class="file-remove" id="englishRemove" style="display: none;"
+                                    title="移除此文件">×</button>
+                            </div>
                         </div>
-                        <div class="file-info" id="chineseFileInfo">
-                            <span class="file-name" id="chineseFileName" title="">未选择文件</span>
-                            <button class="file-remove" id="chineseRemove" style="display: none;" title="移除此文件">×</button>
+
+                        <!-- 中文字幕 -->
+                        <div class="file-card" id="chineseCard">
+                            <div class="file-header">
+                                <span class="file-flag">🇨🇳</span>
+                                <span class="file-type">中文字幕</span>
+                                <span class="file-formats">SRT/VTT</span>
+                            </div>
+                            <div class="file-drop-zone" id="chineseUploadArea">
+                                <div class="drop-content">
+                                    <div class="drop-icon">📄</div>
+                                    <div class="drop-text">
+                                        <strong>拖拽或点击上传</strong>
+                                        <p>选择中文字幕文件</p>
+                                    </div>
+                                </div>
+                                <input type="file" id="chineseFileInput" accept=".srt,.vtt" hidden>
+                            </div>
+                            <div class="file-info" id="chineseFileInfo">
+                                <span class="file-name" id="chineseFileName" title="">未选择文件</span>
+                                <button class="file-remove" id="chineseRemove" style="display: none;"
+                                    title="移除此文件">×</button>
+                            </div>
                         </div>
-                    </div>
                     </div>
                 </div>
             </div>
@@ -262,7 +266,7 @@
                     <div class="settings-header">
                         <span>🔑 OpenAI API配置</span>
                     </div>
-                    
+
                     <div class="settings-grid">
                         <!-- API Base URL -->
                         <div class="setting-item">
@@ -270,9 +274,8 @@
                                 <span class="setting-icon">🌐</span>
                                 <span class="setting-name">API Base URL</span>
                             </div>
-                            <input type="text" id="apiBaseUrl" class="config-input" 
-                                   placeholder="https://api.openai.com/v1"
-                                   value="https://api.openai.com/v1">
+                            <input type="text" id="apiBaseUrl" class="config-input"
+                                placeholder="https://api.openai.com/v1" value="https://api.openai.com/v1">
                         </div>
 
                         <!-- API Key -->
@@ -282,8 +285,7 @@
                                 <span class="setting-name">API Key</span>
                             </div>
                             <div class="api-key-input-wrapper">
-                                <input type="password" id="apiKey" class="config-input" 
-                                       placeholder="sk-...">
+                                <input type="password" id="apiKey" class="config-input" placeholder="sk-...">
                                 <button class="toggle-visibility" id="toggleApiKeyVisibility" title="显示/隐藏">
                                     👁️
                                 </button>
@@ -300,8 +302,8 @@
                                 <select id="llmModel" class="setting-select">
                                     <!-- 动态填充 -->
                                 </select>
-                                <input type="text" id="customModel" class="config-input" 
-                                       placeholder="输入自定义模型名称" style="display: none;">
+                                <input type="text" id="customModel" class="config-input" placeholder="输入自定义模型名称"
+                                    style="display: none;">
                             </div>
                         </div>
 
@@ -383,7 +385,7 @@
                             <span>🔄</span>
                         </button>
                     </div>
-                    
+
                     <div class="settings-grid">
                         <!-- 字体大小 -->
                         <div class="setting-item">
@@ -414,7 +416,8 @@
                                     <option value="#ffc0cb">粉色</option>
                                     <option value="custom">自定义...</option>
                                 </select>
-                                <input type="color" id="fontColor" value="#ffffff" class="color-picker" style="display: none;">
+                                <input type="color" id="fontColor" value="#ffffff" class="color-picker"
+                                    style="display: none;">
                             </div>
                         </div>
 
@@ -453,15 +456,15 @@
                     <div class="app-logo">
                         <div class="logo-icon">🎬</div>
                         <div class="logo-text">
-                            <h3>YouTube字幕翻译器</h3>
-                            <span class="version">v1.0.0 独立版</span>
+                            <h3>YouTube 字幕翻译</h3>
+                            <span class="version">v1.1.0</span>
                         </div>
                     </div>
-                    
+
                     <div class="feature-list">
                         <div class="feature-item">
                             <span class="feature-icon">🤖</span>
-                            <span class="feature-text">AI智能翻译</span>
+                            <span class="feature-text">AI 智能翻译</span>
                         </div>
                         <div class="feature-item">
                             <span class="feature-icon">🌍</span>
@@ -471,12 +474,8 @@
                             <span class="feature-icon">🎨</span>
                             <span class="feature-text">自定义样式</span>
                         </div>
-                        <div class="feature-item">
-                            <span class="feature-icon">🔌</span>
-                            <span class="feature-text">无需本地服务</span>
-                        </div>
                     </div>
-                    
+
                     <div class="about-actions">
                         <button class="about-btn" id="helpLink">
                             <span>❓</span>
@@ -488,26 +487,18 @@
                         </button>
                     </div>
                 </div>
-                
+
                 <div class="tips-card">
                     <div class="tips-header">
                         <span>💡 使用技巧</span>
                     </div>
                     <div class="tip-item">
                         <span class="tip-number">1</span>
-                        <span class="tip-text">支持SRT和VTT格式字幕文件</span>
+                        <span class="tip-text">支持 SRT、VTT、ASS 格式字幕文件</span>
                     </div>
                     <div class="tip-item">
                         <span class="tip-number">2</span>
-                        <span class="tip-text">拖拽文件到上传区域即可加载</span>
-                    </div>
-                    <div class="tip-item">
-                        <span class="tip-number">3</span>
-                        <span class="tip-text">开启同步设置可统一调整样式</span>
-                    </div>
-                    <div class="tip-item">
-                        <span class="tip-number">4</span>
-                        <span class="tip-text">在全屏模式下效果更佳</span>
+                        <span class="tip-text">全屏模式下效果更佳</span>
                     </div>
                 </div>
             </div>
@@ -520,4 +511,5 @@
     <script src="subtitle-parser.js"></script>
     <script src="popup.js"></script>
 </body>
+
 </html>

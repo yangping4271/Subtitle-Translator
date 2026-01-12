@@ -149,7 +149,7 @@
     function downloadTranscriptAsSRT() {
         const srtContent = getTranscriptSRT();
         if (!srtContent) {
-            showNotification('Transcript is empty or not loaded.');
+            showNotification('字幕为空');
             return;
         }
 
@@ -170,7 +170,7 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        showNotification('SRT file has been downloaded.');
+        showNotification('SRT 文件已下载');
     }
 
     function selectAndCopyTranscript() {
@@ -186,10 +186,10 @@
         const fullContent = `Information about the YouTube Video:\nTitle: ${ytTitle}\nChannel: ${channelName}\nUpload Date: ${uploadDate}\nURL: ${videoURL}\n\n\nYouTube Transcript:\n${finalText.trimStart()}`;
 
         navigator.clipboard.writeText(fullContent).then(() => {
-            showNotification('Transcript Copied to Clipboard (No Timestamps).');
+            showNotification('字幕已复制');
         }).catch(err => {
             console.error('Failed to copy: ', err);
-            showNotification('Failed to copy transcript.');
+            showNotification('复制失败');
         });
     }
 
@@ -228,10 +228,10 @@
         }
 
         if (openTranscript()) {
-            showNotification('Opening transcript...');
+            showNotification('正在打开文字记录...');
             waitForTranscript(callback);
         } else {
-            alert('Transcript unavailable or cannot be found.\nEnsure the video has a transcript.');
+            alert('无法获取文字记录，请确保视频有字幕');
         }
     }
 
@@ -265,8 +265,8 @@
         } else if (retries < maxRetries) {
             setTimeout(() => waitForTranscript(callback, retries + 1), interval);
         } else {
-            showNotification('Transcript failed to load.');
-            alert('Transcript has not loaded successfully.\nPlease open the transcript panel manually and try again.');
+            showNotification('加载失败');
+            alert('加载失败，请手动打开文字记录面板后重试');
         }
     }
 
@@ -363,13 +363,13 @@
                 id: 'transcript-download-button',
                 text: USER_CONFIG.buttonIcons.download,
                 clickHandler: handleDownloadClick,
-                tooltip: 'Download Transcript as a Text File'
+                tooltip: '下载字幕'
             },
             {
                 id: 'transcript-copy-button',
                 text: USER_CONFIG.buttonIcons.copy,
                 clickHandler: handleCopyClick,
-                tooltip: 'Copy Transcript to Clipboard'
+                tooltip: '复制字幕'
             },
             {
                 id: 'transcript-translate-button',
