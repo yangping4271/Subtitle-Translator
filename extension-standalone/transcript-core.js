@@ -375,7 +375,7 @@
                 id: 'transcript-translate-button',
                 text: USER_CONFIG.buttonIcons.translate,
                 clickHandler: handleTranslateClick,
-                tooltip: '开始翻译 (快捷键)'
+                tooltip: '开始翻译'
             }
         ];
 

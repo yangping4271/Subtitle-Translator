@@ -17,11 +17,6 @@
                     <h1>🎬 字幕翻译</h1>
                     <span class="version">v1.1.0</span>
                 </div>
-                <!-- 主开关 -->
-                <label class="master-toggle">
-                    <input type="checkbox" id="subtitleToggle">
-                    <span class="toggle-slider"></span>
-                </label>
             </div>
         </div>
 
@@ -76,187 +71,65 @@
                     </div>
                 </div>
 
-                <!-- 字幕上传方式选择 -->
-                <div class="upload-mode-tabs">
-                    <div class="tab-selector">
-                        <button class="mode-tab active" data-mode="auto">
-                            <span class="tab-icon">🤖</span>
-                            <span class="tab-text">自动加载</span>
-                        </button>
-                        <button class="mode-tab" data-mode="bilingual">
-                            <span class="tab-text">双语ASS</span>
-                        </button>
-                        <button class="mode-tab" data-mode="separate">
-                            <span class="tab-icon">📑</span>
-                            <span class="tab-text">分别上传</span>
-                        </button>
+                <!-- 字幕来源选择 -->
+                <div class="subtitle-source-section">
+                    <div class="source-header">
+                        <span class="source-title">📝 字幕来源</span>
+                    </div>
+                    <div class="source-options">
+                        <label class="source-option active">
+                            <input type="radio" name="subtitleSource" value="youtube" checked>
+                            <span class="option-icon">🎬</span>
+                            <span class="option-text">YouTube 字幕</span>
+                        </label>
+                        <label class="source-option">
+                            <input type="radio" name="subtitleSource" value="upload">
+                            <span class="option-icon">📄</span>
+                            <span class="option-text">上传 SRT</span>
+                        </label>
                     </div>
                 </div>
 
-                <!-- 自动翻译模式 -->
-                <div class="upload-content active" id="autoMode">
-                    <div class="auto-load-card">
-                        <!-- API状态指示卡片 -->
-                        <div class="server-status-card" id="serverStatus">
-                            <div class="status-display">
-                                <div class="status-indicator" id="statusIndicator">
-                                    <div class="status-circle">
-                                        <span class="status-icon" id="statusIcon">🔑</span>
-                                    </div>
-                                    <div class="status-info">
-                                        <div class="status-title" id="statusText">检查API配置中...</div>
-                                        <div class="status-subtitle" id="statusSubtext">请先配置 API</div>
-                                    </div>
-                                </div>
-                                <button class="status-test-btn" id="testServer" title="测试API连接">
-                                    <span class="test-icon">🔍</span>
-                                    <span class="test-text">测试</span>
-                                </button>
-                            </div>
+                <!-- SRT 上传区域 (默认隐藏) -->
+                <div class="srt-upload-section" id="srtUploadSection" style="display: none;">
+                    <div class="srt-drop-zone" id="srtUploadArea">
+                        <div class="srt-drop-content">
+                            <span class="srt-icon">📄</span>
+                            <span class="srt-text">拖拽 SRT 文件或点击选择</span>
                         </div>
-
-                        <!-- 主控制区域 -->
-                        <div class="auto-control-section">
-                            <div class="control-header">
-                                <div class="control-title">
-                                    <span class="control-icon">🤖</span>
-                                    <span>自动翻译字幕</span>
-                                </div>
-                                <button class="translate-btn" id="translateBtn" title="开始翻译">
-                                    <span>🚀 开始翻译</span>
-                                </button>
-                            </div>
-
-                            <!-- 当前视频信息 -->
-                            <div class="current-video-display" id="currentVideoInfo">
-                                <div class="video-info-row">
-                                    <span class="video-label">🎬 当前视频</span>
-                                    <span class="video-id" id="currentVideoId">未检测到视频</span>
-                                </div>
-                                <div class="load-status-row">
-                                    <span class="load-label">翻译状态</span>
-                                    <span class="load-status" id="autoLoadStatus">等待开始</span>
-                                </div>
-                                <div class="progress-row" id="progressRow" style="display: none;">
-                                    <div class="progress-bar">
-                                        <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
-                                    </div>
-                                    <span class="progress-text" id="progressText">0%</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- 使用提示 -->
-                        <div class="config-section">
-                            <div class="config-help" style="padding: 12px;">
-                                <div class="help-item">
-                                    <span class="help-number">1</span>
-                                    <span class="help-text">在「API设置」中配置您的 API</span>
-                                </div>
-                                <div class="help-item">
-                                    <span class="help-number">2</span>
-                                    <span class="help-text">打开YouTube视频并点击「开始翻译」</span>
-                                </div>
-                                <div class="help-item">
-                                    <span class="help-number">3</span>
-                                    <span class="help-text">翻译完成后自动显示双语字幕</span>
-                                </div>
-                            </div>
-                        </div>
+                        <input type="file" id="srtFileInput" accept=".srt" hidden>
+                    </div>
+                    <div class="srt-file-info" id="srtFileInfo" style="display: none;">
+                        <span class="srt-filename" id="srtFileName"></span>
+                        <button class="srt-remove" id="srtRemove">×</button>
                     </div>
                 </div>
 
-                <!-- ASS双语字幕上传区 -->
-                <div class="upload-content" id="bilingualMode">
-                    <div class="ass-upload-card">
-                        <div class="ass-card-header">
-                            <div class="ass-title">
-                                <span class="ass-icon">✨</span>
-                                <span>ASS双语字幕文件</span>
-                            </div>
-                            <div class="ass-subtitle">一个文件包含英文+中文双语字幕</div>
+                <!-- 翻译控制区域 -->
+                <div class="translate-control-section">
+                    <!-- 当前视频信息 -->
+                    <div class="video-info-card">
+                        <div class="info-row">
+                            <span class="info-label">🎬 当前视频</span>
+                            <span class="info-value" id="currentVideoId">未检测到视频</span>
                         </div>
-
-                        <div class="ass-drop-zone" id="assUploadArea">
-                            <div class="ass-drop-content">
-                                <div class="ass-drop-icon">🎬</div>
-                                <div class="ass-drop-text">
-                                    <strong>拖拽ASS文件到此处或点击选择</strong>
-                                    <p>支持包含Default和Secondary样式的ASS字幕文件</p>
-                                </div>
-                            </div>
-                            <input type="file" id="assFileInput" accept=".ass" hidden>
+                        <div class="info-row">
+                            <span class="info-label">📊 状态</span>
+                            <span class="info-value" id="autoLoadStatus">等待开始</span>
                         </div>
-
-                        <div class="ass-file-status" id="assFileStatus" style="display: none;">
-                            <div class="status-header">
-                                <span class="status-icon">📄</span>
-                                <span class="status-filename" id="assFileName"></span>
-                                <button class="status-remove" id="assRemove" title="移除ASS文件">🗑️</button>
+                        <div class="progress-row" id="progressRow" style="display: none;">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
                             </div>
+                            <span class="progress-text" id="progressText">0%</span>
                         </div>
                     </div>
-                </div>
 
-                <!-- 分别上传模式 -->
-                <div class="upload-content" id="separateMode">
-                    <div class="separate-upload-header">
-                        <div class="separate-title">
-                            <span class="separate-icon">📑</span>
-                            <span>分别上传字幕文件</span>
-                        </div>
-                        <div class="separate-subtitle">分别选择英文和中文字幕文件</div>
-                    </div>
-
-                    <div class="file-upload-section">
-                        <!-- 英文字幕 -->
-                        <div class="file-card" id="englishCard">
-                            <div class="file-header">
-                                <span class="file-flag">🇺🇸</span>
-                                <span class="file-type">英文字幕</span>
-                                <span class="file-formats">SRT/VTT</span>
-                            </div>
-                            <div class="file-drop-zone" id="englishUploadArea">
-                                <div class="drop-content">
-                                    <div class="drop-icon">📄</div>
-                                    <div class="drop-text">
-                                        <strong>拖拽或点击上传</strong>
-                                        <p>选择英文字幕文件</p>
-                                    </div>
-                                </div>
-                                <input type="file" id="englishFileInput" accept=".srt,.vtt" hidden>
-                            </div>
-                            <div class="file-info" id="englishFileInfo">
-                                <span class="file-name" id="englishFileName" title="">未选择文件</span>
-                                <button class="file-remove" id="englishRemove" style="display: none;"
-                                    title="移除此文件">×</button>
-                            </div>
-                        </div>
-
-                        <!-- 中文字幕 -->
-                        <div class="file-card" id="chineseCard">
-                            <div class="file-header">
-                                <span class="file-flag">🇨🇳</span>
-                                <span class="file-type">中文字幕</span>
-                                <span class="file-formats">SRT/VTT</span>
-                            </div>
-                            <div class="file-drop-zone" id="chineseUploadArea">
-                                <div class="drop-content">
-                                    <div class="drop-icon">📄</div>
-                                    <div class="drop-text">
-                                        <strong>拖拽或点击上传</strong>
-                                        <p>选择中文字幕文件</p>
-                                    </div>
-                                </div>
-                                <input type="file" id="chineseFileInput" accept=".srt,.vtt" hidden>
-                            </div>
-                            <div class="file-info" id="chineseFileInfo">
-                                <span class="file-name" id="chineseFileName" title="">未选择文件</span>
-                                <button class="file-remove" id="chineseRemove" style="display: none;"
-                                    title="移除此文件">×</button>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- 翻译按钮 -->
+                    <button class="translate-main-btn" id="translateBtn">
+                        <span class="btn-icon">🚀</span>
+                        <span class="btn-text">开始翻译</span>
+                    </button>
                 </div>
             </div>
 
@@ -298,8 +171,7 @@
                                 <span class="setting-icon">🤖</span>
                                 <span class="setting-name">翻译模型</span>
                             </div>
-                            <input type="text" id="llmModel" class="config-input" placeholder="gpt-4o-mini"
-                                value="gpt-4o-mini">
+                            <input type="text" id="llmModel" class="config-input" placeholder="输入模型名称" value="">
                         </div>
 
                         <!-- Target Language -->

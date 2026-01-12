@@ -84,7 +84,7 @@ class PopupController {
         this.apiConfig = {
             openaiBaseUrl: 'https://api.openai.com/v1',
             openaiApiKey: '',
-            llmModel: 'gpt-4o-mini',
+            llmModel: '',
             targetLanguage: 'zh'
         };
         this.isTranslating = false;
@@ -162,12 +162,9 @@ class PopupController {
         await this.loadApiConfig();
         this.initApiSettingsUI();
 
-        // 如果当前在自动加载模式，获取视频信息并检查API状态
-        const activeMode = document.querySelector('.mode-tab.active');
-        if (activeMode && activeMode.dataset.mode === 'auto') {
-            this.initAutoLoadMode();
-            this.checkApiStatus();
-        }
+        // 初始化翻译模式
+        this.initAutoLoadMode();
+        this.checkApiStatus();
 
         // 主动检查一次当前视频的字幕状态，初始化计数
         this.checkCurrentVideoSubtitleStatus();
@@ -300,7 +297,8 @@ class PopupController {
         document.querySelectorAll('.tab-button').forEach(btn => {
             btn.classList.remove('active');
         });
-        document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
+        const activeBtn = document.querySelector(`[data-tab="${tabId}"]`);
+        if (activeBtn) activeBtn.classList.add('active');
 
         // 更新内容显示
         document.querySelectorAll('.tab-content').forEach(content => {
@@ -316,49 +314,89 @@ class PopupController {
     }
 
     // ========================================
-    // 上传模式选择管理
+    // 字幕来源选择管理
     // ========================================
     setupUploadModeSelection() {
-        const modeButtons = document.querySelectorAll('.mode-tab');
-        const uploadContents = document.querySelectorAll('.upload-content');
+        const sourceOptions = document.querySelectorAll('input[name="subtitleSource"]');
+        const srtUploadSection = document.getElementById('srtUploadSection');
 
-        modeButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                const mode = e.currentTarget.dataset.mode;
-                this.switchUploadMode(mode);
+        sourceOptions.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const source = e.target.value;
+                this.subtitleSource = source;
+
+                // 显示/隐藏 SRT 上传区域
+                if (srtUploadSection) {
+                    srtUploadSection.style.display = source === 'upload' ? 'block' : 'none';
+                }
             });
         });
+
+        // 初始化 SRT 上传功能
+        this.setupSrtUpload();
     }
 
-    switchUploadMode(mode) {
-        // 更新按钮状态
-        document.querySelectorAll('.mode-tab').forEach(btn => {
-            btn.classList.remove('active');
+    setupSrtUpload() {
+        const srtUploadArea = document.getElementById('srtUploadArea');
+        const srtFileInput = document.getElementById('srtFileInput');
+        const srtFileInfo = document.getElementById('srtFileInfo');
+        const srtFileName = document.getElementById('srtFileName');
+        const srtRemove = document.getElementById('srtRemove');
+
+        if (!srtUploadArea || !srtFileInput) return;
+
+        // 点击上传
+        srtUploadArea.addEventListener('click', () => srtFileInput.click());
+
+        // 拖拽处理
+        srtUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            srtUploadArea.classList.add('dragover');
         });
-        document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
 
-        // 更新内容显示
-        document.querySelectorAll('.upload-content').forEach(content => {
-            content.classList.remove('active');
+        srtUploadArea.addEventListener('dragleave', () => {
+            srtUploadArea.classList.remove('dragover');
         });
 
-        let targetContent;
-        switch (mode) {
-            case 'auto':
-                targetContent = document.getElementById('autoMode');
-                this.initAutoLoadMode();
-                break;
-            case 'bilingual':
-                targetContent = document.getElementById('bilingualMode');
-                break;
-            case 'separate':
-                targetContent = document.getElementById('separateMode');
-                break;
-        }
+        srtUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            srtUploadArea.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.srt')) {
+                this.handleSrtFile(file);
+            }
+        });
 
-        if (targetContent) {
-            targetContent.classList.add('active');
+        // 文件选择
+        srtFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this.handleSrtFile(file);
+            }
+        });
+
+        // 移除文件
+        if (srtRemove) {
+            srtRemove.addEventListener('click', () => {
+                this.uploadedSrtContent = null;
+                if (srtFileInfo) srtFileInfo.style.display = 'none';
+                if (srtFileName) srtFileName.textContent = '';
+                srtFileInput.value = '';
+            });
         }
+    }
+
+    async handleSrtFile(file) {
+        const content = await file.text();
+        this.uploadedSrtContent = content;
+
+        const srtFileInfo = document.getElementById('srtFileInfo');
+        const srtFileName = document.getElementById('srtFileName');
+
+        if (srtFileInfo) srtFileInfo.style.display = 'flex';
+        if (srtFileName) srtFileName.textContent = file.name;
+
+        this.showToast(`已加载: ${file.name}`);
     }
 
     // ========================================
@@ -373,12 +411,7 @@ class PopupController {
             });
         }
 
-        // 文件上传事件
-        this.bindFileUploadEvents('english', 'englishUploadArea', 'englishFileInput');
-        this.bindFileUploadEvents('chinese', 'chineseUploadArea', 'chineseFileInput');
-
-        // ASS文件上传事件
-        this.bindASSUploadEvents();
+        // SRT上传事件已在 setupUploadModeSelection 中处理
 
         // 文件移除事件
         const englishRemove = document.getElementById('englishRemove');
@@ -757,7 +790,8 @@ class PopupController {
         document.querySelectorAll('.lang-btn').forEach(btn => {
             btn.classList.remove('active');
         });
-        document.getElementById(language + 'Tab').classList.add('active');
+        const langTab = document.getElementById(language + 'Tab');
+        if (langTab) langTab.classList.add('active');
 
         // 切换预设显示
         const englishPresets = document.getElementById('englishPresets');
@@ -1166,6 +1200,9 @@ class PopupController {
         const card = document.getElementById(language + 'Card');
         const fileName = document.getElementById(language + 'FileName');
         const removeBtn = document.getElementById(language + 'Remove');
+
+        // 如果元素不存在则直接返回(UI 已简化)
+        if (!card || !fileName || !removeBtn) return;
 
         if (hasFile) {
             card.classList.add('has-file');

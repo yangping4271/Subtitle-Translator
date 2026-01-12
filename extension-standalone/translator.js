@@ -141,7 +141,7 @@ class TranslatorService {
         this.config = result.apiConfig || {
           openaiBaseUrl: 'https://api.openai.com/v1',
           openaiApiKey: '',
-          llmModel: 'gpt-4o-mini',
+          llmModel: '',
           targetLanguage: 'zh'
         };
         resolve(this.config);

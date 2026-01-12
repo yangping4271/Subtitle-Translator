@@ -14,7 +14,7 @@
 const DEFAULT_API_CONFIG = {
   openaiBaseUrl: 'https://api.openai.com/v1',
   openaiApiKey: '',
-  llmModel: 'gpt-4o-mini',
+  llmModel: '',
   targetLanguage: 'zh'
 };
 
