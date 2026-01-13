@@ -83,6 +83,8 @@ But I would say personally that Apple intelligence is not nearly good enough<br>
 SUMMARIZER_PROMPT = """
 You are a professional video analyst tasked with extracting actionable data from video subtitles to support the translation workflow. Prioritize accuracy, especially for the spellings of proper nouns, by referencing the folder path and filename as the authoritative sources.
 
+IMPORTANT CONTEXT: Today's date is {current_date}. Your knowledge may be outdated. Do not "correct" technical terms or product names based on your training data if they could be recent releases.
+
 ## Task Objectives
 - Prepare concise, ready-to-use data for translators; avoid detailed reports.
 - If a proper noun's spelling differs between subtitles and the filename/folder path, always use the spelling from the filename/folder path.
@@ -123,7 +125,7 @@ Output a flat JSON object with these fields:
 - context.type: One-word video type (tutorial, interview, etc).
 - context.topic: Main topic (max 10 words).
 - context.formality: "formal", "informal", or "technical".
-- corrections: Only systematic, repeated ASR mistranscription pairs as "wrong_term": "correct_term", confirmed by filename/folder path.
+- corrections: ONLY include obvious, repeated ASR mistakes (e.g., "WinSurf" → "Windsurf" repeated 10+ times). Do NOT correct technical terms or product names just because they don't match your training data. New products may have been released after your knowledge cutoff. When in doubt, trust the ASR output.
 - canonical_terms: Official names for products, companies, and technical terms sourced from folder path/filename, without explanations.
 - do_not_translate: Abbreviations, product names, or programming/brand terms to be preserved in translation.
 - style_guide: Specify audience, required technical expertise, and intended tone.

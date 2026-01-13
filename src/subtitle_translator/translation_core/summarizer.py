@@ -63,6 +63,9 @@ class SubtitleSummarizer:
                 logger.info(f"📂 文件夹路径: {' / '.join(reversed(parent_names))}")
             
             # 更新提示词，强调文件名和路径的权威性
+            from datetime import datetime
+            current_date = datetime.now().strftime('%Y-%m-%d')
+
             message = [
                 {"role": "system", "content": (
                     "You are a precise subtitle summarizer. "
@@ -74,7 +77,7 @@ class SubtitleSummarizer:
                     "   - Context indicating they refer to the same thing"
                     "   - Mismatch with folder/filename context"
                     "4. Do not modify other technical terms or module names that are clearly different"
-                    f"{SUMMARIZER_PROMPT}"
+                    f"{SUMMARIZER_PROMPT.format(current_date=current_date)}"
                 )},
                 {"role": "user", "content": f"{context_info}\n\nContent:\n{subtitle_content}"}
             ]
