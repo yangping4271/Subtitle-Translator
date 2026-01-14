@@ -77,7 +77,7 @@ class SubtitleSummarizer:
                     "   - Context indicating they refer to the same thing"
                     "   - Mismatch with folder/filename context"
                     "4. Do not modify other technical terms or module names that are clearly different"
-                    f"{SUMMARIZER_PROMPT.format(current_date=current_date)}"
+                    f"{SUMMARIZER_PROMPT.replace('{current_date}', current_date)}"
                 )},
                 {"role": "user", "content": f"{context_info}\n\nContent:\n{subtitle_content}"}
             ]
