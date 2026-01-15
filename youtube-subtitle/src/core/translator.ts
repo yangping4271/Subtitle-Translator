@@ -149,6 +149,45 @@ export class Translator {
     // 按 ID 排序
     results.sort((a, b) => a.index - b.index);
 
+    // ============ 关键改进：二次失败检查和重试 ============
+    // 模拟 Python 版本的 optimizer.py:94-112 行逻辑
+    // 检查翻译结果，找出失败的条目
+    const failedEntries = results.filter(r => r.translation.startsWith('[翻译失败]'));
+
+    if (failedEntries.length > 0) {
+      logger.info(`🔄 发现 ${failedEntries.length} 个字幕翻译失败，使用单条翻译再次尝试`);
+
+      // 构建失败字幕映射
+      const failedSubtitles: [string, string][] = failedEntries.map(entry => [
+        String(entry.index),
+        entry.original,
+      ]);
+
+      try {
+        // 二次重试（使用单条翻译）
+        const retryResults = await this.translateSingle(failedSubtitles, targetLanguage);
+
+        // 更新成功的重试结果
+        let successCount = 0;
+        for (const retryResult of retryResults) {
+          if (!retryResult.translation.startsWith('[翻译失败]')) {
+            const idx = results.findIndex(r => r.index === retryResult.index);
+            if (idx >= 0) {
+              results[idx] = retryResult;
+              successCount++;
+              logger.info(`✅ 字幕 ID ${retryResult.index} 二次重试成功`);
+            }
+          }
+        }
+
+        logger.info(`📊 二次重试结果: ${successCount}/${failedEntries.length} 条字幕成功翻译`);
+
+      } catch (error) {
+        logger.error(`❌ 二次重试过程出错: ${error}`);
+      }
+    }
+    // ============ 二次失败检查和重试结束 ============
+
     return results;
   }
 
@@ -195,6 +234,7 @@ export class Translator {
 
   /**
    * 翻译单个批次
+   * 注意：重试逻辑已移至 OpenAIClient，此处不再重复
    */
   private async translateBatch(
     batch: [string, string][],
@@ -207,23 +247,18 @@ export class Translator {
     logger.info(`🌍 ${batchInfo} 翻译 ${batch.length} 条字幕`);
 
     // 构建输入
-    const inputObj: Record<string, string> = {};
-    for (const [key, value] of batch) {
-      inputObj[key] = value;
-    }
+    const inputObj: Record<string, string> = Object.fromEntries(batch);
 
     // 构建 Prompt
     const systemPrompt = buildTranslatePrompt({ targetLanguage });
     const referenceInfo = buildReferenceInfo(summary);
-
     const userPrompt = `Correct and translate the following subtitles into ${targetLanguage}:
 <subtitles>${JSON.stringify(inputObj, null, 2)}</subtitles>${referenceInfo}`;
 
-    // 日志记录输入
     logger.info(`📤 ${batchInfo} 提交给LLM的字幕数据 (共${batch.length}条):`);
     logger.info(`   输入JSON: ${JSON.stringify(inputObj)}`);
 
-    // 调用 API
+    // 调用 API（OpenAIClient 已内置重试）
     const response = await this.client.callChat(systemPrompt, userPrompt, {
       temperature: 0.7,
       timeout: 80000,
@@ -232,61 +267,17 @@ export class Translator {
     logger.info(`📥 ${batchInfo} LLM原始返回数据:\n${response}`);
 
     // 解析响应
-    let responseContent = parseLlmResponse(response);
+    const responseContent = this.normalizeResponse(parseLlmResponse(response), batchInfo);
 
-    // 处理数组类型响应
-    if (Array.isArray(responseContent)) {
-      logger.warn(`⚠️ ${batchInfo} LLM返回了array而非object，尝试转换`);
-      const newDict: Record<string, { optimized_subtitle: string; translation: string }> = {};
+    // 构建结果
+    return batch.map(([key, originalText]) => {
+      const entry = responseContent[key];
+      const optimized = entry?.optimized_subtitle || originalText;
+      const translation = entry?.translation || `[翻译失败] ${originalText}`;
 
-      for (const item of responseContent) {
-        if (typeof item === 'object' && item !== null) {
-          const itemId = (item as Record<string, unknown>).id ||
-            (item as Record<string, unknown>).subtitle_id ||
-            (item as Record<string, unknown>).key;
-          if (itemId) {
-            newDict[String(itemId)] = {
-              optimized_subtitle: String((item as Record<string, unknown>).optimized_subtitle ||
-                (item as Record<string, unknown>).optimized || ''),
-              translation: String((item as Record<string, unknown>).translation || ''),
-            };
-          }
-        }
-      }
-
-      if (Object.keys(newDict).length > 0) {
-        responseContent = newDict;
-        logger.info(`✅ ${batchInfo} 成功转换array为object，包含${Object.keys(newDict).length}个条目`);
-      } else {
-        responseContent = {};
-      }
-    }
-
-    // 验证并补全结果
-    const results: TranslatedEntry[] = [];
-
-    for (const [key, originalText] of batch) {
-      const keyStr = String(key);
-      const entry = (responseContent as Record<string, { optimized_subtitle?: string; translation?: string }>)[keyStr];
-
-      let optimized = originalText;
-      let translation = `[翻译失败] ${originalText}`;
-
-      if (entry) {
-        optimized = entry.optimized_subtitle || originalText;
-        translation = entry.translation || `[翻译失败] ${originalText}`;
-      } else {
+      if (!entry) {
         logger.warn(`⚠️ API返回结果缺少字幕ID: ${key}`);
       }
-
-      results.push({
-        index: parseInt(key, 10),
-        startTime: 0,
-        endTime: 0,
-        original: originalText,
-        optimized,
-        translation,
-      });
 
       // 记录优化日志
       if (originalText !== optimized) {
@@ -297,13 +288,56 @@ export class Translator {
           optimized,
         });
       }
+
+      return {
+        index: parseInt(key, 10),
+        startTime: 0,
+        endTime: 0,
+        original: originalText,
+        optimized,
+        translation,
+      };
+    });
+  }
+
+  /**
+   * 标准化 LLM 响应格式
+   * 将数组格式转换为对象格式
+   */
+  private normalizeResponse(
+    content: unknown,
+    batchInfo: string
+  ): Record<string, { optimized_subtitle?: string; translation?: string }> {
+    if (!Array.isArray(content)) {
+      return (content as Record<string, { optimized_subtitle?: string; translation?: string }>) || {};
     }
 
-    return results;
+    logger.warn(`⚠️ ${batchInfo} LLM返回了array而非object，尝试转换`);
+    const result: Record<string, { optimized_subtitle: string; translation: string }> = {};
+
+    for (const item of content) {
+      if (typeof item !== 'object' || item === null) continue;
+
+      const record = item as Record<string, unknown>;
+      const itemId = record.id || record.subtitle_id || record.key;
+      if (!itemId) continue;
+
+      result[String(itemId)] = {
+        optimized_subtitle: String(record.optimized_subtitle || record.optimized || ''),
+        translation: String(record.translation || ''),
+      };
+    }
+
+    if (Object.keys(result).length > 0) {
+      logger.info(`✅ ${batchInfo} 成功转换array为object，包含${Object.keys(result).length}个条目`);
+    }
+
+    return result;
   }
 
   /**
    * 单条翻译（降级处理）
+   * 注意：重试逻辑已移至 OpenAIClient，此处不再重复
    */
   private async translateSingle(
     batch: [string, string][],
@@ -311,10 +345,12 @@ export class Translator {
   ): Promise<TranslatedEntry[]> {
     logger.info(`[+]正在单条翻译字幕，共${batch.length}条`);
 
-    const results: TranslatedEntry[] = [];
     const systemPrompt = buildSingleTranslatePrompt({ targetLanguage });
+    const results: TranslatedEntry[] = [];
 
     for (const [key, value] of batch) {
+      let translation: string;
+
       try {
         logger.info(`[+]正在翻译字幕ID: ${key}`);
 
@@ -323,30 +359,23 @@ export class Translator {
           timeout: 80000,
         });
 
-        const translation = response.trim();
-
-        results.push({
-          index: parseInt(key, 10),
-          startTime: 0,
-          endTime: 0,
-          original: value,
-          optimized: value,
-          translation,
-        });
-
+        translation = response.trim();
         logger.info(`单条翻译原文: ${value}`);
         logger.info(`单条翻译结果: ${translation}`);
       } catch (error) {
-        logger.error(`单条翻译失败，字幕ID: ${key}，错误: ${error}`);
-        results.push({
-          index: parseInt(key, 10),
-          startTime: 0,
-          endTime: 0,
-          original: value,
-          optimized: value,
-          translation: `[翻译失败] ${value}`,
-        });
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        logger.error(`❌ 字幕 ID ${key} 单条翻译失败: ${errorMsg}`);
+        translation = `[翻译失败] ${value}`;
       }
+
+      results.push({
+        index: parseInt(key, 10),
+        startTime: 0,
+        endTime: 0,
+        original: value,
+        optimized: value,
+        translation,
+      });
     }
 
     return results;

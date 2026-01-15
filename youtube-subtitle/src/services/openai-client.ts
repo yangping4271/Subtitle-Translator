@@ -4,6 +4,8 @@
  */
 
 import { setupLogger } from '../utils/logger.js';
+import { withRetry } from '../utils/retry.js';
+import { TranslationError } from '../utils/error-handler.js';
 import type { TranslatorConfig } from '../types/index.js';
 
 const logger = setupLogger('openai-client');
@@ -39,7 +41,7 @@ export class OpenAIClient {
   }
 
   /**
-   * 调用 Chat API
+   * 调用 Chat API（带自动重试）
    */
   async callChat(
     systemPrompt: string,
@@ -49,7 +51,10 @@ export class OpenAIClient {
     const { temperature = 0.7, timeout = 80000 } = options;
 
     if (!this.apiKey) {
-      throw new Error('API 密钥未配置');
+      throw TranslationError.fromError(
+        new Error('API 密钥未配置'),
+        'OpenAI Client'
+      );
     }
 
     const url = `${this.baseUrl}/chat/completions`;
@@ -62,65 +67,75 @@ export class OpenAIClient {
       temperature,
     };
 
-    try {
-      let response: Response;
+    // 使用 withRetry 包装 API 调用，自动重试 2 次
+    return withRetry(
+      async () => {
+        try {
+          let response: Response;
 
-      if (isNode) {
-        // Node.js 环境
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
+          if (isNode) {
+            // Node.js 环境
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
+            response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(body),
+              signal: controller.signal,
+            });
 
-        clearTimeout(timeoutId);
-      } else {
-        // 浏览器环境
-        response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        });
-      }
+            clearTimeout(timeoutId);
+          } else {
+            // 浏览器环境
+            response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${this.apiKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(body),
+            });
+          }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = (errorData as { error?: { message?: string } })?.error?.message ||
-          `API 请求失败: ${response.status}`;
-        throw new Error(errorMessage);
-      }
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const errorMessage = (errorData as { error?: { message?: string } })?.error?.message ||
+              `API 请求失败: ${response.status}`;
+            throw TranslationError.fromError(new Error(errorMessage), 'API Request');
+          }
 
-      const data = await response.json() as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
+          const data = await response.json() as {
+            choices?: Array<{ message?: { content?: string } }>;
+          };
 
-      const content = data.choices?.[0]?.message?.content;
+          const content = data.choices?.[0]?.message?.content;
 
-      if (!content) {
-        throw new Error('API 返回内容为空');
-      }
+          if (!content) {
+            throw new Error('API 返回内容为空');
+          }
 
-      return content;
+          return content;
 
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new Error('请求超时');
+        } catch (error) {
+          if (error instanceof Error) {
+            if (error.name === 'AbortError') {
+              throw new Error('请求超时');
+            }
+            throw error;
+          }
+          throw new Error(`API 调用失败: ${error}`);
         }
-        throw error;
+      },
+      {
+        maxRetries: 2,
+        delays: [1000, 2000],
+        operationName: `OpenAI API (${this.model})`,
       }
-      throw new Error(`API 调用失败: ${error}`);
-    }
+    );
   }
 }
 
