@@ -101,6 +101,12 @@ class YouTubeSubtitleOverlay {
 
   private async startTranslationFromPage(): Promise<void> {
     try {
+      // 检查扩展上下文是否有效
+      if (!chrome.runtime?.id) {
+        this.showErrorNotification('扩展已重新加载，请刷新页面后再试');
+        return;
+      }
+
       const subtitles = await this.fetchYouTubeOfficialSubtitles();
       if (!subtitles || subtitles.length === 0) {
         console.error('无法获取字幕');
@@ -120,6 +126,10 @@ class YouTubeSubtitleOverlay {
       });
     } catch (error) {
       console.error('启动翻译失败:', error);
+      // 检查是否是扩展上下文失效错误
+      if (error instanceof Error && error.message.includes('Extension context invalidated')) {
+        this.showErrorNotification('扩展已重新加载，请刷新页面后再试');
+      }
     }
   }
 
@@ -763,6 +773,39 @@ class YouTubeSubtitleOverlay {
       chineseSubtitle.textContent = '';
       chineseSubtitle.style.display = 'none';
     }
+  }
+
+  private showErrorNotification(message: string): void {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 10000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    `;
+
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      background: #f44336;
+      color: white;
+      padding: 20px 30px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    `;
+    modal.textContent = message;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    setTimeout(() => overlay.remove(), 3000);
   }
 
   private findCurrentSubtitle(

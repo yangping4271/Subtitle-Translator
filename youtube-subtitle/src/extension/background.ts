@@ -465,6 +465,16 @@ class SubtitleExtensionBackground {
       await chrome.storage.local.set({ apiConfig });
     }
 
+    // 清空所有旧的翻译缓存，只保留新翻译的结果
+    const allData = await chrome.storage.local.get(null);
+    const videoSubtitleKeys = Object.keys(allData).filter((key) =>
+      key.startsWith('videoSubtitles_')
+    );
+    if (videoSubtitleKeys.length > 0) {
+      await chrome.storage.local.remove(videoSubtitleKeys);
+      console.log(`🗑️ 已清除 ${videoSubtitleKeys.length} 条旧翻译缓存`);
+    }
+
     sendResponse({ success: true, message: '翻译已在后台启动' });
 
     try {
