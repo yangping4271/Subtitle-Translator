@@ -5,6 +5,8 @@ from openai import OpenAI
 from .prompts import SUMMARIZER_PROMPT
 from .config import SubtitleConfig
 from .utils.json_repair import parse_llm_response
+from .utils.errors import extract_error_message, get_error_suggestions
+from .utils.api import validate_api_response
 from ..logger import setup_logger
 
 logger = setup_logger("subtitle_summarizer")
@@ -67,18 +69,10 @@ class SubtitleSummarizer:
             current_date = datetime.now().strftime('%Y-%m-%d')
 
             message = [
-                {"role": "system", "content": (
-                    "You are a precise subtitle summarizer. "
-                    "When processing proper nouns and product names:"
-                    "1. Use BOTH the folder path AND filename as authoritative references for product names"
-                    "2. Folder names often contain the correct product/topic names"
-                    "3. Only correct terms that appear to be ASR errors based on:"
-                    "   - Similar pronunciation"
-                    "   - Context indicating they refer to the same thing"
-                    "   - Mismatch with folder/filename context"
-                    "4. Do not modify other technical terms or module names that are clearly different"
-                    f"{SUMMARIZER_PROMPT.replace('{current_date}', current_date)}"
-                )},
+                {
+                    "role": "system",
+                    "content": SUMMARIZER_PROMPT.format(current_date=current_date)
+                },
                 {"role": "user", "content": f"{context_info}\n\nContent:\n{subtitle_content}"}
             ]
             
@@ -88,19 +82,8 @@ class SubtitleSummarizer:
                 temperature=0.7,
                 timeout=80
             )
-            
-            # 添加类型检查和错误处理
-            if isinstance(response, str):
-                # 如果response是字符串，说明API调用出错
-                logger.error(f"❌ API调用返回错误: {response}")
-                raise Exception(f"API调用失败: {response}")
-            
-            # 检查response是否有choices属性
-            if not hasattr(response, 'choices') or not response.choices:
-                logger.error("❌ API响应格式异常：缺少choices属性")
-                raise Exception("API响应格式异常")
-            
-            summary = response.choices[0].message.content
+
+            summary = validate_api_response(response)
 
             # 移除<think>和</think>标签
             summary = re.sub(r'<think>.*?</think>', '', summary, flags=re.DOTALL)
@@ -111,12 +94,11 @@ class SubtitleSummarizer:
             
         except Exception as e:
             from .spliter import SummaryError
-            from .split_by_llm import _extract_error_message, _get_error_suggestions
-            
-            error_msg = _extract_error_message(str(e))
-            logger.error(f"❌ 内容分析失败: {error_msg}")
-            
+
+            error_msg = extract_error_message(str(e))
+            logger.error(f"内容分析失败: {error_msg}")
+
             # 根据错误类型给出针对性建议
-            suggestions = _get_error_suggestions(str(e), self.config.summary_model)
-            
+            suggestions = get_error_suggestions(str(e), self.config.summary_model)
+
             raise SummaryError(error_msg, suggestions)

@@ -12,11 +12,15 @@ from typing_extensions import Annotated
 from rich import print
 
 from .env_setup import setup_environment
-from .env_setup import setup_environment
 from .logger import setup_logger
 
 # 默认转录模型
 DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
+
+# 媒体文件扩展名定义
+AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.wav', '.flac', '.aac', '.ogg', '.wma', '.aiff', '.opus']
+VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpeg', '.mpg', '.3gp', '.ts']
+MEDIA_EXTENSIONS = AUDIO_EXTENSIONS + VIDEO_EXTENSIONS
 
 # 初始化logger
 logger = setup_logger(__name__)
@@ -142,26 +146,18 @@ def _natural_sort_key(s: str):
 def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path, transcribe: bool) -> list:
     """获取批量处理的文件列表"""
     if transcribe:
-        MEDIA_EXTENSIONS = [
-            "*.srt",  # 字幕文件
-            # 音频格式（优先级高于视频）
-            "*.mp3", "*.m4a", "*.wav", "*.flac", "*.aac",
-            "*.ogg", "*.wma", "*.aiff", "*.opus",
-            # 视频格式
-            "*.mp4", "*.avi", "*.mov", "*.mkv", "*.webm",
-            "*.flv", "*.wmv", "*.m4v", "*.mpeg", "*.mpg",
-            "*.3gp", "*.ts"
-        ]
+        # 转录模式：支持字幕和所有媒体文件
+        patterns = ["*.srt"] + [f"*{ext}" for ext in MEDIA_EXTENSIONS]
     else:
-        # 如果不启用转录，只查找字幕文件
-        MEDIA_EXTENSIONS = ["*.srt"]
+        # 翻译模式：只支持字幕文件
+        patterns = ["*.srt"]
 
     # 确保input_dir是绝对路径
     input_dir = input_dir.resolve()
 
     # 查找所有媒体文件（使用绝对路径）
     media_files = []
-    for pattern in MEDIA_EXTENSIONS:
+    for pattern in patterns:
         media_files.extend(glob.glob(str(input_dir / pattern)))
     
     if not media_files:
@@ -180,12 +176,10 @@ def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path, 
         relative_path = file.relative_to(input_dir)
         file_name = relative_path.name
 
-        # 移除扩展名
-        base_name = re.sub(
-            r'\.(srt|mp3|m4a|wav|flac|aac|ogg|wma|aiff|opus|'
-            r'mp4|avi|mov|mkv|webm|flv|wmv|m4v|mpeg|mpg|3gp|ts)$',
-            '', file_name, flags=re.IGNORECASE
-        )
+        # 移除扩展名（使用常量构建正则表达式）
+        all_exts = ['srt'] + [ext.lstrip('.') for ext in MEDIA_EXTENSIONS]
+        ext_pattern = r'\.(' + '|'.join(all_exts) + r')$'
+        base_name = re.sub(ext_pattern, '', file_name, flags=re.IGNORECASE)
         # 移除各种语言后缀
         language_suffixes = [
             r'\.zh$', r'\.zh-cn$', r'\.zh-tw$',  # 中文
@@ -210,15 +204,8 @@ def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path, 
 
         # 确定输入文件优先级：srt > 音频 > 视频（音频转录更快）
         input_file_found = None
-        # 音频格式列表（按常用程度排序）
-        audio_exts = ['.mp3', '.m4a', '.wav', '.flac', '.aac',
-                      '.ogg', '.wma', '.aiff', '.opus']
-        # 视频格式列表（按常用程度排序）
-        video_exts = ['.mp4', '.avi', '.mov', '.mkv', '.webm',
-                      '.flv', '.wmv', '.m4v', '.mpeg', '.mpg',
-                      '.3gp', '.ts']
 
-        for ext in ['.srt'] + audio_exts + video_exts:
+        for ext in ['.srt'] + AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
             candidate = input_dir / f"{base_name}{ext}"
             if candidate.exists():
                 input_file_found = candidate
@@ -295,10 +282,10 @@ def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: 
             if file_ext == '.srt':
                 file_type = "字幕文件"
                 process_type = "直接翻译"
-            elif file_ext in ['.mp3', '.m4a', '.wav', '.flac', '.aac', '.ogg', '.wma', '.aiff', '.opus']:
+            elif file_ext in AUDIO_EXTENSIONS:
                 file_type = "音频文件"
                 process_type = "转录+翻译"
-            elif file_ext in ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpeg', '.mpg', '.3gp', '.ts']:
+            elif file_ext in VIDEO_EXTENSIONS:
                 file_type = "视频文件"
                 process_type = "转录+翻译"
             else:
@@ -662,9 +649,84 @@ def version():
     """显示版本信息"""
     from rich.console import Console
     from .version_utils import display_version_info
-    
+
     console = Console()
     display_version_info(console)
+
+
+@app.command("init")
+def init():
+    """初始化配置文件"""
+    from pathlib import Path
+    from rich import print
+    from rich.prompt import Prompt, Confirm
+    import os
+
+    # 获取配置文件路径
+    config_dir = Path.home() / ".config" / "subtitle-translator"
+    config_file = config_dir / ".env"
+
+    # 检查是否已存在
+    if config_file.exists():
+        print(f"[yellow]⚠️  配置文件已存在:[/yellow] {config_file}")
+        overwrite = Confirm.ask("是否覆盖现有配置？", default=False)
+        if not overwrite:
+            print("[blue]ℹ️  初始化已取消[/blue]")
+            return
+
+    print("[bold green]🚀 Subtitle Translator 配置初始化[/bold green]\n")
+
+    # 交互式输入
+    print("[bold]1. API 配置[/bold]")
+    api_base = Prompt.ask(
+        "API Base URL",
+        default="https://api.openai.com/v1"
+    )
+    api_key = Prompt.ask("API Key", password=True)
+
+    print("\n[bold]2. 模型配置[/bold]")
+    split_model = Prompt.ask(
+        "断句模型 (用于智能分句)",
+        default="gpt-4o-mini"
+    )
+    translation_model = Prompt.ask(
+        "翻译模型 (用于字幕翻译)",
+        default="gpt-4o"
+    )
+    summary_model = Prompt.ask(
+        "总结模型 (用于内容分析)",
+        default="gpt-4o-mini"
+    )
+
+    # 创建配置内容
+    config_content = f"""# Subtitle Translator 配置文件
+# 生成时间: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+# API 配置
+OPENAI_BASE_URL={api_base}
+OPENAI_API_KEY={api_key}
+
+# 模型配置
+SPLIT_MODEL={split_model}
+TRANSLATION_MODEL={translation_model}
+SUMMARY_MODEL={summary_model}
+LLM_MODEL={split_model}
+
+# 可选配置
+# TARGET_LANGUAGE=zh  # 默认目标语言
+"""
+
+    # 创建目录并写入文件
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(config_content, encoding='utf-8')
+
+    # 设置文件权限（仅所有者可读写）
+    os.chmod(config_file, 0o600)
+
+    print(f"\n[bold green]✅ 配置文件已创建:[/bold green] {config_file}")
+    print(f"\n[bold blue]💡 下一步:[/bold blue]")
+    print(f"   运行 [green]translate -i your-file.srt[/green] 开始翻译")
+    print(f"   或运行 [green]translate --help[/green] 查看所有选项")
 
 
 if __name__ == "__main__":

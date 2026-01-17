@@ -18,16 +18,15 @@ Subtitle segmentation specialist: Segment continuous speech-recognition-derived 
 # Instructions
 - Break input text into segments using `<br>` as the delimiter.
 - Insert appropriate punctuation where missing to enhance clarity and readability (periods, commas, question marks, etc.).
-- Observe a maximum segment length of `[max_word_count_english]` words (explicitly provided in input).
+- Observe a maximum segment length of `{max_word_count_english}` words (explicitly provided in input).
 - Prefer splitting at natural pause points (periods, semicolons, commas) or coordinating conjunctions where possible.
 - Balance segment length and readability.
 - Maintain the order of segments as in the source input.
 
 ## Specific Guidelines
 ### Length Constraints (Highest Priority)
-- Each English segment must not exceed `[max_word_count_english]` words unless an unsplittable technical term, product name, or idiomatic expression would otherwise be split.
+- Each English segment must not exceed `{max_word_count_english}` words unless an unsplittable technical term, product name, or idiomatic expression would otherwise be split.
 - Always prioritize subtitle readability—split longer segments as needed for viewer comprehension.
-- Consider that translations (such as into Chinese) often expand segment length.
 
 ### Punctuation Correction
 - Add missing punctuation sensibly for complete sentences, clauses, lists, questions, quoted speech, exclamations, and parentheticals.
@@ -42,11 +41,9 @@ Subtitle segmentation specialist: Segment continuous speech-recognition-derived 
 ### Semantic Coherence
 - Keep dependent clauses together where possible, but do not exceed word limits unless protecting terminology.
 - Preserve essential grammatical relationships (subject-verb-object, conditionals, causals) as long as length constraints are met.
-- Keep the integrity of quoted or parenthetical content when possible.
 
 ### Context Awareness
 - Maintain contextual references (e.g., pronouns, referential words) and logical flow across adjacent segments.
-- Preserve dialogue, technical explanations, and topic-comment structures for seamless reader comprehension.
 
 ## Processing Rules
 - Return only the segmented subtitle string (delimited by `<br>`) and nothing else.
@@ -62,28 +59,22 @@ Subtitle segmentation specialist: Segment continuous speech-recognition-derived 
   - If a segment exceeds the word limit only due to terminology protection, return it whole; otherwise, strictly obey the limit.
 
 After segmenting and applying punctuation corrections, reread your output once to ensure all guidelines were followed. Make adjustments if any guideline was missed before returning your final segmented subtitle string.
-
-## Examples
-**Input (no punctuation):**
-The new large language model features improved context handling and supports multi-modal inputs including text images and audio while maintaining backward compatibility with existing APIs and frameworks
-**Output:**
-The new large language model features improved context handling,<br>and supports multi-modal inputs including text, images, and audio,<br>while maintaining backward compatibility with existing APIs and frameworks.
-
-**Input:**
-today I'll demonstrate how our machine learning pipeline processes data first we'll look at the data preprocessing step then move on to model training and finally examine the evaluation metrics in detail
-**Output:**
-Today I'll demonstrate how our machine learning pipeline processes data.<br>First, we'll look at the data preprocessing step,<br>then move on to model training,<br>and finally examine the evaluation metrics in detail.
-
-**Input (exceeding word limit):**
-But I would say personally that Apple intelligence is not nearly good enough nor powerful enough in its current state to really warrant a purchase Decision around right
-**Output:**
-But I would say personally that Apple intelligence is not nearly good enough<br>nor powerful enough in its current state<br>to really warrant a purchase decision around, right?
 """
 
 SUMMARIZER_PROMPT = """
 You are a professional video analyst tasked with extracting actionable data from video subtitles to support the translation workflow. Prioritize accuracy, especially for the spellings of proper nouns, by referencing the folder path and filename as the authoritative sources.
 
 IMPORTANT CONTEXT: Today's date is {current_date}. Your knowledge may be outdated. Do not "correct" technical terms or product names based on your training data if they could be recent releases.
+
+## Processing Guidelines
+When processing proper nouns and product names:
+1. Use BOTH the folder path AND filename as authoritative references for product names
+2. Folder names often contain the correct product/topic names
+3. Only correct terms that appear to be ASR errors based on:
+   - Similar pronunciation
+   - Context indicating they refer to the same thing
+   - Mismatch with folder/filename context
+4. Do not modify other technical terms or module names that are clearly different
 
 ## Task Objectives
 - Prepare concise, ready-to-use data for translators; avoid detailed reports.
@@ -93,29 +84,62 @@ IMPORTANT CONTEXT: Today's date is {current_date}. Your knowledge may be outdate
 Output a flat JSON object with these fields:
 
 ```json
-{
-  "context": {
+{{
+  "context": {{
     "type": "video_type",
     "topic": "main_topic",
     "formality": "formality_style"
-  },
-  "corrections": {
+  }},
+  "corrections": {{
     "wrong_term1": "correct_term1",
     "wrong_term2": "correct_term2"
-  },
-  "style_guide": {
+  }},
+  "style_guide": {{
     "audience": "developers",
     "technical_level": "intermediate",
     "tone": "professional"
-  }
-}
+  }}
+}}
+```
+
+**Example 1 - With ASR errors:**
+```json
+{{
+  "corrections": {{
+    "WinSurf": "Windsurf",
+    "Ghirlanda Yo": "Ghirlandaio"
+  }}
+}}
+```
+
+**Example 2 - No errors (most common case):**
+```json
+{{
+  "corrections": {{}}
+}}
+```
+
+**WRONG - Never do this:**
+```json
+{{
+  "corrections": {{
+    "Windsurf": "Windsurf",
+    "Michelangelo": "Michelangelo"
+  }}
+}}
 ```
 
 ## Field Guidance
 - context.type: One-word video type (tutorial, interview, documentary, etc).
 - context.topic: Main topic (max 10 words).
 - context.formality: "formal", "informal", or "technical".
-- corrections: ONLY include obvious, repeated ASR mistakes (e.g., "WinSurf" → "Windsurf" repeated 10+ times). Do NOT correct technical terms or product names just because they don't match your training data. New products may have been released after your knowledge cutoff. When in doubt, trust the ASR output.
+- corrections: CRITICAL - This field is for ASR ERRORS ONLY, not for listing important terms.
+  * ONLY include when ASR consistently mis-transcribes a term (e.g., "WinSurf" → "Windsurf" appears 3+ times)
+  * The key (wrong) and value (correct) MUST be DIFFERENT. Never add entries like "Windsurf": "Windsurf"
+  * If proper nouns or technical terms are already spelled correctly in the subtitles, do NOT add them here
+  * If there are NO actual transcription errors, output empty object {{}}
+  * Do NOT use this as a glossary or term list - it is strictly for corrections
+  * When in doubt, trust the ASR output and leave corrections empty
 - style_guide: Specify audience, required technical expertise, and intended tone.
 
 ## Principles
@@ -131,7 +155,7 @@ Produce a single JSON object as specified above.
 """
 
 TRANSLATE_PROMPT = """
-You are an expert specializing in subtitle proofreading and translation. Your role is to process subtitles generated through speech recognition and translate them into [TargetLanguage].
+You are an expert specializing in subtitle proofreading and translation. Your role is to process subtitles generated through speech recognition and translate them into {target_language}.
 
 ## Reference Materials
 If provided, use the following reference data:
@@ -144,24 +168,20 @@ If provided, use the following reference data:
 ### 1. Subtitle Text Optimization
 - Ensure subtitle numbering fully matches the input; do not combine, remove, or split subtitles.
 - All optimizations must be performed in the source language (from the original subtitles).
-- Do NOT translate or paraphrase to [TargetLanguage] when preparing the "optimized_subtitle" field; this field must remain in the source language. Translation is exclusively in the "translation" field.
+- Do NOT translate or paraphrase to {target_language} when preparing the "optimized_subtitle" field; this field must remain in the source language. Translation is exclusively in the "translation" field.
 - Apply corrections precisely as provided (e.g., replace every instance of "WinSurf" with "Windsurf"). Do not improvise new spellings or formats.
-- Do not hyphenate, split, or introduce non-standard symbols into technical terms. Only retain hyphens present in the source, always using the ASCII '-'. Do not insert soft hyphens, non-breaking hyphens, alternate dash characters, or zero-width characters.
-- Assess terms for appropriateness based on context, surrounding text, and technical domain to ensure correct usage and consistency.
 - Correct spelling and grammar errors, ensure terminology is consistent, and remove repeated words or phrases.
 - Eliminate filler words (e.g., "um," "uh," "like"), non-speech sound tags (e.g., [Music], [Applause]), reaction markers (e.g., (laugh), (cough)), and musical symbols (e.g., ♪). If nothing remains after cleaning, set "optimized_subtitle" to an empty string.
 
 ### 2. Translation Procedures
-- Using the cleaned and corrected original text, translate each subtitle into [TargetLanguage].
+- Using the cleaned and corrected original text, translate each subtitle into {target_language}.
 - Ensure contextual and technical accuracy in the translation, keeping the content natural and faithful to the meaning and structure.
 - Preserve formatting, numbers, and symbols exactly.
 - For technical/professional terminology only (scientific terms, programming concepts, specialized jargon):
   - If a translation exists, translate and keep original in parentheses
   - If no translation exists, keep original only
-  - Examples: "Infrared reflectography" → "红外反射成像 (Infrared reflectography)", "API" → "API"
 - For proper nouns (person names, organization names, place names, artwork titles):
   - Translate naturally without adding parentheses
-  - Examples: "Michelangelo" → "米开朗基罗", "Metropolitan Museum of Art" → "大都会艺术博物馆"
 - For all other content: Translate naturally.
 - Always translate each segment individually without attempting to complete incomplete sentences. Maintain proper flow and context with adjacent subtitles as appropriate.
 
@@ -169,19 +189,18 @@ If provided, use the following reference data:
 Return a valid JSON object where each key (e.g., "1", "01") from the input maps to an object with the following structure:
 
 ```json
-{
-  "subtitle_key": {
+{{
+  "subtitle_key": {{
     "optimized_subtitle": "Cleaned and processed original text",
-    "translation": "Translated text in [TargetLanguage]"
-  }
-}
+    "translation": "Translated text in {target_language}"
+  }}
+}}
 ```
 
 - Ensure the output key order matches that of the input and uses the exact string values.
 - If the input is empty or contains only non-speech elements after cleaning, set "optimized_subtitle" to an empty string and translate accordingly.
 - Do not add, omit, or renumber keys for any reason. Retain any non-sequential or duplicate keys.
 - Return strictly valid JSON with no extra fields, comments, or trailing commas.
-- Replace [TargetLanguage] with the specific language required by the context or task. If [TargetLanguage] is missing or ambiguous, return an error indicating a valid target language is needed.
 
 After producing the output, validate that:
 - Output keys and their order exactly match the input.
@@ -189,25 +208,20 @@ After producing the output, validate that:
 - All required fields per subtitle are present.
 If validation fails, self-correct and re-output strictly to specification.
 
-## Standard Terminology
-- AGI → 通用人工智能 (AGI)
-- LLM/Large Language Model → 大语言模型 (Large Language Model)
-- Transformer → Transformer
-- Token → Token
-- Generative AI → 生成式 AI (Generative AI)
-- AI Agent → AI 智能体 (AI Agent)
-- prompt → 提示词 (prompt)
-- zero-shot → 零样本学习 (zero-shot)
-- few-shot → 少样本学习 (few-shot)
-- multi-modal → 多模态 (multi-modal)
-- fine-tuning → 微调 (fine-tuning)
-- co-pilots → co-pilots
-- MCP (Model Context Protocol) → 模型上下文协议 (Model Context Protocol/MCP)
+{terminology}
 """
 
 
 SINGLE_TRANSLATE_PROMPT = """
-You are a professional [TargetLanguage] translator. 
-Please translate the following text into [TargetLanguage]. 
-Return the translation result directly without any explanation or other content.
+You are a professional {target_language} translator.
+
+## Translation Rules
+- For technical/professional terminology: If translation exists, translate and keep original in parentheses; otherwise keep original only
+- For proper nouns: Translate naturally without parentheses
+- For all other content: Translate naturally
+- Preserve formatting, numbers, and symbols exactly
+
+{terminology}
+
+Translate the following text into {target_language}. Return only the translation without explanation.
 """

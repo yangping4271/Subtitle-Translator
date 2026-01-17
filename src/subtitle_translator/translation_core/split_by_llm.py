@@ -6,64 +6,11 @@ from openai import OpenAI
 from .data import SubtitleSegment
 from .prompts import SPLIT_SYSTEM_PROMPT
 from .config import SubtitleConfig, get_default_config
+from .utils.errors import extract_error_message, get_error_suggestions
+from .utils.api import validate_api_response
 from ..logger import setup_logger
 
 logger = setup_logger("split_by_llm")
-
-def _extract_error_message(error_str: str) -> str:
-    """提取错误信息中的核心内容"""
-    # 提取 API 错误信息
-    if "Error code:" in error_str and "message" in error_str:
-        try:
-            # 尝试提取 JSON 中的 message 字段
-            import json
-            import re
-            
-            # 查找 JSON 部分
-            json_match = re.search(r'\{.*\}', error_str)
-            if json_match:
-                try:
-                    error_data = json.loads(json_match.group())
-                    if "error" in error_data and "message" in error_data["error"]:
-                        return error_data["error"]["message"]
-                except:
-                    pass
-        except:
-            pass
-    
-    # 如果无法解析 JSON，返回简化的错误信息
-    if "is not a valid model ID" in error_str:
-        return "模型不存在或不可用"
-    elif "401" in error_str or "Unauthorized" in error_str:
-        return "API密钥无效或已过期"
-    elif "403" in error_str or "Forbidden" in error_str:
-        return "API访问被拒绝"
-    elif "429" in error_str or "rate limit" in error_str.lower():
-        return "API调用频率限制"
-    elif "timeout" in error_str.lower():
-        return "请求超时"
-    elif "connection" in error_str.lower():
-        return "网络连接失败"
-    else:
-        # 返回前50个字符作为简化错误信息
-        return error_str[:50] + ("..." if len(error_str) > 50 else "")
-
-def _get_error_suggestions(error_str: str, model: str) -> str:
-    """根据错误类型返回针对性建议"""
-    if "is not a valid model ID" in error_str:
-        return f"💡 建议：检查模型名称 '{model}' 是否正确，或更换其他可用模型"
-    elif "401" in error_str or "Unauthorized" in error_str:
-        return "💡 建议：检查 API 密钥是否正确设置"
-    elif "403" in error_str:
-        return "💡 建议：检查 API 密钥权限或账户状态"
-    elif "429" in error_str or "rate limit" in error_str.lower():
-        return "💡 建议：稍后重试，或检查 API 调用频率限制"
-    elif "timeout" in error_str.lower():
-        return "💡 建议：检查网络连接，或尝试使用更快的模型"
-    elif "connection" in error_str.lower():
-        return "💡 建议：检查网络连接和 API 端点设置"
-    else:
-        return "💡 建议：检查网络连接、API 密钥和模型配置"
 
 def count_words(text: str) -> int:
     """
@@ -168,7 +115,7 @@ def split_by_llm(text: str,
     )
     
     # 使用系统提示词
-    system_prompt = SPLIT_SYSTEM_PROMPT.replace("[max_word_count_english]", str(max_word_count_english))
+    system_prompt = SPLIT_SYSTEM_PROMPT.format(max_word_count_english=max_word_count_english)
     
     # 在用户提示中添加对空格的强调
     user_prompt = f"Please use multiple <br> tags to separate the following sentence. Make sure to preserve all spaces and punctuation exactly as they appear in the original text:\n{text}"
@@ -184,18 +131,8 @@ def split_by_llm(text: str,
             temperature=0.2,
             timeout=80
         )
-        
-        # 处理响应 - 添加类型检查
-        if isinstance(response, str):
-            logger.error(f"❌ API调用返回错误: {response}")
-            raise Exception(f"API调用失败: {response}")
-        
-        # 检查response是否有choices属性
-        if not hasattr(response, 'choices') or not response.choices:
-            logger.error("❌ API响应格式异常：缺少choices属性")
-            raise Exception("API响应格式异常")
-        
-        result = response.choices[0].message.content
+
+        result = validate_api_response(response)
         if not result:
             raise Exception("API返回为空")
         logger.info(f"API返回结果: \n\n{result}\n")
@@ -263,40 +200,24 @@ def split_by_llm(text: str,
                         new_sentences.append(segment)
 
                 # 层级4：智能拆分层 (warning < x ≤ max) - 先尝试智能分割，失败再强制等分
-                elif word_count <= max_threshold:
-                    logger.warning(f"⚠️ 超出警告阈值({word_count}/{max_word_count_english}字): {segment[:40]}...")
-                    logger.info(f"🔧 尝试智能分割...")
-                    split_results = aggressive_split(segment, max_word_count_english)
-
-                    if len(split_results) > 1:
-                        # 智能分割成功
-                        stats['optimized'] += 1
-                        logger.info(f"✅ 智能分割成功: 分为{len(split_results)}段")
-                        new_sentences.extend(split_results)
-                    else:
-                        # 智能分割失败，使用降级分割
-                        logger.warning(f"⚠️ 智能分割失败，使用降级分割")
-                        split_results = fallback_split(segment, max_word_count_english, warning_threshold)
-                        stats['forced'] += 1
-                        new_sentences.extend(split_results)
-
-                # 层级5：严重超标层 (> max) - 先尝试智能分割，失败再强制等分
+                # 层级5：严重超标层 (> max) - 同样处理逻辑
                 else:
-                    logger.error(f"❌ 严重超标({word_count}/{max_word_count_english}字): {segment[:40]}...")
-                    logger.info(f"🔧 尝试智能分割...")
+                    is_severe = word_count > max_threshold
+                    level_name = "严重超标" if is_severe else "超出警告阈值"
+                    log_func = logger.error if is_severe else logger.warning
+                    stat_key = 'rejected' if is_severe else 'forced'
+
+                    log_func(f"{level_name}({word_count}/{max_word_count_english}字): {segment[:40]}...")
                     split_results = aggressive_split(segment, max_word_count_english)
 
                     if len(split_results) > 1:
-                        # 智能分割成功
                         stats['optimized'] += 1
-                        logger.info(f"✅ 智能分割成功: 分为{len(split_results)}段")
+                        logger.info(f"智能分割成功: 分为{len(split_results)}段")
                         new_sentences.extend(split_results)
                     else:
-                        # 智能分割失败，使用降级分割进行多次拆分
-                        logger.warning(f"⚠️ 智能分割失败，使用降级分割进行多次拆分")
-                        split_results = fallback_split(segment, max_word_count_english, warning_threshold)
-                        stats['rejected'] += 1
-                        new_sentences.extend(split_results)
+                        logger.warning(f"智能分割失败，使用降级分割")
+                        new_sentences.extend(fallback_split(segment, max_word_count_english, warning_threshold))
+                        stats[stat_key] += 1
 
         sentences = new_sentences
 
@@ -326,15 +247,15 @@ def split_by_llm(text: str,
         
     except Exception as e:
         if max_retries > 0:
-            logger.warning(f"API调用失败，第{4-max_retries}次重试: {_extract_error_message(str(e))}")
+            logger.warning(f"API调用失败，第{4-max_retries}次重试: {extract_error_message(str(e))}")
             return split_by_llm(text, model, max_word_count_english, max_retries-1, batch_index)
         else:
-            error_msg = _extract_error_message(str(e))
-            logger.error(f"❌ 智能断句失败: {error_msg}")
-            
+            error_msg = extract_error_message(str(e))
+            logger.error(f"智能断句失败: {error_msg}")
+
             # 根据错误类型给出针对性建议
-            suggestions = _get_error_suggestions(str(e), model)
-            
+            suggestions = get_error_suggestions(str(e), model)
+
             # 创建一个携带建议的自定义异常类型
             from .spliter import SmartSplitError
             raise SmartSplitError(error_msg, suggestions)

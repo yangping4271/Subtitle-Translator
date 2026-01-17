@@ -2,6 +2,8 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+from .terminology import DEFAULT_TERMINOLOGY
+
 # 语言代码映射表
 LANGUAGE_MAPPING = {
     "zh": "简体中文",
@@ -134,7 +136,10 @@ class SubtitleConfig:
 
     # 功能开关
     need_reflect: bool = False
-    
+
+    # 术语映射表
+    terminology: Optional[dict] = None
+
     def set_target_language(self, lang_code: str) -> None:
         """
         设置目标语言
@@ -164,15 +169,19 @@ class SubtitleConfig:
             except ValueError:
                 # 如果环境变量中的语言代码无效，保持默认值
                 pass
-        
+
+        # 设置默认术语表（如果未提供）
+        if self.terminology is None:
+            self.terminology = DEFAULT_TERMINOLOGY.get(self.target_language, {})
+
         if not self.openai_base_url or not self.openai_api_key:
             error_msg = f"环境变量验证失败:\n"
             error_msg += f"  OPENAI_BASE_URL = '{self.openai_base_url}' (长度: {len(self.openai_base_url)})\n"
             error_msg += f"  OPENAI_API_KEY = '{self.openai_api_key[:20]}...' (长度: {len(self.openai_api_key)})\n"
             error_msg += f"  LLM_MODEL = '{self.llm_model}'\n"
             error_msg += f"  SPLIT_MODEL = '{self.split_model}'\n"
-            error_msg += f"  SUMMARY_MODEL = '{self.summary_model}'"
-            error_msg += f"  TRANSLATION_MODEL = '{self.translation_model}'\n"
+            error_msg += f"  SUMMARY_MODEL = '{self.summary_model}'\n"
+            error_msg += f"  TRANSLATION_MODEL = '{self.translation_model}'"
             raise ValueError(error_msg)
 
 # 文件相关常量

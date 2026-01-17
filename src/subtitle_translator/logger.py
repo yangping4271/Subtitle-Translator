@@ -5,24 +5,39 @@ import sys
 from pathlib import Path
 import queue
 import threading
-from typing import Optional
+from typing import Optional, Tuple
 import time
 
-# 智能日志路径选择
-def _get_log_path():
-    """智能选择日志路径：开发模式使用项目目录，生产模式使用用户目录"""
-    # 项目根目录路径
-    project_root = Path(__file__).parent.parent.parent
-    project_log_path = project_root / "logs"
-    
-    # 检查是否在开发环境（项目目录下有pyproject.toml等标志文件）
-    if (project_root / "pyproject.toml").exists() and (project_root / "src").exists():
-        # 开发模式：使用项目目录
-        return project_log_path
-    else:
-        # 生产模式：使用用户目录
-        user_log_path = Path.home() / ".local" / "share" / "subtitle-translator" / "logs"
-        return user_log_path
+
+def _find_project_root() -> Optional[Path]:
+    """
+    查找项目根目录（包含 pyproject.toml 和 src/subtitle_translator 的目录）
+
+    Returns:
+        项目根目录的 Path 对象，如果不在项目目录内则返回 None
+    """
+    try:
+        current = Path.cwd()
+        while current != current.parent:
+            if (current / "pyproject.toml").exists() and (current / "src" / "subtitle_translator").exists():
+                return current
+            current = current.parent
+    except Exception:
+        pass
+    return None
+
+
+def _get_log_path() -> Path:
+    """
+    智能选择日志路径：
+    - 开发模式（当前工作目录在项目内）: 使用项目目录
+    - 全局工具模式: 使用用户目录
+    """
+    project_root = _find_project_root()
+    if project_root:
+        return project_root / "logs"
+    return Path.home() / ".local" / "share" / "subtitle-translator" / "logs"
+
 
 LOG_PATH = _get_log_path()
 LOG_FILE = str(LOG_PATH / 'app.log')
@@ -32,17 +47,17 @@ log_queue = queue.Queue()
 queue_handler = None
 _queue_listener = None
 
-def get_log_file_path():
+
+def get_log_file_path() -> str:
     """获取当前使用的日志文件路径"""
     return LOG_FILE
 
-def get_log_mode_info():
+
+def get_log_mode_info() -> Tuple[str, str]:
     """获取日志模式信息（开发模式或生产模式）"""
-    project_root = Path(__file__).parent.parent.parent
-    if (project_root / "pyproject.toml").exists() and (project_root / "src").exists():
+    if _find_project_root():
         return "开发模式", "项目目录"
-    else:
-        return "生产模式", "用户目录"
+    return "生产模式", "用户目录"
 
 class ColoredFormatter(logging.Formatter):
     """带颜色和emoji的日志格式化器"""

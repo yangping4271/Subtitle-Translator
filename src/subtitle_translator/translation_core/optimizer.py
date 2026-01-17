@@ -13,9 +13,20 @@ from .prompts import (
 )
 from .config import SubtitleConfig
 from .utils.json_repair import parse_llm_response
+from .utils.api import validate_api_response
 from ..logger import setup_logger
 
 logger = setup_logger("subtitle_optimizer")
+
+
+def _is_translation_failed(value) -> bool:
+    """检查翻译结果是否为失败状态"""
+    if isinstance(value, str):
+        return value.startswith("[翻译失败]")
+    if isinstance(value, dict):
+        return value.get("translation", "").startswith("[翻译失败]")
+    return False
+
 
 def is_sentence_complete(text: str) -> bool:
     """
@@ -94,9 +105,7 @@ class SubtitleOptimizer:
             # 检查是否有翻译失败的字幕（带有[翻译失败]前缀）
             failed_subtitles = {}
             for k, v in result["translated_subtitles"].items():
-                if isinstance(v, str) and v.startswith("[翻译失败]"):
-                    failed_subtitles[k] = subtitle_json[k]
-                elif isinstance(v, dict) and v.get("translation", "").startswith("[翻译失败]"):
+                if _is_translation_failed(v):
                     failed_subtitles[k] = subtitle_json[k]
             
             # 如果有翻译失败的字幕，使用单条翻译再次尝试
@@ -112,12 +121,8 @@ class SubtitleOptimizer:
                         result["translated_subtitles"][str(k)] = v
 
             # 检查翻译结果质量
-            failed_count = 0
-            for k, v in result["translated_subtitles"].items():
-                if isinstance(v, str) and v.startswith("[翻译失败]"):
-                    failed_count += 1
-                elif isinstance(v, dict) and v.get("translation", "").startswith("[翻译失败]"):
-                    failed_count += 1
+            failed_count = sum(1 for v in result["translated_subtitles"].values()
+                               if _is_translation_failed(v))
             
             # 如果所有翻译都失败，抛出异常
             if failed_count == len(result["translated_subtitles"]):
@@ -349,8 +354,13 @@ class SubtitleOptimizer:
         logger.info(f"[+]正在单条翻译字幕，共{len(subtitle_keys)}条")
         
         translated_subtitle = {}
-        message = [{"role": "system",
-                   "content": SINGLE_TRANSLATE_PROMPT.replace("[TargetLanguage]", self.config.target_language)}]
+        message = [{
+            "role": "system",
+            "content": SINGLE_TRANSLATE_PROMPT.format(
+                target_language=self.config.target_language,
+                terminology=self._format_terminology()
+            )
+        }]
         
         for key, value in subtitle_chunk.items():
             try:
@@ -365,17 +375,8 @@ class SubtitleOptimizer:
                     timeout=80
                     )
                 message.pop()
-                
-                # 添加类型检查
-                if isinstance(response, str):
-                    logger.error(f"❌ API调用返回错误: {response}")
-                    raise Exception(f"API调用失败: {response}")
-                
-                if not hasattr(response, 'choices') or not response.choices:
-                    logger.error("❌ API响应格式异常：缺少choices属性")
-                    raise Exception("API响应格式异常")
-                
-                translate = response.choices[0].message.content.strip()
+
+                translate = validate_api_response(response, f"字幕ID {key}").strip()
                 translated_subtitle[key] = translate
                 logger.info(f"单条翻译原文: {value}")
                 logger.info(f"单条翻译结果: {translate}")
@@ -394,6 +395,17 @@ class SubtitleOptimizer:
             "optimized_subtitles": subtitle_chunk,
             "translated_subtitles": translated_subtitle
         }
+
+    def _format_terminology(self) -> str:
+        """格式化术语表为 prompt 文本"""
+        if not self.config.terminology:
+            return ""
+
+        lines = ["## Standard Terminology"]
+        for term, translation in self.config.terminology.items():
+            lines.append(f"- {term} → {translation}")
+
+        return "\n".join(lines)
 
     def _create_translate_message(self, original_subtitle: Dict[str, str],
                                 summary_content: Dict):
@@ -422,19 +434,7 @@ class SubtitleOptimizer:
                     reference_parts.append(
                         f"Apply corrections: {json.dumps(corrections, ensure_ascii=False)}"
                     )
-                
-                # 添加不翻译列表
-                if do_not_translate := summary_json.get('do_not_translate'):
-                    reference_parts.append(
-                        f"Keep in original: {', '.join(do_not_translate)}"
-                    )
-                
-                # 添加规范术语
-                if canonical := summary_json.get('canonical_terms'):
-                    reference_parts.append(
-                        f"Use canonical forms: {', '.join(canonical[:10])}"  # 限制显示前10个
-                    )
-                
+
                 # 组合参考信息
                 if reference_parts:
                     input_content += "\n\n<reference>\n" + "\n".join(reference_parts) + "\n</reference>"
@@ -445,8 +445,10 @@ class SubtitleOptimizer:
                 input_content += (f"\n\nReference information:\n"
                                 f"<reference>{summary_content.get('summary', '')}</reference>")
 
-        prompt = TRANSLATE_PROMPT
-        prompt = prompt.replace("[TargetLanguage]", self.config.target_language)
+        prompt = TRANSLATE_PROMPT.format(
+            target_language=self.config.target_language,
+            terminology=self._format_terminology()
+        )
 
         return [
             {"role": "system", "content": prompt},
@@ -552,18 +554,9 @@ class SubtitleOptimizer:
                     temperature=0.7,
                     timeout=80
                 )
-                # 添加类型检查
-                if isinstance(response, str):
-                    logger.error(f"❌ API调用返回错误: {response}")
-                    raise Exception(f"API调用失败: {response}")
-                
-                if not hasattr(response, 'choices') or not response.choices:
-                    logger.error("❌ API响应格式异常：缺少choices属性")
-                    raise Exception("API响应格式异常")
-                
                 # 获取原始响应内容
-                raw_response = response.choices[0].message.content
-                logger.info(f"📥 {batch_info} LLM原始返回数据:\n{raw_response}")
+                raw_response = validate_api_response(response, batch_info)
+                logger.info(f"{batch_info} LLM原始返回数据:\n{raw_response}")
 
                 response_content = parse_llm_response(raw_response)
 
