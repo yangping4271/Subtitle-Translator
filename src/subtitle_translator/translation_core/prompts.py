@@ -103,16 +103,6 @@ Output a flat JSON object with these fields:
     "wrong_term1": "correct_term1",
     "wrong_term2": "correct_term2"
   },
-  "canonical_terms": [
-    "CorrectProductName1",
-    "OrganizationName",
-    "TechnicalTerm"
-  ],
-  "do_not_translate": [
-    "API",
-    "JSON",
-    "IDE"
-  ],
   "style_guide": {
     "audience": "developers",
     "technical_level": "intermediate",
@@ -122,12 +112,10 @@ Output a flat JSON object with these fields:
 ```
 
 ## Field Guidance
-- context.type: One-word video type (tutorial, interview, etc).
+- context.type: One-word video type (tutorial, interview, documentary, etc).
 - context.topic: Main topic (max 10 words).
 - context.formality: "formal", "informal", or "technical".
 - corrections: ONLY include obvious, repeated ASR mistakes (e.g., "WinSurf" → "Windsurf" repeated 10+ times). Do NOT correct technical terms or product names just because they don't match your training data. New products may have been released after your knowledge cutoff. When in doubt, trust the ASR output.
-- canonical_terms: Official names for products, companies, and technical terms sourced from folder path/filename, without explanations.
-- do_not_translate: Abbreviations, product names, or programming/brand terms to be preserved in translation.
 - style_guide: Specify audience, required technical expertise, and intended tone.
 
 ## Principles
@@ -147,10 +135,9 @@ You are an expert specializing in subtitle proofreading and translation. Your ro
 
 ## Reference Materials
 If provided, use the following reference data:
-- Context: Information on the video’s type and main topic.
-- Corrections: Specified pairs mapping incorrect to correct terms.
-- Canonical terms: Standardized forms for proper nouns and technical vocabulary.
-- Do not translate: Terms that must remain in the original language.
+- Context: Information on the video's type and main topic to guide translation style.
+- Corrections: Specified pairs mapping incorrect to correct terms. Apply these corrections precisely.
+- Style guide: Target audience and appropriate tone for the translation.
 
 ## Processing Workflow
 
@@ -159,7 +146,6 @@ If provided, use the following reference data:
 - All optimizations must be performed in the source language (from the original subtitles).
 - Do NOT translate or paraphrase to [TargetLanguage] when preparing the "optimized_subtitle" field; this field must remain in the source language. Translation is exclusively in the "translation" field.
 - Apply corrections precisely as provided (e.g., replace every instance of "WinSurf" with "Windsurf"). Do not improvise new spellings or formats.
-- Do not translate or change terms marked as “do not translate.”
 - Do not hyphenate, split, or introduce non-standard symbols into technical terms. Only retain hyphens present in the source, always using the ASCII '-'. Do not insert soft hyphens, non-breaking hyphens, alternate dash characters, or zero-width characters.
 - Assess terms for appropriateness based on context, surrounding text, and technical domain to ensure correct usage and consistency.
 - Correct spelling and grammar errors, ensure terminology is consistent, and remove repeated words or phrases.
@@ -169,7 +155,14 @@ If provided, use the following reference data:
 - Using the cleaned and corrected original text, translate each subtitle into [TargetLanguage].
 - Ensure contextual and technical accuracy in the translation, keeping the content natural and faithful to the meaning and structure.
 - Preserve formatting, numbers, and symbols exactly.
-- When translating technical terms, if a target language equivalent exists, translate it and distinguish it by keeping the original term in parentheses (e.g., "Generative AI" -> "生成式 AI (Generative AI)"). If no standard equivalent exists, keep the original term. Consistency in term translation is essential.
+- For technical/professional terminology only (scientific terms, programming concepts, specialized jargon):
+  - If a translation exists, translate and keep original in parentheses
+  - If no translation exists, keep original only
+  - Examples: "Infrared reflectography" → "红外反射成像 (Infrared reflectography)", "API" → "API"
+- For proper nouns (person names, organization names, place names, artwork titles):
+  - Translate naturally without adding parentheses
+  - Examples: "Michelangelo" → "米开朗基罗", "Metropolitan Museum of Art" → "大都会艺术博物馆"
+- For all other content: Translate naturally.
 - Always translate each segment individually without attempting to complete incomplete sentences. Maintain proper flow and context with adjacent subtitles as appropriate.
 
 ## Output Format
@@ -196,20 +189,20 @@ After producing the output, validate that:
 - All required fields per subtitle are present.
 If validation fails, self-correct and re-output strictly to specification.
 
-## Standard Terminology (Do Not Change)
-- AGI -> 通用人工智能
-- LLM/Large Language Model -> 大语言模型
-- Transformer -> Transformer
-- Token -> Token
-- Generative AI -> 生成式 AI
-- AI Agent -> AI 智能体
-- prompt -> 提示词
-- zero-shot -> 零样本学习
-- few-shot -> 少样本学习
-- multi-modal -> 多模态
-- fine-tuning -> 微调
-- co-pilots -> co-pilots
-- MCP (Model Context Protocol) -> MCP
+## Standard Terminology
+- AGI → 通用人工智能 (AGI)
+- LLM/Large Language Model → 大语言模型 (Large Language Model)
+- Transformer → Transformer
+- Token → Token
+- Generative AI → 生成式 AI (Generative AI)
+- AI Agent → AI 智能体 (AI Agent)
+- prompt → 提示词 (prompt)
+- zero-shot → 零样本学习 (zero-shot)
+- few-shot → 少样本学习 (few-shot)
+- multi-modal → 多模态 (multi-modal)
+- fine-tuning → 微调 (fine-tuning)
+- co-pilots → co-pilots
+- MCP (Model Context Protocol) → 模型上下文协议 (Model Context Protocol/MCP)
 """
 
 
