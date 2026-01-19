@@ -3,6 +3,11 @@ import re
 import codecs
 from pathlib import Path
 
+def remove_chinese_punctuation(text: str) -> str:
+    """去除中文标点符号，保留空格和英文标点"""
+    chinese_punctuation = r'[，。！？；：""''【】《》（）、…—～·]'
+    return re.sub(chinese_punctuation, '', text)
+
 def fileopen(input_file):
     encodings = ["utf-32", "utf-16", "utf-8", "cp1252", "gb2312", "gbk", "big5"]
     tmp = ''
@@ -71,15 +76,16 @@ def srt2ass_converter_func(input_file, pos):
     subLines = re.sub(r'</font>', "", subLines)
     return subLines
 
-def convert_srt_to_ass(target_lang_srt_path: Path, english_srt_path: Path, output_dir: Path):
+def convert_srt_to_ass(target_lang_srt_path: Path, english_srt_path: Path, output_dir: Path, keep_punctuation: bool = False):
     """
     将目标语言字幕文件和英文字幕文件合并为双语ASS文件
-    
+
     Args:
         target_lang_srt_path: 目标语言字幕文件路径（如日文、韩文、中文等）
         english_srt_path: 英文字幕文件路径
         output_dir: 输出目录
-        
+        keep_punctuation: 是否保留标点符号（默认 False，去除中文标点）
+
     Returns:
         Path: 生成的ASS文件路径
     """
@@ -132,6 +138,11 @@ Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
 
     # 目标语言字幕使用 Secondary 样式（显示在下方，绿色）
     target_lang_lines = srt2ass_converter_func(str(target_lang_srt_path), 'Secondary')
+
+    # 如果不保留标点，则去除目标语言字幕中的中文标点
+    if not keep_punctuation:
+        target_lang_lines = remove_chinese_punctuation(target_lang_lines)
+
     # 英文字幕使用 Default 样式（显示在上方，青色）
     english_lines = srt2ass_converter_func(str(english_srt_path), 'Default')
     

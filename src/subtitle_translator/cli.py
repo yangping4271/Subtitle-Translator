@@ -47,6 +47,7 @@ def main(
     preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
     dry_run: bool = typer.Option(False, "--dry-run", help="预览模式，只显示将要处理的文件信息而不实际执行翻译。"),
     transcribe: bool = typer.Option(False, "--transcribe", help="当找不到字幕文件时，是否允许进行语音转录。"),
+    keep_punctuation: bool = typer.Option(False, "--keep-punctuation", help="保留中文字幕中的标点符号（默认去除）。"),
     version: bool = typer.Option(False, "--version", help="显示版本信息并退出。"),
 ):
     """字幕翻译工具主命令"""
@@ -131,7 +132,7 @@ def main(
 
     # 批量处理文件
     _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model,
-                        split_model, summary_model, translation_model, preserve_intermediate)
+                        split_model, summary_model, translation_model, preserve_intermediate, keep_punctuation)
 
 
 def _validate_target_language(target_lang: str):
@@ -344,7 +345,8 @@ def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: 
 def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path,
                         model: str, llm_model: Optional[str],
                         split_model: Optional[str], summary_model: Optional[str],
-                        translation_model: Optional[str], preserve_intermediate: bool):
+                        translation_model: Optional[str], preserve_intermediate: bool,
+                        keep_punctuation: bool = False):
     """批量处理文件"""
     from .transcription_core.model_cache import model_context
     
@@ -406,7 +408,8 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
                     current_input_file, target_lang, output_dir, model,
                     llm_model, model_precheck_passed,
                     batch_mode=is_batch_mode, translator_service=translator_service,
-                    preserve_intermediate=preserve_intermediate
+                    preserve_intermediate=preserve_intermediate,
+                    keep_punctuation=keep_punctuation
                 )
                 count += 1
                 

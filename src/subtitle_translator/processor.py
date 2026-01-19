@@ -83,9 +83,14 @@ def process_single_file(
     model: str, llm_model: Optional[str],
     model_precheck_passed: Optional[bool] = None,
     batch_mode: bool = False, translator_service = None,
-    preserve_intermediate: bool = False
+    preserve_intermediate: bool = False,
+    keep_punctuation: bool = False
 ):
-    """处理单个文件的核心逻辑"""
+    """处理单个文件的核心逻辑
+
+    Args:
+        keep_punctuation: 是否保留标点符号（默认 False，去除中文标点）
+    """
 
     # 检测输入文件类型
     if input_file.suffix.lower() == '.srt':
@@ -194,7 +199,8 @@ def process_single_file(
             target_lang=target_lang,
             output_dir=output_dir,
             llm_model=llm_model,
-            skip_env_init=service_was_passed  # 如果服务是传入的（批量模式），跳过环境初始化
+            skip_env_init=service_was_passed,  # 如果服务是传入的（批量模式），跳过环境初始化
+            keep_punctuation=keep_punctuation
         )
         # 确保这里正确赋值
         final_english_path = output_dir / f"{temp_srt_path.stem}.en.srt"
@@ -209,7 +215,7 @@ def process_single_file(
         # 提取 srt2ass.py 的核心逻辑
         from .translation_core.utils.ass_converter import convert_srt_to_ass
 
-        final_ass_path = convert_srt_to_ass(final_target_lang_path, final_english_path, output_dir)
+        final_ass_path = convert_srt_to_ass(final_target_lang_path, final_english_path, output_dir, keep_punctuation)
         logger.info(f"ASS 文件生成成功: {final_ass_path}")
 
     except Exception as e:

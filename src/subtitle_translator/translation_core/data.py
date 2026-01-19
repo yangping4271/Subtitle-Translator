@@ -7,6 +7,11 @@ import logging
 # 配置日志
 logger = logging.getLogger("subtitle_translator_cli")
 
+def remove_chinese_punctuation(text: str) -> str:
+    """去除中文标点符号，保留空格和英文标点"""
+    chinese_punctuation = r'[，。！？；：""''【】《》（）、…—～·]'
+    return re.sub(chinese_punctuation, '', text)
+
 class SubtitleSegment:
     """单个字幕段的数据结构"""
     def __init__(self, text: str, start_time: int, end_time: int):
@@ -272,9 +277,15 @@ class SubtitleData:
         logger.info(f"总字幕数: {total}, 有效字幕数: {valid}, 跳过字幕数: {skipped}")
         logger.info("保存完成")
 
-    def save_translation(self, output_path: str, subtitle_dict: Dict[int, str], operation: str = "处理") -> None:
+    def save_translation(self, output_path: str, subtitle_dict: Dict[int, str], operation: str = "处理", keep_punctuation: bool = False) -> None:
         """
         保存翻译或优化后的字幕文件
+
+        Args:
+            output_path: 输出文件路径
+            subtitle_dict: 字幕字典
+            operation: 操作类型（"优化" 或 "翻译"）
+            keep_punctuation: 是否保留标点符号（默认 False，去除中文标点）
         """
         # 创建输出目录（如果不存在）
         output_dir = Path(output_path).parent
@@ -284,7 +295,6 @@ class SubtitleData:
         # 生成SRT格式的字幕内容
         srt_lines = []
         logger.info(f"{operation}字幕段落数: {len(self.segments)}")
-        # logger.info(f"字幕字典内容: {subtitle_dict}")
         
         # 记录有效字幕数
         valid_subtitle_count = 0
@@ -301,7 +311,11 @@ class SubtitleData:
                 continue
                 
             processed_text = subtitle_text.strip()
-                
+
+            # 如果是翻译操作且不保留标点，则去除中文标点
+            if operation == "翻译" and not keep_punctuation:
+                processed_text = remove_chinese_punctuation(processed_text)
+
             # 如果字幕内容为空，跳过该字幕
             if not processed_text:
                 logger.info(f"字幕 {i} 的内容为空，将被跳过")
@@ -319,7 +333,6 @@ class SubtitleData:
 
         # 写入文件
         srt_content = "\n".join(srt_lines)
-        logger.info(f"{operation}字幕内容:\n{srt_content}")
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(srt_content)
 
@@ -329,28 +342,29 @@ class SubtitleData:
             
         logger.info(f"{operation}后的字幕已保存至: {output_path}")
 
-    def save_translations_to_files(self, translate_result: List[Dict], 
-                                english_output: str, target_lang_output: str) -> None:
+    def save_translations_to_files(self, translate_result: List[Dict],
+                                english_output: str, target_lang_output: str, keep_punctuation: bool = False) -> None:
         """
         保存翻译结果到指定的文件路径
-        
+
         Args:
             translate_result: 翻译结果列表
             english_output: 英文字幕输出路径
             target_lang_output: 目标语言字幕输出路径（可以是中文、日文、韩文等任何语言）
+            keep_punctuation: 是否保留标点符号（默认 False，去除中文标点）
         """
         logger.info("开始保存...")
 
         # 保存优化后的英文字幕
         optimized_subtitles = {item["id"]: item["optimized"] for item in translate_result}
-        self.save_translation(english_output, optimized_subtitles, "优化")
+        self.save_translation(english_output, optimized_subtitles, "优化", keep_punctuation)
 
         # 保存翻译后的目标语言字幕
         translated_subtitles = {
             item["id"]: item.get("revised_translation", item["translation"])
             for item in translate_result
         }
-        self.save_translation(target_lang_output, translated_subtitles, "翻译")
+        self.save_translation(target_lang_output, translated_subtitles, "翻译", keep_punctuation)
 
         # 只在最后统一打印总体统计
         total = len(self.segments)

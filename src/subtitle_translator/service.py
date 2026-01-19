@@ -106,8 +106,18 @@ class SubtitleTranslatorService:
         log_section_end(logger, "翻译环境初始化", elapsed_time, "✅")
 
     def translate_srt(self, input_srt_path: Path, target_lang: str, output_dir: Path,
-                      llm_model: Optional[str] = None, skip_env_init: bool = False) -> Path:
-        """翻译字幕文件"""
+                      llm_model: Optional[str] = None, skip_env_init: bool = False,
+                      keep_punctuation: bool = False) -> Path:
+        """翻译字幕文件
+
+        Args:
+            input_srt_path: 输入字幕文件路径
+            target_lang: 目标语言
+            output_dir: 输出目录
+            llm_model: LLM 模型名称
+            skip_env_init: 是否跳过环境初始化
+            keep_punctuation: 是否保留标点符号（默认 False，去除中文标点）
+        """
         logger = self._get_logger()
         try:
             task_start_time = time.time()
@@ -282,7 +292,8 @@ class SubtitleTranslatorService:
             asr_data.save_translations_to_files(
                 translate_result,
                 str(english_output_path),
-                str(target_lang_output_path)
+                str(target_lang_output_path),
+                keep_punctuation=keep_punctuation
             )
 
             # 验证文件是否成功保存
