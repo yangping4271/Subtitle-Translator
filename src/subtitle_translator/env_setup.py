@@ -135,8 +135,3 @@ def setup_environment(allow_missing_config=False):
                     print(f"      [dim]SUMMARY_MODEL=gpt-4o-mini[/dim]")
                     print()
                     sys.exit(1)
-
-
-class OpenAIAPIError(Exception):
-    """OpenAI API 相关错误"""
-    pass

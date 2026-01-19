@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from .terminology import DEFAULT_TERMINOLOGY
@@ -140,6 +140,9 @@ class SubtitleConfig:
     # 术语映射表
     terminology: Optional[dict] = None
 
+    # 内部标志：是否跳过环境变量加载（用于外部注入配置）
+    _skip_env_load: bool = field(default=False, repr=False)
+
     def set_target_language(self, lang_code: str) -> None:
         """
         设置目标语言
@@ -151,6 +154,10 @@ class SubtitleConfig:
     
     def __post_init__(self):
         """验证配置并重新读取环境变量"""
+        # 如果设置了跳过标志，则不从环境变量读取（允许外部注入配置）
+        if self._skip_env_load:
+            return
+
         # 重新读取环境变量，确保.env文件已加载
         self.openai_base_url = os.getenv('OPENAI_BASE_URL', '')
         self.openai_api_key = os.getenv('OPENAI_API_KEY', '')

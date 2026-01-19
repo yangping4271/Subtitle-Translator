@@ -6,6 +6,7 @@ from openai import OpenAI
 from .data import SubtitleSegment
 from .prompts import SPLIT_SYSTEM_PROMPT
 from .config import SubtitleConfig, get_default_config
+from .llm_client import LLMClient
 from .utils.errors import extract_error_message, get_error_suggestions
 from .utils.api import validate_api_response
 from ..logger import setup_logger
@@ -108,11 +109,9 @@ def split_by_llm(text: str,
     # 如果没有指定模型，使用配置中的断句模型
     if model is None:
         model = config.split_model
-    
-    client = OpenAI(
-        base_url=config.openai_base_url,
-        api_key=config.openai_api_key
-    )
+
+    llm = LLMClient.get_instance(config)
+    client = llm.client
     
     # 使用系统提示词
     system_prompt = SPLIT_SYSTEM_PROMPT.format(max_word_count_english=max_word_count_english)

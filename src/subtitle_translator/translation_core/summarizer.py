@@ -4,6 +4,7 @@ from pathlib import Path
 from openai import OpenAI
 from .prompts import SUMMARIZER_PROMPT
 from .config import SubtitleConfig
+from .llm_client import LLMClient
 from .utils.json_repair import parse_llm_response
 from .utils.errors import extract_error_message, get_error_suggestions
 from .utils.api import validate_api_response
@@ -18,10 +19,8 @@ class SubtitleSummarizer:
         config: Optional[SubtitleConfig] = None
     ):
         self.config = config or SubtitleConfig()
-        self.client = OpenAI(
-            base_url=self.config.openai_base_url,
-            api_key=self.config.openai_api_key
-        )
+        self.llm = LLMClient.get_instance(self.config)
+        self.client = self.llm.client
 
     def summarize(self, subtitle_content: str, input_file: str) -> Dict:
         """

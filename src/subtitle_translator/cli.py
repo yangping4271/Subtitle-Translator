@@ -40,7 +40,10 @@ def main(
     target_lang: str = typer.Option("zh", "--target-lang", "-t", help="目标翻译语言。支持：zh/zh-cn(简中), zh-tw(繁中), ja(日), ko(韩), fr(法), de(德), es(西), pt(葡), it(意), ru(俄), ar(阿), th(泰), vi(越)等。"),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir", "-o", help="输出文件的目录，默认为当前目录。"),
     model: str = typer.Option(DEFAULT_TRANSCRIPTION_MODEL, "--model", help="用于转录的 Parakeet MLX 模型。"),
-    llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="用于翻译的LLM模型，默认使用配置文件中的设置。"),
+    llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="覆盖所有模型（优先级低于独立参数）"),
+    split_model: Optional[str] = typer.Option(None, "--split-model", help="断句模型"),
+    summary_model: Optional[str] = typer.Option(None, "--summary-model", help="总结模型"),
+    translation_model: Optional[str] = typer.Option(None, "--translation-model", help="翻译模型"),
     preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
     dry_run: bool = typer.Option(False, "--dry-run", help="预览模式，只显示将要处理的文件信息而不实际执行翻译。"),
     transcribe: bool = typer.Option(False, "--transcribe", help="当找不到字幕文件时，是否允许进行语音转录。"),
@@ -127,7 +130,8 @@ def main(
         raise typer.Exit(code=0)
 
     # 批量处理文件
-    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model, preserve_intermediate)
+    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model,
+                        split_model, summary_model, translation_model, preserve_intermediate)
 
 
 def _validate_target_language(target_lang: str):
@@ -338,7 +342,9 @@ def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: 
 
 
 def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path,
-                        model: str, llm_model: Optional[str], preserve_intermediate: bool):
+                        model: str, llm_model: Optional[str],
+                        split_model: Optional[str], summary_model: Optional[str],
+                        translation_model: Optional[str], preserve_intermediate: bool):
     """批量处理文件"""
     from .transcription_core.model_cache import model_context
     
@@ -369,7 +375,13 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
     from .service import SubtitleTranslatorService
     try:
         translator_service = SubtitleTranslatorService()
-        translator_service._init_translation_env(llm_model, show_config=True)
+        translator_service._init_translation_env(
+            llm_model=llm_model,
+            split_model=split_model,
+            summary_model=summary_model,
+            translation_model=translation_model,
+            show_config=True
+        )
         print()  # 添加空行分隔
     except Exception as init_error:
         print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")

@@ -16,7 +16,7 @@ from .translation_core.config import SubtitleConfig
 from .translation_core.data import SubtitleData
 from .translation_core.utils.test_openai import test_openai
 from .logger import setup_logger, log_section_start, log_section_end, log_stats
-from .env_setup import OpenAIAPIError
+from .exceptions import OpenAIAPIError, EmptySubtitleError
 
 
 class SubtitleTranslatorService:
@@ -35,16 +35,40 @@ class SubtitleTranslatorService:
             self.logger = logger
         return self.logger
 
-    def _init_translation_env(self, llm_model: str, show_config: bool = True) -> None:
-        """初始化翻译环境配置"""
+    def _init_translation_env(
+        self,
+        llm_model: str = None,
+        split_model: str = None,
+        summary_model: str = None,
+        translation_model: str = None,
+        show_config: bool = True
+    ) -> None:
+        """初始化翻译环境配置
+
+        Args:
+            llm_model: 覆盖所有模型（优先级低于独立参数）
+            split_model: 断句模型（优先级最高）
+            summary_model: 总结模型（优先级最高）
+            translation_model: 翻译模型（优先级最高）
+            show_config: 是否显示配置信息
+        """
         logger = self._get_logger()
         start_time = time.time()
         log_section_start(logger, "翻译环境初始化", "⚙️")
-        
+
+        # 优先级：独立参数 > llm_model > 环境变量 > 默认值
         if llm_model:
             self.config.split_model = llm_model
             self.config.summary_model = llm_model
             self.config.translation_model = llm_model
+
+        # 独立参数覆盖（优先级最高）
+        if split_model:
+            self.config.split_model = split_model
+        if summary_model:
+            self.config.summary_model = summary_model
+        if translation_model:
+            self.config.translation_model = translation_model
 
         logger.info(f"🌐 API端点: {self.config.openai_base_url}")
         

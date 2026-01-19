@@ -6,55 +6,19 @@ from .split_by_llm import split_by_llm
 from .data import SubtitleData, SubtitleSegment, save_split_results
 from .config import get_default_config
 from ..logger import setup_logger
+from ..exceptions import (
+    SubtitleProcessError,
+    SmartSplitError,
+    TranslationError,
+    SummaryError,
+    EmptySubtitleError,
+)
 
 logger = setup_logger("subtitle_merger")
 
 FIXED_NUM_THREADS = 1  # 固定的线程数量
 SPLIT_RANGE = 30  # 在分割点前后寻找最大时间间隔的范围
 MAX_GAP = 1500  # 允许每个词语之间的最大时间间隔 ms
-
-class SubtitleProcessError(Exception):
-    """字幕处理相关的异常"""
-    pass
-
-class SmartSplitError(Exception):
-    """智能断句异常"""
-    def __init__(self, message: str, suggestion: str = ""):
-        self.message = message
-        self.suggestion = suggestion
-        super().__init__(message)
-    
-    def __str__(self):
-        return self.message
-
-class TranslationError(Exception):
-    """翻译异常"""
-    def __init__(self, message: str, suggestion: str = ""):
-        self.message = message
-        self.suggestion = suggestion
-        super().__init__(message)
-    
-    def __str__(self):
-        return self.message
-
-class SummaryError(Exception):
-    """内容分析异常"""
-    def __init__(self, message: str, suggestion: str = ""):
-        self.message = message
-        self.suggestion = suggestion
-        super().__init__(message)
-    
-    def __str__(self):
-        return self.message
-
-class EmptySubtitleError(Exception):
-    """空字幕文件异常 - 这是一个预期的情况，不需要详细错误堆栈"""
-    def __init__(self, message: str):
-        self.message = message
-        super().__init__(message)
-    
-    def __str__(self):
-        return self.message
 
 def is_pure_punctuation(s: str) -> bool:
     """
