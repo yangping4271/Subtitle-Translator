@@ -22,8 +22,6 @@ dependencies = [
     "torch>=2.0.0",
     "torchaudio>=2.0.0",
     "onnxruntime>=1.22.0",
-    "flask>=3.0.0",
-    "flask-cors>=4.0.0",
 ]
 
 [project.scripts]

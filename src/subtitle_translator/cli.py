@@ -627,23 +627,6 @@ def model_cmd(
 
 
 
-@app.command("serve")
-def serve(
-    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Server host"),
-    port: int = typer.Option(8888, "--port", "-p", help="Server port"),
-    subtitle_dirs: Optional[List[str]] = typer.Option(None, "--dir", "-d", help="Subtitle directories"),
-    debug: bool = typer.Option(False, "--debug", help="Enable debug mode")
-):
-    """Start the local subtitle server for YouTube SubtitlePlus extension."""
-    from .server.app import run_server
-    
-    if not subtitle_dirs:
-        # Default to ~/subtitles (priority) and ~/Downloads
-        subtitle_dirs = ["~/subtitles", "~/Downloads", "."]
-        
-    run_server(host, port, subtitle_dirs, debug)
-
-
 @app.command("version")
 def version():
     """显示版本信息"""

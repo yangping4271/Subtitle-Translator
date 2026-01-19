@@ -195,35 +195,7 @@ uv run python -m subtitle_translator.cli --help
 
 # Run the transcription feature
 uv run python -m subtitle_translator.transcription_core.cli --help
-
-# Run the subtitle server
-uv run python -m subtitle_translator.cli serve --help
 ```
-
-## Chrome Extension & Subtitle Server
-
-This project includes a Chrome extension for displaying local subtitles on YouTube videos.
-
-### 1. Install the Extension
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable **Developer Mode** (top right)
-3. Click **Load Unpacked** and select the `extension/` directory in this repository.
-
-### 2. Start the Subtitle Server
-The extension requires a local server to access your subtitle files.
-
-```bash
-# Start server (defaults to serving from current dir and ~/Downloads)
-translate serve
-
-# Serve specific directories
-translate serve --dir ~/Movies/Subtitles --dir ~/Downloads
-```
-
-### 3. Usage
-1. Place your `.ass` or `.srt` files in one of the served directories.
-2. Name the file with the YouTube Video ID (e.g., `dQw4w9WgXcQ.ass`).
-3. Open the YouTube video, and the extension will automatically load the subtitle.
 
 
 ## License
