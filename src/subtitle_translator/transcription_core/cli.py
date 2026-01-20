@@ -26,11 +26,7 @@ from typing_extensions import Annotated
 
 from ..logger import get_log_file_path, get_log_mode_info, setup_logger
 from . import AlignedResult, AlignedSentence, AlignedToken, from_pretrained
-from .utils import _find_cached_model, _check_network_connectivity, _storage_optimizer
-from .model_cache import model_context, get_cache_info, clear_model_cache
-
-# 默认转录模型
-DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
+from .model_cache import model_context
 
 # 初始化控制台
 console = Console()
@@ -157,104 +153,8 @@ def to_json(result: AlignedResult) -> str:
 
 
 app = typer.Typer(
-    help="使用 Parakeet MLX 模型进行音频转录的命令行工具",
-    epilog="💡 首次使用前可以运行: transcribe model download <model_id> 来预下载模型"
+    help="使用 Parakeet MLX 模型进行音频转录的命令行工具"
 )
-
-
-@app.callback(invoke_without_command=True)
-def main(
-    ctx: typer.Context,
-    audios: Annotated[
-        Optional[List[Path]],
-        typer.Argument(
-            help="要转录的音频文件",
-            exists=True,
-            file_okay=True,
-            dir_okay=False,
-            readable=True,
-        ),
-    ] = None,
-    model: Annotated[
-        str, typer.Option(help="要使用的 Hugging Face 模型仓库")
-    ] = "mlx-community/parakeet-tdt-0.6b-v2",
-    output_dir: Annotated[
-        Path, typer.Option(help="保存转录结果的目录")
-    ] = Path("."),
-    output_format: Annotated[
-        str, typer.Option(help="输出文件格式 (txt, srt, vtt, json, all)")
-    ] = "srt",
-    output_template: Annotated[
-        str,
-        typer.Option(
-            help="输出文件名模板，例如 '{filename}_{date}_{index}'"
-        ),
-    ] = "{filename}",
-    timestamps: Annotated[
-        bool,
-        typer.Option(help="在 srt/vtt 格式中输出词级时间戳"),
-    ] = True,
-    chunk_duration: Annotated[
-        float,
-        typer.Option(
-            help="长音频的分块时长（秒），0 禁用分块，-1 智能分块（推荐）。注意：当设为正数时，将使用固定分块而非 VAD 智能分块。"
-        ),
-    ] = -1,  # 智能分块：根据系统性能自动优化
-    overlap_duration: Annotated[
-        float, typer.Option(help="使用分块时的重叠时长（秒）")
-    ] = 30,  # 优化：增加到30秒重叠，提高合并成功率
-    use_vad: Annotated[
-        bool,
-        typer.Option(
-            "--vad/--no-vad",
-            help="使用 VAD 智能分块，在静音处分割音频（推荐）。仅在 chunk_duration 为负数时启用。"
-        ),
-    ] = True,
-    verbose: Annotated[
-        bool,
-        typer.Option("--verbose", "-v", help="打印详细的处理和调试信息"),
-    ] = False,
-    fp32: Annotated[
-        bool, typer.Option("--fp32/--bf16", help="使用 FP32 精度")
-    ] = False,
-):
-    """
-    使用 Parakeet MLX 模型转录音频文件。
-    """
-    # 如果调用了子命令，就不执行主逻辑
-    if ctx.invoked_subcommand is not None:
-        return
-    
-    # 显示日志文件路径信息
-    log_mode, log_location = get_log_mode_info()
-    log_path = get_log_file_path()
-    print(f"📝 [dim]日志模式: {log_mode} ({log_location})[/dim]")
-    print(f"📝 [dim]日志文件: {log_path}[/dim]")
-    print()  # 空行分隔
-    
-    # 如果没有提供音频文件，显示帮助信息
-    if not audios:
-        print("[bold red]错误: 请提供要转录的音频文件[/bold red]")
-        print("\n💡 [bold blue]使用示例:[/bold blue]")
-        print("   transcribe audio.mp3 audio2.wav                    # 转录多个文件")
-        print("   transcribe *.mp3 --output-format all              # 转录所有mp3文件为所有格式")
-        print("   transcribe audio.wav --model other-model          # 使用指定模型")
-        print("   transcribe model list                             # 查看已缓存的模型")
-        raise typer.Exit(code=1)
-    
-    _transcribe_files(
-        audios=audios,
-        model=model,
-        output_dir=output_dir,
-        output_format=output_format,
-        output_template=output_template,
-        timestamps=timestamps,
-        chunk_duration=chunk_duration,
-        overlap_duration=overlap_duration,
-        use_vad=use_vad,
-        verbose=verbose,
-        fp32=fp32
-    )
 
 
 def _transcribe_files(
@@ -344,16 +244,13 @@ def _transcribe_files(
                         if verbose:
                             print(f"🤖 [bold blue]正在加载模型...[/bold blue] [cyan]{model}[/cyan]")
 
-                        loaded_model, from_cache = from_pretrained(
+                        loaded_model = from_pretrained(
                             model,
                             dtype=bfloat16 if not fp32 else float32,
-                            show_progress=verbose,
-                            use_cache=True,  # 启用缓存
-                            return_cache_info=True  # 返回缓存信息
+                            use_cache=True
                         )
 
-                        # 只有当模型不是从缓存加载时才显示加载完成信息
-                        if verbose and not from_cache:
+                        if verbose:
                             if batch_mode:
                                 print("✅ [green]模型加载完成，批量处理模式已启用[/green]")
                             else:
@@ -466,15 +363,13 @@ def _transcribe_files(
     )
 
 
-app = typer.Typer(
-    help="使用 Parakeet MLX 模型进行音频转录的命令行工具",
-    epilog="💡 首次使用前可以运行: transcribe model download <model_id> 来预下载模型"
-)
-
-
 @app.callback(invoke_without_command=True)
 def main_callback(
     ctx: typer.Context,
+    audios: Annotated[
+        Optional[List[str]],
+        typer.Argument(help="要转录的音频文件")
+    ] = None,
     input_files: Annotated[
         Optional[str],
         typer.Option(
@@ -483,8 +378,8 @@ def main_callback(
         )
     ] = None,
     model: Annotated[
-        str, typer.Option(help="要使用的 Hugging Face 模型仓库")
-    ] = "mlx-community/parakeet-tdt-0.6b-v2",
+        Optional[str], typer.Option(help="转录模型路径（可选，默认使用配置文件中的 TRANSCRIPTION_MODEL_PATH 或 HF 缓存）")
+    ] = None,
     output_dir: Annotated[
         Path, typer.Option(help="保存转录结果的目录")
     ] = Path("."),
@@ -534,14 +429,23 @@ def main_callback(
         from ..version_utils import get_simple_version_info
         print(get_simple_version_info())
         raise typer.Exit()
-    
+
     # 如果调用了子命令，就不执行主逻辑
     if ctx.invoked_subcommand is not None:
         return
-    
+
     # 获取要处理的文件列表
     audio_files = []
-    
+
+    # 处理位置参数
+    if audios:
+        for file_path_str in audios:
+            file_path = Path(file_path_str)
+            if not file_path.exists():
+                print(f"[bold red]错误: 文件不存在: {file_path}[/bold red]")
+                raise typer.Exit(code=1)
+            audio_files.append(file_path)
+
     # 处理 -i 参数指定的文件
     if input_files:
         for file_path_str in input_files.split(","):
@@ -550,17 +454,7 @@ def main_callback(
                 print(f"[bold red]错误: 文件不存在: {file_path}[/bold red]")
                 raise typer.Exit(code=1)
             audio_files.append(file_path)
-    else:
-        # 处理位置参数（剩余参数）
-        remaining_args = ctx.args
-        if remaining_args:
-            for file_path_str in remaining_args:
-                file_path = Path(file_path_str)
-                if not file_path.exists():
-                    print(f"[bold red]错误: 文件不存在: {file_path}[/bold red]")
-                    raise typer.Exit(code=1)
-                audio_files.append(file_path)
-    
+
     # 如果没有提供音频文件，尝试扫描当前目录
     if not audio_files:
         print("[dim]未指定输入文件，扫描当前目录...[/dim]")
@@ -577,7 +471,6 @@ def main_callback(
         print("   transcribe audio.mp3 audio2.wav                    # 直接转录多个文件")
         print("   transcribe -i audio.mp3,audio2.wav                 # 使用 -i 参数")
         print("   transcribe *.mp3 --output-format all              # 转录所有mp3文件")
-        print("   transcribe model list                             # 查看已缓存的模型")
         raise typer.Exit(code=1)
     
     # 调用转录功能
@@ -659,288 +552,14 @@ def _scan_media_files(input_dir: Path) -> List[Path]:
     return files_to_process
 
 
-@app.command("model")
-def model_cmd(
-    ctx: typer.Context,
-    action: str = typer.Argument(..., help="要执行的操作: list(列出已缓存模型), info(显示模型信息), download(预下载模型), clean(清理缓存)"),
-    model_id: Optional[str] = typer.Argument(None, help=f"模型ID (download和info操作默认: {DEFAULT_TRANSCRIPTION_MODEL})")
-):
-    """转录模型管理命令"""
-    import os
-    import shutil
-    
-    if action == "list":
-        """列出已缓存的转录模型"""
-        try:
-            # 获取缓存目录
-            cache_dir = os.environ.get("HF_HOME") or os.environ.get("HUGGINGFACE_HUB_CACHE") or Path.home() / ".cache" / "huggingface"
-            cache_dir = Path(cache_dir) / "hub"
-            
-            if not cache_dir.exists():
-                console.print("[yellow]📂 还没有缓存任何转录模型[/yellow]")
-                return
-            
-            # 查找模型缓存目录
-            model_dirs = [d for d in cache_dir.iterdir() if d.is_dir() and d.name.startswith("models--")]
-            
-            if not model_dirs:
-                console.print("[yellow]📂 还没有缓存任何转录模型[/yellow]")
-                return
-            
-            # 创建表格显示模型信息
-            table = Table(title="🎤 已缓存的转录模型列表")
-            table.add_column("模型ID", style="cyan")
-            table.add_column("缓存大小", style="green")
-            table.add_column("最后修改时间", style="dim")
-            
-            for model_dir in sorted(model_dirs):
-                # 解析模型ID
-                model_id = model_dir.name.replace("models--", "").replace("--", "/")
-                
-                # 计算目录大小
-                total_size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
-                size_mb = total_size / (1024 * 1024)
-                
-                # 获取最后修改时间
-                import datetime
-                mtime = datetime.datetime.fromtimestamp(model_dir.stat().st_mtime)
-                
-                table.add_row(
-                    model_id,
-                    f"{size_mb:.1f} MB",
-                    mtime.strftime("%Y-%m-%d %H:%M")
-                )
-            
-            console.print(table)
-            console.print(f"\n📍 缓存位置: [dim]{cache_dir}[/dim]")
-            
-        except Exception as e:
-            console.print(f"[red]❌ 获取转录模型列表失败: {str(e)}[/red]")
-    
-    elif action == "info":
-        """显示指定转录模型的详细信息"""
-        # 如果没有指定模型ID，使用默认模型
-        if not model_id:
-            model_id = DEFAULT_TRANSCRIPTION_MODEL
-            console.print(f"[dim]使用默认转录模型: {model_id}[/dim]")
-        
-        try:
-            # 尝试查找本地缓存
-            try:
-                config_path, weight_path = _find_cached_model(model_id)
-                console.print(f"✅ [green]转录模型已缓存[/green]: [bold]{model_id}[/bold]")
-                console.print(f"📄 配置文件: [dim]{config_path}[/dim]")
-                console.print(f"⚖️  权重文件: [dim]{weight_path}[/dim]")
-                
-                # 显示文件大小
-                config_size = Path(config_path).stat().st_size / 1024
-                weight_size = Path(weight_path).stat().st_size / (1024 * 1024)
-                console.print(f"📊 大小: 配置 {config_size:.1f} KB, 权重 {weight_size:.1f} MB")
-                
-            except FileNotFoundError:
-                console.print(f"[yellow]⚠️  转录模型未缓存[/yellow]: [bold]{model_id}[/bold]")
-                console.print("💡 你可以使用 'transcribe model download' 命令预下载模型")
-                
-                # 检查网络连接
-                if _check_network_connectivity():
-                    console.print("🌐 网络连接正常，模型将在首次使用时自动下载")
-                else:
-                    console.print("[red]🌐 网络连接异常，无法下载模型[/red]")
-                    
-        except Exception as e:
-            console.print(f"[red]❌ 获取转录模型信息失败: {str(e)}[/red]")
-    
-    elif action == "download":
-        """预下载指定转录模型"""
-        # 如果没有指定模型ID，使用默认模型
-        if not model_id:
-            model_id = DEFAULT_TRANSCRIPTION_MODEL
-            console.print(f"[dim]使用默认转录模型: {model_id}[/dim]")
-        
-        try:
-            console.print(f"🚀 开始预下载转录模型: [bold]{model_id}[/bold]")
-            
-            # 检查是否已经缓存
-            try:
-                _find_cached_model(model_id)
-                console.print(f"✅ [green]转录模型已存在于本地缓存[/green]")
-                return
-            except FileNotFoundError:
-                pass
-            
-            # 下载模型
-            model = from_pretrained(model_id, show_progress=True)
-            console.print(f"\n🎉 [bold green]转录模型预下载完成![/bold green]")
-            console.print(f"📍 模型已保存到本地缓存，后续使用时将直接加载")
-            
-        except Exception as e:
-            console.print(f"[red]❌ 转录模型下载失败: {str(e)}[/red]")
-    
-    elif action == "clean":
-        """清理转录模型缓存"""
-        try:
-            # 获取缓存目录
-            cache_dir = os.environ.get("HF_HOME") or os.environ.get("HUGGINGFACE_HUB_CACHE") or Path.home() / ".cache" / "huggingface"
-            cache_dir = Path(cache_dir) / "hub"
-            
-            if not cache_dir.exists():
-                console.print("[yellow]📂 缓存目录不存在，无需清理[/yellow]")
-                return
-            
-            # 计算缓存大小
-            total_size = sum(f.stat().st_size for f in cache_dir.rglob('*') if f.is_file())
-            size_mb = total_size / (1024 * 1024)
-            
-            # 询问确认
-            if size_mb > 0:
-                console.print(f"⚠️  [yellow]即将清理 {size_mb:.1f} MB 的转录模型缓存[/yellow]")
-                console.print(f"📍 缓存位置: [dim]{cache_dir}[/dim]")
-                
-                confirm = typer.confirm("确定要清理所有转录模型缓存吗？")
-                if not confirm:
-                    console.print("❌ 取消清理操作")
-                    return
-                
-                # 清理缓存
-                shutil.rmtree(cache_dir)
-                console.print("✅ [green]转录模型缓存清理完成[/green]")
-            else:
-                console.print("[yellow]📂 缓存目录为空，无需清理[/yellow]")
-                
-        except Exception as e:
-            console.print(f"[red]❌ 清理缓存失败: {str(e)}[/red]")
-    
-    else:
-        console.print(f"[red]❌ 未知操作: {action}[/red]")
-        console.print("💡 支持的操作: list, info, download, clean, cache")
-        console.print("\n📖 使用示例:")
-        console.print("   transcribe model list                                    # 列出已缓存转录模型")
-        console.print("   transcribe model info                                    # 显示默认转录模型信息")
-        console.print("   transcribe model info mlx-community/parakeet-tdt-0.6b-v2  # 显示指定转录模型信息")
-        console.print("   transcribe model download                                      # 预下载默认转录模型")
-        console.print("   transcribe model download mlx-community/parakeet-tdt-0.6b-v2  # 预下载指定转录模型")
-        console.print("   transcribe model clean                                   # 清理缓存")
-        console.print("   transcribe model cache status                           # 查看缓存状态")
-        console.print("   transcribe model cache clear                            # 清理内存缓存")
-
-
-@app.command("version") 
+@app.command("version")
 def version():
     """显示版本信息"""
     from rich.console import Console
     from ..version_utils import display_version_info
-    
+
     console = Console()
     display_version_info(console)
-
-
-@app.command("cache")
-def cache_cmd(
-    ctx: typer.Context,
-    action: str = typer.Argument(..., help="缓存操作: status(查看状态), clear(清理内存缓存), optimize(清理存储优化缓存)")
-):
-    """模型缓存管理命令"""
-    
-    if action == "status":
-        """显示缓存状态信息"""
-        try:
-            # 获取内存缓存信息
-            cache_info = get_cache_info()
-            
-            # 获取存储优化缓存信息
-            storage_stats = _storage_optimizer.get_cache_stats()
-            
-            # 创建状态表格
-            table = Table(title="🧠 模型缓存状态")
-            table.add_column("缓存类型", style="cyan")
-            table.add_column("状态", style="green")
-            table.add_column("详细信息", style="dim")
-            
-            # 内存缓存状态
-            if cache_info["status"] == "cached":
-                table.add_row(
-                    "内存缓存",
-                    "✅ 已缓存",
-                    f"模型: {cache_info['model_id']}, 类型: {cache_info['dtype']}, 访问: {cache_info['access_count']}次"
-                )
-                if cache_info.get("batch_mode", False):
-                    table.add_row("", "🔄 批量模式", f"引用计数: {cache_info.get('batch_ref_count', 0)}")
-            else:
-                table.add_row("内存缓存", "❌ 空闲", "无模型缓存")
-            
-            # 存储优化缓存状态
-            if storage_stats["cached_models"] > 0:
-                table.add_row(
-                    "存储优化缓存",
-                    "✅ 可用",
-                    f"{storage_stats['cached_models']} 个模型, {storage_stats['total_size_mb']:.1f} MB"
-                )
-            else:
-                table.add_row("存储优化缓存", "❌ 空白", "无优化缓存")
-            
-            console.print(table)
-            
-            # 显示缓存位置信息
-            if storage_stats.get("cache_dir"):
-                console.print(f"\n📍 存储位置: [dim]{storage_stats['cache_dir']}[/dim]")
-                
-        except Exception as e:
-            console.print(f"[red]❌ 获取缓存状态失败: {str(e)}[/red]")
-    
-    elif action == "clear":
-        """清理内存缓存"""
-        try:
-            cache_info = get_cache_info()
-            
-            if cache_info["status"] == "cached":
-                console.print(f"⚠️  [yellow]即将清理内存中的模型缓存[/yellow]")
-                console.print(f"模型: [cyan]{cache_info['model_id']}[/cyan]")
-                
-                confirm = typer.confirm("确定要清理内存缓存吗？")
-                if not confirm:
-                    console.print("❌ 取消清理操作")
-                    return
-                
-                clear_model_cache()
-                console.print("✅ [green]内存缓存已清理[/green]")
-                console.print("💡 [dim]下次使用时将重新从存储优化缓存或原始文件加载[/dim]")
-            else:
-                console.print("[yellow]📂 内存缓存为空，无需清理[/yellow]")
-                
-        except Exception as e:
-            console.print(f"[red]❌ 清理内存缓存失败: {str(e)}[/red]")
-    
-    elif action == "optimize":
-        """清理存储优化缓存"""
-        try:
-            storage_stats = _storage_optimizer.get_cache_stats()
-            
-            if storage_stats["cached_models"] > 0:
-                console.print(f"⚠️  [yellow]即将清理存储优化缓存[/yellow]")
-                console.print(f"缓存模型: {storage_stats['cached_models']} 个")
-                console.print(f"占用空间: {storage_stats['total_size_mb']:.1f} MB")
-                
-                confirm = typer.confirm("确定要清理存储优化缓存吗？")
-                if not confirm:
-                    console.print("❌ 取消清理操作")
-                    return
-                
-                _storage_optimizer.clear_all_optimized_cache()
-                console.print("✅ [green]存储优化缓存已清理[/green]")
-                console.print("💡 [dim]下次使用时将从原始文件重新构建优化缓存[/dim]")
-            else:
-                console.print("[yellow]📂 存储优化缓存为空，无需清理[/yellow]")
-                
-        except Exception as e:
-            console.print(f"[red]❌ 清理存储优化缓存失败: {str(e)}[/red]")
-    
-    else:
-        console.print(f"[red]❌ 未知操作: {action}[/red]")
-        console.print("💡 支持的操作: status, clear, optimize")
-        console.print("\n📖 使用示例:")
-        console.print("   transcribe cache status                           # 查看缓存状态")
-        console.print("   transcribe cache clear                            # 清理内存缓存")
-        console.print("   transcribe cache optimize                         # 清理存储优化缓存")
 
 
 if __name__ == "__main__":

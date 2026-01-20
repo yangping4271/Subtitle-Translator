@@ -538,62 +538,36 @@ def model_cmd(
         if not model_id:
             model_id = DEFAULT_TRANSCRIPTION_MODEL
             console.print(f"[dim]使用默认模型: {model_id}[/dim]")
-        
+
         try:
             # 尝试查找本地缓存
+            from .transcription_core.utils import _find_model_in_hf_cache
             try:
-                from .transcription_core.utils import _find_cached_model
-                config_path, weight_path = _find_cached_model(model_id)
+                model_path = _find_model_in_hf_cache(model_id)
                 console.print(f"✅ [green]模型已缓存[/green]: [bold]{model_id}[/bold]")
-                console.print(f"📄 配置文件: [dim]{config_path}[/dim]")
-                console.print(f"⚖️  权重文件: [dim]{weight_path}[/dim]")
-                
+                console.print(f"📄 模型路径: [dim]{model_path}[/dim]")
+
                 # 显示文件大小
-                config_size = Path(config_path).stat().st_size / 1024
-                weight_size = Path(weight_path).stat().st_size / (1024 * 1024)
-                console.print(f"📊 大小: 配置 {config_size:.1f} KB, 权重 {weight_size:.1f} MB")
-                
+                config_path = model_path / "config.json"
+                weight_path = model_path / "model.safetensors"
+                if config_path.exists() and weight_path.exists():
+                    config_size = config_path.stat().st_size / 1024
+                    weight_size = weight_path.stat().st_size / (1024 * 1024)
+                    console.print(f"📊 大小: 配置 {config_size:.1f} KB, 权重 {weight_size:.1f} MB")
+
             except FileNotFoundError:
                 console.print(f"[yellow]⚠️  模型未缓存[/yellow]: [bold]{model_id}[/bold]")
-                console.print("💡 你可以使用 'translate model download' 命令预下载模型")
-                
-                # 检查网络连接
-                from .transcription_core.utils import _check_network_connectivity
-                if _check_network_connectivity():
-                    console.print("🌐 网络连接正常，模型将在首次使用时自动下载")
-                else:
-                    console.print("[red]🌐 网络连接异常，无法下载模型[/red]")
-                    
+                console.print(f"💡 请使用以下命令下载模型:")
+                console.print(f"   [green]hf download {model_id}[/green]")
+
         except Exception as e:
             console.print(f"[red]❌ 获取模型信息失败: {str(e)}[/red]")
     
     elif action == "download":
         """预下载指定模型"""
-        # 如果没有指定模型ID，使用默认模型
-        if not model_id:
-            model_id = DEFAULT_TRANSCRIPTION_MODEL
-            console.print(f"[dim]使用默认模型: {model_id}[/dim]")
-        
-        try:
-            console.print(f"🚀 开始预下载模型: [bold]{model_id}[/bold]")
-            
-            # 检查是否已经缓存
-            try:
-                from .transcription_core.utils import _find_cached_model
-                _find_cached_model(model_id)
-                console.print(f"✅ [green]模型已存在于本地缓存[/green]")
-                return
-            except FileNotFoundError:
-                pass
-            
-            # 下载模型
-            from .transcription_core.utils import from_pretrained
-            model = from_pretrained(model_id, show_progress=True)
-            console.print(f"\n🎉 [bold green]模型预下载完成![/bold green]")
-            console.print(f"📍 模型已保存到本地缓存，后续使用时将直接加载")
-            
-        except Exception as e:
-            console.print(f"[red]❌ 模型下载失败: {str(e)}[/red]")
+        console.print(f"[yellow]⚠️  该命令已废弃[/yellow]")
+        console.print(f"请使用 HuggingFace CLI 下载模型:")
+        console.print(f"  [green]hf download {model_id or DEFAULT_TRANSCRIPTION_MODEL}[/green]")
     
     elif action == "clean":
         """清理模型缓存"""

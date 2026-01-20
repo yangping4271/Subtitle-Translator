@@ -18,6 +18,22 @@ A command-line tool for English video transcription and multilingual subtitle tr
 
 ## Quick Start
 
+### Prerequisites
+
+**Download Transcription Model (Required for transcription)**
+
+Before using the transcription feature, you must download the model:
+
+```bash
+# Download the default transcription model (~1.2GB)
+hf download mlx-community/parakeet-tdt-0.6b-v2
+```
+
+The model will be automatically cached at:
+- macOS/Linux: `~/.cache/huggingface/hub/models--mlx-community--parakeet-tdt-0.6b-v2/`
+
+> **Note**: This step is only required for transcription. If you already have English SRT files, you can skip this and directly use the `translate` command.
+
 ### Installation
 ```bash
 git clone <your-repo-url>
@@ -145,12 +161,12 @@ Options:
 transcribe [OPTIONS] AUDIOS...
 
 Options:
-  --model TEXT                    Transcription model [default: mlx-community/parakeet-tdt-0.6b-v3]
+  --model TEXT                    Transcription model path (optional, defaults to HF cache)
   --output-dir PATH               Output directory [default: .]
   --output-format [txt|srt|vtt|json|all]  Output format [default: srt]
   --output-template TEXT          Filename template [default: {filename}]
   --timestamps/--no-timestamps    Output word-level timestamps [default: False]
-  --overlap-duration FLOAT        Overlap duration in seconds [default: 15.0]
+  --overlap-duration FLOAT        Overlap duration in seconds [default: 30.0]
   -v, --verbose                   Show detailed information
   --fp32/--bf16                   Use FP32 precision [default: bf16]
 ```

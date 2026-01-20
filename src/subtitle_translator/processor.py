@@ -128,7 +128,6 @@ def process_single_file(
             # 懒加载模型，只在需要时加载
             loaded_model = from_pretrained(
                 model,
-                show_progress=True,  # 显示加载进度
                 use_cache=True  # 启用缓存优化
             )
 

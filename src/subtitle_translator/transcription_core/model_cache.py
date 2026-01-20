@@ -4,15 +4,11 @@
 设计原则:
 1. 只缓存一个模型实例，避免内存占用过多
 2. 单文件处理后立即释放，批量处理完成后释放
-3. 通过存储层优化加速重复加载
-4. 线程安全的缓存管理
+3. 线程安全的缓存管理
 """
 import threading
 import time
-import weakref
-from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
-import logging
+from typing import Optional, Tuple, Dict, Any, Callable
 import mlx.core as mx
 from contextlib import contextmanager
 
@@ -215,52 +211,42 @@ def model_context(batch_mode: bool = False):
             cache.auto_release_if_needed()
 
 
-def load_cached_model(model_id: str, dtype: mx.Dtype, loader_func, show_progress: bool = True) -> tuple[BaseParakeet, bool]:
+def load_cached_model(
+    model_id: str,
+    dtype: mx.Dtype,
+    loader_func: Callable[[], BaseParakeet]
+) -> Tuple[BaseParakeet, bool]:
     """
     加载缓存的模型实例
-    
+
     Args:
         model_id: 模型ID
         dtype: 数据类型
         loader_func: 实际的模型加载函数，signature: () -> BaseParakeet
-        show_progress: 是否显示加载进度（当缓存未命中时使用）
-        
+
     Returns:
         tuple: (模型实例, 是否从缓存加载)
     """
     cache = get_model_cache()
-    
+
     # 尝试从内存缓存获取
     model = cache.get_model(model_id, dtype)
     if model is not None:
-        # 内存缓存命中，静默返回
+        # 内存缓存命中
         return model, True
-    
-    # 内存缓存未命中，检查存储优化缓存
-    try:
-        from .utils import _storage_optimizer
-        optimized_model = _storage_optimizer.load_optimized_model(model_id, dtype)
-        if optimized_model is not None:
-            # 存储优化缓存命中，加入内存缓存并静默返回
-            cache.set_model(model_id, dtype, optimized_model)
-            return optimized_model, True
-    except Exception as e:
-        logger.info(f"存储优化缓存查找失败: {str(e)}")
-    
-    # 所有缓存都未命中，需要实际加载模型
-    if show_progress:
-        logger.info(f"缓存未命中，开始加载模型: {model_id} ({dtype})")
+
+    # 缓存未命中，需要实际加载模型
+    logger.info(f"缓存未命中，开始加载模型: {model_id} ({dtype})")
     start_time = time.time()
-    
+
     model = loader_func()
-    
+
     load_time = time.time() - start_time
-    if show_progress:
-        logger.info(f"模型加载完成，耗时: {load_time:.2f}秒")
-    
+    logger.info(f"模型加载完成，耗时: {load_time:.2f}秒")
+
     # 缓存新模型
     cache.set_model(model_id, dtype, model)
-    
+
     return model, False
 
 
