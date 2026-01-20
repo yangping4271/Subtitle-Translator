@@ -7,10 +7,22 @@ import logging
 # 配置日志
 logger = logging.getLogger("subtitle_translator_cli")
 
-def remove_chinese_punctuation(text: str) -> str:
-    """去除中文标点符号，保留空格和英文标点"""
-    chinese_punctuation = r'[，。！？；：""''【】《》（）、…—～·]'
-    return re.sub(chinese_punctuation, '', text)
+def normalize_chinese_punctuation(text: str) -> str:
+    """按 Netflix 规范处理中文标点：保留 ？ ！ …… · ' "，删除 ， 。 ； ："""
+    return re.sub(r'[，。；：]', '', text)
+
+def normalize_english_punctuation(text: str) -> str:
+    """按 Netflix 规范处理英文标点：保留 ? ! ... ' "，删除 . , ; :"""
+    # 先保护省略号
+    ELLIPSIS_PLACEHOLDER = '<<<ELLIPSIS>>>'
+    text = text.replace('...', ELLIPSIS_PLACEHOLDER)
+
+    # 删除 . , ; :
+    text = re.sub(r'[.,;:]', '', text)
+
+    # 恢复省略号
+    text = text.replace(ELLIPSIS_PLACEHOLDER, '...')
+    return text
 
 class SubtitleSegment:
     """单个字幕段的数据结构"""
@@ -277,7 +289,7 @@ class SubtitleData:
         logger.info(f"总字幕数: {total}, 有效字幕数: {valid}, 跳过字幕数: {skipped}")
         logger.info("保存完成")
 
-    def save_translation(self, output_path: str, subtitle_dict: Dict[int, str], operation: str = "处理", keep_punctuation: bool = False) -> None:
+    def save_translation(self, output_path: str, subtitle_dict: Dict[int, str], operation: str = "处理") -> None:
         """
         保存翻译或优化后的字幕文件
 
@@ -285,7 +297,6 @@ class SubtitleData:
             output_path: 输出文件路径
             subtitle_dict: 字幕字典
             operation: 操作类型（"优化" 或 "翻译"）
-            keep_punctuation: 是否保留标点符号（默认 False，去除中文标点）
         """
         # 创建输出目录（如果不存在）
         output_dir = Path(output_path).parent
@@ -312,9 +323,11 @@ class SubtitleData:
                 
             processed_text = subtitle_text.strip()
 
-            # 如果是翻译操作且不保留标点，则去除中文标点
-            if operation == "翻译" and not keep_punctuation:
-                processed_text = remove_chinese_punctuation(processed_text)
+            # 按 Netflix 规范处理标点
+            if operation == "翻译":
+                processed_text = normalize_chinese_punctuation(processed_text)
+            elif operation == "优化":
+                processed_text = normalize_english_punctuation(processed_text)
 
             # 如果字幕内容为空，跳过该字幕
             if not processed_text:
@@ -343,7 +356,7 @@ class SubtitleData:
         logger.info(f"{operation}后的字幕已保存至: {output_path}")
 
     def save_translations_to_files(self, translate_result: List[Dict],
-                                english_output: str, target_lang_output: str, keep_punctuation: bool = False) -> None:
+                                english_output: str, target_lang_output: str) -> None:
         """
         保存翻译结果到指定的文件路径
 
@@ -351,20 +364,19 @@ class SubtitleData:
             translate_result: 翻译结果列表
             english_output: 英文字幕输出路径
             target_lang_output: 目标语言字幕输出路径（可以是中文、日文、韩文等任何语言）
-            keep_punctuation: 是否保留标点符号（默认 False，去除中文标点）
         """
         logger.info("开始保存...")
 
         # 保存优化后的英文字幕
         optimized_subtitles = {item["id"]: item["optimized"] for item in translate_result}
-        self.save_translation(english_output, optimized_subtitles, "优化", keep_punctuation)
+        self.save_translation(english_output, optimized_subtitles, "优化")
 
         # 保存翻译后的目标语言字幕
         translated_subtitles = {
             item["id"]: item.get("revised_translation", item["translation"])
             for item in translate_result
         }
-        self.save_translation(target_lang_output, translated_subtitles, "翻译", keep_punctuation)
+        self.save_translation(target_lang_output, translated_subtitles, "翻译")
 
         # 只在最后统一打印总体统计
         total = len(self.segments)
