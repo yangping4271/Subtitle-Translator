@@ -66,6 +66,73 @@ def is_sentence_complete(text: str) -> bool:
         
     return True
 
+
+def format_diff(original: str, optimized: str) -> str:
+    """
+    格式化两个字符串的差异，只显示变化部分
+    
+    Args:
+        original: 原始文本
+        optimized: 优化后的文本
+        
+    Returns:
+        格式化的差异字符串
+    """
+    if original == optimized:
+        return f"无变化: {original}"
+    
+    # 按空格分割单词（保留空格）
+    original_words = re.split(r'(\s+)', original)
+    optimized_words = re.split(r'(\s+)', optimized)
+    
+    # 找到第一个不同的单词位置
+    start_diff = 0
+    while (start_diff < len(original_words) and 
+           start_diff < len(optimized_words) and
+           original_words[start_diff] == optimized_words[start_diff]):
+        start_diff += 1
+    
+    # 找到最后一个不同的单词位置（从后往前）
+    end_diff_original = len(original_words) - 1
+    end_diff_optimized = len(optimized_words) - 1
+    while (end_diff_original >= start_diff and 
+           end_diff_optimized >= start_diff and
+           original_words[end_diff_original] == optimized_words[end_diff_optimized]):
+        end_diff_original -= 1
+        end_diff_optimized -= 1
+    
+    # 提取变化部分
+    deleted_part = ''.join(original_words[start_diff:end_diff_original + 1])
+    added_part = ''.join(optimized_words[start_diff:end_diff_optimized + 1])
+    
+    # 提取上下文（前后各3个单词）
+    context_before = ''.join(original_words[max(0, start_diff - 3):start_diff])
+    context_after = ''.join(original_words[end_diff_original + 1:min(len(original_words), end_diff_original + 4)])
+    
+    # 构建显示字符串
+    result = ''
+    
+    # 前缀省略号
+    if start_diff > 3:
+        result += '...'
+    
+    result += context_before
+    
+    # 显示删除和添加的部分
+    if deleted_part:
+        result += f'[-{deleted_part}-]'
+    if added_part:
+        result += f' [+{added_part}+]'
+    
+    result += context_after
+    
+    # 后缀省略号
+    if end_diff_original + 4 < len(original_words):
+        result += '...'
+    
+    return result.strip()
+
+
 class SubtitleOptimizer:
     """A class for optimize and translating subtitles using OpenAI's API."""
 
@@ -504,8 +571,7 @@ class SubtitleOptimizer:
                 if original != optimized:
                     change_count += 1
                     logger.info(f"🔧 字幕ID {id_num} - 内容优化:")
-                    logger.info(f"   原文: {original}")
-                    logger.info(f"   优化: {optimized}")
+                    logger.info(f"   {format_diff(original, optimized)}")
 
                     # 分类统计
                     if is_format_change_only(original, optimized):
