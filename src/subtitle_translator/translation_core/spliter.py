@@ -1,24 +1,24 @@
 import difflib
 import re
-from concurrent.futures import ThreadPoolExecutor
-from typing import List
-from .split_by_llm import split_by_llm
-from .data import SubtitleData, SubtitleSegment, save_split_results
-from .config import get_default_config
+from typing import List, Optional
+
 from ..logger import setup_logger
-from ..exceptions import (
-    SubtitleProcessError,
-    SmartSplitError,
-    TranslationError,
-    SummaryError,
-    EmptySubtitleError,
-)
+from .batch_utils import calculate_batch_sizes
+from .config import get_default_config
+from .data import PreSplitSentence, SubtitleSegment
+from .split_by_llm import split_by_llm
 
 logger = setup_logger("subtitle_merger")
 
-FIXED_NUM_THREADS = 1  # 固定的线程数量
-SPLIT_RANGE = 30  # 在分割点前后寻找最大时间间隔的范围
+# 常量定义
 MAX_GAP = 1500  # 允许每个词语之间的最大时间间隔 ms
+MIN_SENTENCE_WORDS = 3  # 分句的最小单词数
+MIN_LAST_SEGMENT_WORDS = 2  # 最后一段的最小单词数
+SIMILARITY_THRESHOLD = 0.5  # 相似度阈值
+MAX_SHIFT = 30  # 滑动窗口的最大偏移量
+MAX_UNMATCHED_SENTENCES = 5  # 允许的最大未匹配句子数量
+SHORT_SEGMENT_TIME_GAP = 300  # 短分段合并的时间间隔阈值（毫秒）
+SHORT_SEGMENT_MIN_WORDS = 5  # 短分段的最小单词数
 
 def is_pure_punctuation(s: str) -> bool:
     """
@@ -69,7 +69,205 @@ def preprocess_text(s: str) -> str:
     return ' '.join(s.split())
 
 
-def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences: List[str], max_unmatched: int = 5) -> List[SubtitleSegment]:
+def split_by_end_marks(sentence: str) -> List[str]:
+    """
+    按句子结束标记拆分句子（移植自 youtube-subtitle）
+
+    规则：
+    - 按 '. ' '! ' '? ' '.' '!' '?' 分句
+    - 跳过小数点（检测前一个字符是否为数字）
+    - 每段至少 MIN_SENTENCE_WORDS 个单词才分割
+    - 最后一段少于 MIN_LAST_SEGMENT_WORDS 个单词时，合并到前一段
+
+    Args:
+        sentence: 输入文本
+
+    Returns:
+        拆分后的句子列表
+    """
+    end_marks = ['. ', '! ', '? ', '.', '!', '?']
+    positions = []
+
+    for mark in end_marks:
+        start = 0
+        while True:
+            pos = sentence.find(mark, start)
+            if pos == -1:
+                break
+
+            if _is_decimal_point(sentence, pos, mark):
+                start = pos + 1
+                continue
+
+            positions.append(pos + len(mark))
+            start = pos + 1
+
+    if not positions:
+        return [sentence]
+
+    unique_positions = sorted(set(positions))
+    segments = []
+    start = 0
+
+    for pos in unique_positions:
+        segment = sentence[start:pos].strip()
+        if segment and count_words(segment) >= MIN_SENTENCE_WORDS:
+            segments.append(segment)
+            start = pos
+
+    last_segment = sentence[start:].strip()
+    if last_segment:
+        if segments and count_words(last_segment) < MIN_LAST_SEGMENT_WORDS:
+            segments[-1] = segments[-1] + ' ' + last_segment
+        else:
+            segments.append(last_segment)
+
+    return segments if len(segments) > 1 else [sentence]
+
+
+def _is_decimal_point(sentence: str, pos: int, mark: str) -> bool:
+    """检查是否为小数点"""
+    return (mark == '. ' or mark == '.') and pos > 0 and sentence[pos - 1].isdigit()
+
+
+def presplit_by_punctuation(word_segments: List[SubtitleSegment]) -> List[PreSplitSentence]:
+    """
+    基于标点预分句（移植自 youtube-subtitle）
+
+    Args:
+        word_segments: 单词级字幕段列表
+
+    Returns:
+        PreSplitSentence 列表，包含句子文本和对应的单词索引范围
+    """
+    if not word_segments:
+        return []
+
+    # 拼接所有单词为完整文本
+    full_text = ' '.join(seg.text for seg in word_segments)
+
+    # 使用 split_by_end_marks 进行预分句
+    sentences = split_by_end_marks(full_text)
+
+    pre_split_sentences = []
+    current_word_index = 0
+
+    for sentence in sentences:
+        sentence_words = sentence.strip().split()
+        word_count = len(sentence_words)
+
+        # 计算单词索引范围
+        word_start_index = current_word_index
+        word_end_index = current_word_index + word_count
+
+        # 获取时间范围
+        start_time = word_segments[word_start_index].start_time if word_start_index < len(word_segments) else 0
+        end_time = word_segments[min(word_end_index - 1, len(word_segments) - 1)].end_time if word_end_index > 0 else 0
+
+        pre_split_sentences.append(PreSplitSentence(
+            text=sentence,
+            word_start_index=word_start_index,
+            word_end_index=word_end_index,
+            start_time=start_time,
+            end_time=end_time
+        ))
+
+        current_word_index = word_end_index
+
+    return pre_split_sentences
+
+
+def batch_by_sentence_count(
+    sentences: List[PreSplitSentence],
+    min_size: int = 15,
+    max_size: int = 25
+) -> List[List[PreSplitSentence]]:
+    """
+    按句子数分批（移植自 youtube-subtitle，移除首批特殊处理）
+
+    Args:
+        sentences: 预分句列表
+        min_size: 最小批次大小
+        max_size: 最大批次大小
+
+    Returns:
+        批次列表，每个批次是 PreSplitSentence 列表
+    """
+    if not sentences:
+        return []
+
+    # 计算批次大小（不使用首批特殊处理）
+    target_size = (min_size + max_size) // 2
+    batch_sizes = calculate_batch_sizes(len(sentences), target_size, min_size, max_size)
+
+    # 按计算出的批次大小分批
+    batches = []
+    start_index = 0
+    for size in batch_sizes:
+        batches.append(sentences[start_index:start_index + size])
+        start_index += size
+
+    return batches
+
+
+def merge_segments_within_batch(
+    pre_split_sentences: List[PreSplitSentence],
+    word_segments: List[SubtitleSegment],
+    model: Optional[str] = None,
+    batch_index: Optional[int] = None
+) -> List[SubtitleSegment]:
+    """
+    在批次内进行 LLM 断句和时间戳对齐（移植自 youtube-subtitle）
+
+    Args:
+        pre_split_sentences: 批次内的预分句列表
+        word_segments: 完整的单词级字幕段（用于时间戳对齐）
+        model: LLM 模型名称
+        batch_index: 批次索引（用于日志）
+
+    Returns:
+        处理后的字幕段列表
+    """
+    if not pre_split_sentences:
+        return []
+
+    config = get_default_config()
+    if model is None:
+        model = config.split_model
+
+    # 提取批次对应的单词片段
+    start_index = pre_split_sentences[0].word_start_index
+    end_index = pre_split_sentences[-1].word_end_index
+    batch_word_segments = word_segments[start_index:end_index]
+
+    # 拼接为文本
+    batch_text = ' '.join(seg.text for seg in batch_word_segments)
+
+    # 记录日志
+    current_words = count_words(batch_text)
+    batch_prefix = f"[批次{batch_index}]" if batch_index is not None else ""
+    logger.info(f"📝 {batch_prefix} 处理 {current_words} 个单词，{len(pre_split_sentences)} 个预分句")
+
+    # LLM 断句
+    llm_sentences = split_by_llm(
+        batch_text,
+        model=model,
+        max_word_count_english=config.max_word_count_english,
+        batch_index=batch_index
+    )
+    logger.info(f"✂️ {batch_prefix} LLM 断句得到 {len(llm_sentences)} 个句子")
+
+    # 时间戳对齐
+    aligned_segments = merge_segments_based_on_sentences(batch_word_segments, llm_sentences)
+
+    # 合并过短的分段
+    merge_short_segment(aligned_segments)
+
+    return aligned_segments
+
+
+
+def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences: List[str], max_unmatched: int = MAX_UNMATCHED_SENTENCES) -> List[SubtitleSegment]:
     """
     基于提供的句子列表合并字幕分段
     
@@ -86,12 +284,10 @@ def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences
     """
     asr_texts = [seg.text for seg in segments]
     asr_len = len(asr_texts)
-    asr_index = 0  # 当前分段索引位置
-    threshold = 0.5  # 相似度阈值
-    max_shift = 30  # 滑动窗口的最大偏移量
-    unmatched_count = 0  # 未匹配句子计数
-
+    asr_index = 0
+    unmatched_count = 0
     new_segments = []
+    max_shift = MAX_SHIFT
 
     for sentence in sentences:
         sentence_proc = preprocess_text(sentence)
@@ -100,7 +296,6 @@ def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences
         best_pos = None
         best_window_size = 0
 
-        # 滑动窗口大小，优先考虑接近句子词数的窗口
         max_window_size = min(word_count * 2, asr_len - asr_index)
         min_window_size = max(1, word_count // 2)
         window_sizes = sorted(range(min_window_size, max_window_size + 1), key=lambda x: abs(x - word_count))
@@ -117,31 +312,26 @@ def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences
                     best_pos = start
                     best_window_size = window_size
                 if ratio == 1.0:
-                    break  # 完全匹配
+                    break
             if best_ratio == 1.0:
-                break  # 完全匹配
+                break
 
-        if best_ratio >= threshold and best_pos is not None:
+        if best_ratio >= SIMILARITY_THRESHOLD and best_pos is not None:
             start_seg_index = best_pos
             end_seg_index = best_pos + best_window_size - 1
-            
-            segs_to_merge = segments[start_seg_index:end_seg_index + 1]
 
-            # 按照时间切分避免合并跨度大的
+            segs_to_merge = segments[start_seg_index:end_seg_index + 1]
             seg_groups = merge_by_time_gaps(segs_to_merge, max_gap=MAX_GAP)
 
             for group in seg_groups:
-                # 直接使用LLM返回的原始句子，完全保留格式和标点
                 merged_text = sentence_proc
-                
                 merged_start_time = group[0].start_time
                 merged_end_time = group[-1].end_time
                 merged_seg = SubtitleSegment(merged_text, merged_start_time, merged_end_time)
-                
                 new_segments.append(merged_seg)
-            
-            max_shift = 30
-            asr_index = end_seg_index + 1  # 移动到下一个未处理的分段
+
+            max_shift = MAX_SHIFT
+            asr_index = end_seg_index + 1
         else:
             logger.warning(f"无法匹配句子: {sentence}")
             unmatched_count += 1
@@ -149,9 +339,8 @@ def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences
                 logger.error(f"未匹配句子数量超过阈值 ({max_unmatched})，返回原始分段")
                 return segments
             max_shift = 100
-            asr_index = min(asr_index + 1, asr_len - 1)  # 确保不会超出范围
-    
-    # 如果没有成功匹配任何句子，返回原始分段
+            asr_index = min(asr_index + 1, asr_len - 1)
+
     if not new_segments:
         logger.warning("没有成功匹配任何句子，返回原始分段")
         return segments
@@ -222,15 +411,15 @@ def merge_by_time_gaps(segments: List[SubtitleSegment], max_gap: int = MAX_GAP, 
     """
     if not segments:
         return []
-    
+
     result = []
     current_group = [segments[0]]
     recent_gaps = []  # 存储最近的时间间隔
     WINDOW_SIZE = 5   # 检查最近5个间隔
-    
+
     for i in range(1, len(segments)):
         time_gap = segments[i].start_time - segments[i-1].end_time
-        
+
         if check_large_gaps:
             recent_gaps.append(time_gap)
             if len(recent_gaps) > WINDOW_SIZE:
@@ -242,269 +431,15 @@ def merge_by_time_gaps(segments: List[SubtitleSegment], max_gap: int = MAX_GAP, 
                     result.append(current_group)
                     current_group = []
                     recent_gaps = []  # 重置间隔记录
-        
+
         if time_gap > max_gap:
             result.append(current_group)
             current_group = []
             recent_gaps = []  # 重置间隔记录
-            
+
         current_group.append(segments[i])
-    
+
     if current_group:
         result.append(current_group)
-    
+
     return result
-
-
-def process_by_llm(segments: List[SubtitleSegment], 
-                   model: str = None,
-                   max_word_count_english: int = None,
-                   batch_index: int = None) -> List[SubtitleSegment]:
-    """
-    使用LLM处理字幕分段，进行拆分和合并
-    
-    Args:
-        segments: 字幕分段列表
-        model: 使用的语言模型，如果为None则使用配置中的断句模型
-        max_word_count_english: 英文最大单词数，如果为None则使用配置中的设置
-        batch_index: 批次索引，用于日志显示
-        
-    Returns:
-        List[SubtitleSegment]: 处理后的字幕分段列表
-    """
-    config = get_default_config()
-    max_word_count_english = max_word_count_english or config.max_word_count_english
-    
-    # 如果没有指定模型，使用配置中的断句模型
-    if model is None:
-        model = config.split_model
-        
-    # 修改合并文本的方式，添加空格
-    txt = " ".join([seg.text.strip() for seg in segments])
-    # 记录当前批次的单词数
-    current_words = count_words(txt)
-    batch_prefix = f"[批次{batch_index}]" if batch_index else ""
-    logger.info(f"📝 {batch_prefix} 处理 {current_words} 个单词")
-    
-    # 使用LLM拆分句子
-    sentences = split_by_llm(txt, 
-                           model=model, 
-                           max_word_count_english=max_word_count_english,
-                           batch_index=batch_index)
-    logger.info(f"✂️ {batch_prefix} 提取 {len(sentences)} 个句子")
-    
-    # 对当前分段进行合并处理
-    merged_segments = merge_segments_based_on_sentences(segments, sentences)
-    return merged_segments
-
-
-def split_by_sentences(asr_data: SubtitleData, word_threshold: int = 500) -> List[SubtitleData]:
-    """
-    根据句号等标点符号切分句子，并按指定单词数阈值分组
-    
-    Args:
-        asr_data: 字幕数据
-        word_threshold: 每组最大单词数，默认500
-        
-    Returns:
-        List[SubtitleData]: 按单词数阈值分组后的字幕数据列表
-    """
-    # 定义句子结束标志
-    sentence_end_markers = ['.', '!', '?', '。', '！', '？', '…']
-    # 定义分句标点
-    split_markers = [',', '，', ';', '；', '、']
-    
-    # 预处理字幕数据
-    segments = preprocess_segments(asr_data.segments)
-    
-    # 按句子切分
-    sentence_segments = []
-    current_sentence_segments = []
-    
-    for seg in segments:
-        current_sentence_segments.append(seg)
-        text = seg.text.strip()
-        
-        # 检查是否是句子结尾
-        if any(text.endswith(marker) for marker in sentence_end_markers):
-            if current_sentence_segments:
-                sentence_segments.append(current_sentence_segments)
-                current_sentence_segments = []
-    
-    # 处理最后一组未完成的句子
-    if current_sentence_segments:
-        sentence_segments.append(current_sentence_segments)
-    
-    # 按单词数阈值分组
-    batched_data = []
-    current_batch = []
-    current_segments = []
-    current_word_count = 0
-    
-    def split_long_sentence(sentence_segs: List[SubtitleSegment]) -> List[List[SubtitleSegment]]:
-        """拆分过长的句子"""
-        result = []
-        temp_segs = []
-        temp_word_count = 0
-        
-        for seg in sentence_segs:
-            seg_text = seg.text.strip()
-            seg_word_count = count_words(seg_text)
-            
-            # 如果当前段落加上之前的已经超过阈值，并且当前段落以分句标点结尾
-            if (temp_word_count + seg_word_count > word_threshold and 
-                any(seg_text.endswith(marker) for marker in split_markers)):
-                if temp_segs:
-                    result.append(temp_segs)
-                    temp_segs = []
-                    temp_word_count = 0
-            
-            temp_segs.append(seg)
-            temp_word_count += seg_word_count
-            
-            # 如果累积的单词数已经接近阈值，强制分段
-            if temp_word_count >= word_threshold * 1.2:
-                if temp_segs:
-                    result.append(temp_segs)
-                    temp_segs = []
-                    temp_word_count = 0
-        
-        # 处理剩余的段落
-        if temp_segs:
-            result.append(temp_segs)
-        
-        return result
-    
-    for sentence in sentence_segments:
-        # 计算当前句子的单词数
-        sentence_text = " ".join([seg.text for seg in sentence])
-        sentence_word_count = count_words(sentence_text)
-        
-        # 如果当前句子超过阈值，尝试拆分
-        if sentence_word_count >= word_threshold:
-            # 先保存当前批次
-            if current_segments:
-                batched_data.append(SubtitleData(current_segments))
-                current_batch = []
-                current_segments = []
-                current_word_count = 0
-            
-            # 拆分长句子
-            split_parts = split_long_sentence(sentence)
-            for part in split_parts:
-                batched_data.append(SubtitleData(part))
-            continue
-            
-        # 如果添加当前句子后超过阈值，先保存当前批次，然后开始新批次
-        if current_word_count + sentence_word_count > word_threshold and current_segments:
-            batched_data.append(SubtitleData(current_segments))
-            current_batch = []
-            current_segments = []
-            current_word_count = 0
-        
-        current_batch.append(sentence)
-        current_segments.extend(sentence)
-        current_word_count += sentence_word_count
-    
-    # 处理最后一批未满的数据
-    if current_segments:
-        batched_data.append(SubtitleData(current_segments))
-    
-    return batched_data
-
-
-def merge_segments(asr_data: SubtitleData, 
-                   model: str = None, 
-                   num_threads: int = FIXED_NUM_THREADS, 
-                   save_split: str = None) -> SubtitleData:
-    """
-    合并字幕分段
-    
-    Args:
-        asr_data: 字幕数据
-        model: 使用的语言模型，如果为None则使用配置中的断句模型
-        num_threads: 线程数量
-        save_split: 保存断句结果的文件路径
-    """
-    import time
-    from concurrent.futures import ThreadPoolExecutor
-    
-    # 如果没有指定模型，使用配置中的断句模型
-    if model is None:
-        config = get_default_config()
-        model = config.split_model
-    
-    # 预处理字幕数据，移除纯标点符号的分段，并处理仅包含字母和撇号的文本
-    asr_data.segments = preprocess_segments(asr_data.segments)
-    
-    # 使用新的按单词数分组方法
-    word_threshold = 500
-    asr_data_segments = split_by_sentences(asr_data, word_threshold=word_threshold)
-    total_segments = len(asr_data_segments)
-    
-    # 记录批次信息
-    logger.info(f"📋 批次规划: 每组{word_threshold}字，共 {total_segments} 个批次")
-    
-    # 显示批次分布（简化）
-    batch_info = []
-    for i, segment in enumerate(asr_data_segments):
-        segment_text = " ".join([seg.text.strip() for seg in segment.segments])
-        word_count = count_words(segment_text)
-        batch_info.append(f"批次{i+1}: {word_count}字")
-    
-    logger.info(f"批次详情: {', '.join(batch_info)}")
-    logger.info("🚀 开始并行断句处理...")
-    
-    # 多线程处理每个分段
-    all_segments = []
-    start_time = time.time()
-    
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        def process_segment(args):
-            index, asr_data_part = args
-            try:
-                return process_by_llm(asr_data_part.segments, model=model, batch_index=index+1)
-            except SmartSplitError as e:
-                # 智能断句异常，直接抛出不重复包装
-                raise e
-            except Exception as e:
-                logger.error(f"❌ 批次 {index+1} 处理失败: {str(e)}")
-                raise Exception(f"批次 {index+1} 处理失败: {str(e)}")
-
-        # 并行处理所有分段，添加批次编号
-        try:
-            processed_segments = list(executor.map(process_segment, enumerate(asr_data_segments)))
-        except Exception as e:
-            logger.error(f"💥 并行处理失败: {str(e)}")
-            raise
-
-    # 合并所有处理后的分段
-    for i, segment in enumerate(processed_segments):
-        all_segments.extend(segment)
-        logger.info(f"📈 处理进度: {((i+1)/len(processed_segments)*100):.0f}% ({i+1}/{len(processed_segments)})")
-
-    all_segments.sort(key=lambda seg: seg.start_time)
-
-    # 如果需要保存断句结果
-    if save_split:
-        try:
-            # 获取输入的全部文本
-            all_text = asr_data.to_txt()
-            # 获取所有处理后的分段文本
-            split_sentences = [seg.text for seg in all_segments]
-            
-            # 显示断句结果
-            save_split_results(all_text, split_sentences, save_split)
-            logger.info(f"📄 断句结果已保存到: {save_split}")
-        except Exception as e:
-            logger.error(f"❌ 保存断句结果失败: {str(e)}")
-
-    merge_short_segment(all_segments)
-
-    # 创建最终的字幕数据对象
-    final_asr_data = SubtitleData(all_segments)
-
-    processing_time = time.time() - start_time
-    logger.info(f"✅ 所有断句完成! 共 {len(all_segments)} 句，耗时 {processing_time:.1f}秒")
-
-    return final_asr_data

@@ -1,9 +1,6 @@
 import re
-from typing import List
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from openai import OpenAI
+from typing import List, Optional
 
-from .data import SubtitleSegment
 from .prompts import SPLIT_SYSTEM_PROMPT
 from .config import SubtitleConfig, get_default_config
 from .llm_client import LLMClient
@@ -85,10 +82,10 @@ def split_by_end_marks(sentence: str) -> List[str]:
     return segments if len(segments) > 1 else [sentence]
 
 def split_by_llm(text: str,
-                model: str = None,
+                model: Optional[str] = None,
                 max_word_count_english: int = 14,
                 max_retries: int = 3,
-                batch_index: int = None) -> List[str]:
+                batch_index: Optional[int] = None) -> List[str]:
     """
     使用LLM拆分句子
     
@@ -256,7 +253,7 @@ def split_by_llm(text: str,
             suggestions = get_error_suggestions(str(e), model)
 
             # 创建一个携带建议的自定义异常类型
-            from .spliter import SmartSplitError
+            from ..exceptions import SmartSplitError
             raise SmartSplitError(error_msg, suggestions)
 
 

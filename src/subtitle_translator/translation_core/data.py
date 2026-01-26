@@ -2,10 +2,27 @@ import re
 import os
 from typing import List, Dict
 from pathlib import Path
+from dataclasses import dataclass
 import logging
 
 # 配置日志
 logger = logging.getLogger("subtitle_translator_cli")
+
+# 常量定义
+CHARS_PER_PHONEME = 4  # 每个音素包含的字符数（基于语音学理论）
+ELLIPSIS_PLACEHOLDER = '<<<ELLIPSIS>>>'
+WORD_TIMESTAMP_THRESHOLD = 0.8  # 单词级时间戳判定阈值
+MAX_CHAR_LENGTH_FOR_WORD = 2  # 单词级时间戳的最大字符长度
+
+
+@dataclass
+class PreSplitSentence:
+    """预分句数据结构（移植自 youtube-subtitle）"""
+    text: str
+    word_start_index: int
+    word_end_index: int
+    start_time: int
+    end_time: int
 
 def normalize_chinese_punctuation(text: str) -> str:
     """按 Netflix 规范处理中文标点：保留 ？ ！ …… · ' "，删除 ， 。 ； ："""
@@ -80,17 +97,16 @@ class SubtitleData:
         """
         if not self.segments:
             return False
-            
-        valid_segments = 0
-        total_segments = len(self.segments)
-        
-        for seg in self.segments:
-            text = seg.text.strip()
-            # 检查是否只包含一个英文单词或一个汉字
-            # 参考VideoCaptioner的标准，使用更严格的≤2字符检测
-            if (len(text.split()) == 1 and text.isascii()) or len(text.strip()) <= 2:
-                valid_segments += 1
-        return (valid_segments / total_segments) >= 0.8
+
+        valid_segments = sum(
+            1 for seg in self.segments
+            if self._is_single_word_or_char(seg.text.strip())
+        )
+        return (valid_segments / len(self.segments)) >= WORD_TIMESTAMP_THRESHOLD
+
+    def _is_single_word_or_char(self, text: str) -> bool:
+        """检查是否只包含一个英文单词或一个汉字"""
+        return (len(text.split()) == 1 and text.isascii()) or len(text.strip()) <= MAX_CHAR_LENGTH_FOR_WORD
 
     def split_to_word_segments(self) -> 'SubtitleData':
         """
@@ -126,13 +142,13 @@ class SubtitleData:
             # 多语言字符匹配模式（借鉴VideoCaptioner的全面支持）
             # 分为两类：连续提取的语言和单字提取的语言
             pattern = (
-                # 以单词形式出现的语言(连续提取)
-                r"[a-zA-Z\u00c0-\u00ff\u0100-\u017f']+"  # 拉丁字母及其变体(英语、德语、法语等)
+                # 以单词形式出现的语言(连续提取)，包括附着的标点符号
+                r"[a-zA-Z\u00c0-\u00ff\u0100-\u017f']+[.,!?;:]*"  # 拉丁字母及其变体(英语、德语、法语等)
                 r"|[\u0400-\u04ff]+"  # 西里尔字母(俄语等)
                 r"|[\u0370-\u03ff]+"  # 希腊语
                 r"|[\u0600-\u06ff]+"  # 阿拉伯语
                 r"|[\u0590-\u05ff]+"  # 希伯来语
-                r"|\d+"  # 数字
+                r"|\d+[.,]*"  # 数字（可能带小数点或逗号）
                 # 以单字形式出现的语言(单字提取)
                 r"|[\u4e00-\u9fff]"  # 中文
                 r"|[\u3040-\u309f]"  # 日文平假名
@@ -325,7 +341,9 @@ class SubtitleData:
 
             # 按 Netflix 规范处理标点
             if operation == "翻译":
-                processed_text = normalize_chinese_punctuation(processed_text)
+                # 跳过翻译失败的字幕
+                if not processed_text.startswith("[翻译失败]"):
+                    processed_text = normalize_chinese_punctuation(processed_text)
             elif operation == "优化":
                 processed_text = normalize_english_punctuation(processed_text)
 
@@ -392,29 +410,29 @@ class SubtitleData:
 def load_subtitle(file_path: str) -> 'SubtitleData':
     """
     从文件加载字幕数据
-    
+
     Args:
         file_path: 字幕文件路径，支持.srt格式
-        
+
     Returns:
         SubtitleData: 解析后的字幕数据实例
-        
+
     Raises:
         ValueError: 不支持的文件格式或文件读取错误
     """
-    file_path = Path(file_path)
-    if not file_path.exists():
-        raise FileNotFoundError(f"文件不存在: {file_path}")
-    
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"文件不存在: {path}")
+
     # 检查文件格式
-    if not file_path.suffix.lower() == '.srt':
+    if not path.suffix.lower() == '.srt':
         raise ValueError("仅支持srt格式字幕文件")
-        
+
     try:
-        content = file_path.read_text(encoding='utf-8')
+        content = path.read_text(encoding='utf-8')
     except UnicodeDecodeError:
-        content = file_path.read_text(encoding='gbk')
-        
+        content = path.read_text(encoding='gbk')
+
     return _parse_srt(content)
 
 def _parse_srt(srt_str: str) -> 'SubtitleData':
