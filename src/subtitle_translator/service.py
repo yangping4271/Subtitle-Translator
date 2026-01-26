@@ -221,8 +221,6 @@ class SubtitleTranslatorService:
             preprocessing_start_time = time.time()
             log_section_start(logger, "并行预处理阶段", "⚡")
 
-            print(f"⚡ [bold cyan]启动并行预处理：断句 + 内容分析...[/bold cyan]")
-
             # 准备原始字幕内容用于总结（断句前）
             original_subtitle_content = asr_data.to_txt()
 
