@@ -18,6 +18,38 @@ from .logger import setup_logger
 logger = setup_logger(__name__)
 
 
+def _handle_translation_error(e: Exception, logger) -> None:
+    """统一处理翻译相关异常"""
+    from .exceptions import SmartSplitError, TranslationError, SummaryError, EmptySubtitleError
+
+    error_types = {
+        SmartSplitError: "智能断句失败",
+        TranslationError: "翻译失败",
+        SummaryError: "内容分析失败",
+        EmptySubtitleError: "空文件"
+    }
+
+    for error_type, error_name in error_types.items():
+        if isinstance(e, error_type):
+            logger.error(f"❌ {error_name}: {e.message}")
+            if hasattr(e, 'suggestion') and e.suggestion:
+                logger.error(f"{e.suggestion}")
+            print(f"[bold red]❌ {error_name}:[/bold red] {e.message}")
+            if hasattr(e, 'suggestion') and e.suggestion:
+                print(f"[bold yellow]{e.suggestion}[/bold yellow]")
+
+            # 空文件异常特殊处理
+            if isinstance(e, EmptySubtitleError):
+                raise RuntimeError(f"{e.message}")
+            raise error_type(e.message, e.suggestion if hasattr(e, 'suggestion') else None)
+
+    # 其他异常
+    logger.error(f"❌ 处理失败: {e}")
+    logger.exception("详细错误信息:")
+    print(f"[bold red]❌ 处理失败:[/bold red] {e}")
+    raise RuntimeError(f"处理失败: {e}")
+
+
 def precheck_model_availability(model: str, show_progress: bool = True, silent: bool = False) -> bool:
     """
     预检查模型可用性，确保在开始处理前模型已可用
@@ -78,6 +110,22 @@ def precheck_model_availability(model: str, show_progress: bool = True, silent: 
         return True  # 即使检查失败也继续，让实际处理时处理错误
 
 
+def _check_model_precheck(model_precheck_passed: Optional[bool], model: str) -> None:
+    """检查模型预检查结果，如果失败则抛出异常"""
+    if model_precheck_passed is None:
+        # 单文件处理模式，需要完整的预检查
+        print("[bold blue]>>> 预检查转录环境...[/bold blue]")
+        model_available = precheck_model_availability(model, show_progress=True)
+
+        if not model_available:
+            print("[bold red]❌ 转录模型不可用，无法继续处理[/bold red]")
+            raise RuntimeError(f"转录模型 {model} 不可用")
+    elif not model_precheck_passed:
+        # 全局预检查失败，抛出异常
+        print("[bold red]❌ 转录模型不可用，无法继续处理[/bold red]")
+        raise RuntimeError(f"转录模型 {model} 不可用")
+
+
 def process_single_file(
     input_file: Path, target_lang: str, output_dir: Path,
     model: str, llm_model: Optional[str],
@@ -92,21 +140,9 @@ def process_single_file(
         print("[bold yellow]>>> 检测到SRT文件，跳过转录步骤...[/bold yellow]")
         temp_srt_path = input_file
     else:
-        # 根据预检查结果决定是否需要重新检查模型
-        if model_precheck_passed is None:
-            # 单文件处理模式，需要完整的预检查
-            print("[bold blue]>>> 预检查转录环境...[/bold blue]")
-            model_available = precheck_model_availability(model, show_progress=True)
-            
-            if not model_available:
-                print("[bold red]❌ 转录模型不可用，无法继续处理[/bold red]")
-                raise RuntimeError(f"转录模型 {model} 不可用")
-        elif not model_precheck_passed:
-            # 全局预检查失败，抛出异常
-            print("[bold red]❌ 转录模型不可用，无法继续处理[/bold red]")
-            raise RuntimeError(f"转录模型 {model} 不可用")
-        # 如果 model_precheck_passed 为 True，则跳过预检查
-        
+        # 检查模型预检查结果
+        _check_model_precheck(model_precheck_passed, model)
+
         # --- 转录阶段 ---
         logger.info(">>> 开始转录...")
         print("[bold green]>>> 开始转录...[/bold green]")
@@ -212,42 +248,7 @@ def process_single_file(
         logger.info(f"ASS 文件生成成功: {final_ass_path}")
 
     except Exception as e:
-        # 检查是否是智能断句异常
-        from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError, EmptySubtitleError
-        if isinstance(e, SmartSplitError):
-            logger.error(f"❌ 智能断句失败: {e.message}")
-            if e.suggestion:
-                logger.error(f"{e.suggestion}")
-            print(f"[bold red]❌ 智能断句失败:[/bold red] {e.message}")
-            if e.suggestion:
-                print(f"[bold yellow]{e.suggestion}[/bold yellow]")
-            raise SmartSplitError(e.message, e.suggestion)
-        elif isinstance(e, TranslationError):
-            logger.error(f"❌ 翻译失败: {e.message}")
-            if e.suggestion:
-                logger.error(f"{e.suggestion}")
-            print(f"[bold red]❌ 翻译失败:[/bold red] {e.message}")
-            if e.suggestion:
-                print(f"[bold yellow]{e.suggestion}[/bold yellow]")
-            raise TranslationError(e.message, e.suggestion)
-        elif isinstance(e, SummaryError):
-            logger.error(f"❌ 内容分析失败: {e.message}")
-            if e.suggestion:
-                logger.error(f"{e.suggestion}")
-            print(f"[bold red]❌ 内容分析失败:[/bold red] {e.message}")
-            if e.suggestion:
-                print(f"[bold yellow]{e.suggestion}[/bold yellow]")
-            raise SummaryError(e.message, e.suggestion)
-        elif isinstance(e, EmptySubtitleError):
-            # 空文件异常 - 友好处理，不显示堆栈跟踪
-            logger.info(f"⚠️  {e.message}")
-            # 不打印错误信息，前面已经显示了友好提示
-            raise RuntimeError(f"{e.message}")
-        else:
-            logger.error(f"❌ 处理失败: {e}")
-            logger.exception("详细错误信息:")
-            print(f"[bold red]❌ 处理失败:[/bold red] {e}")
-            raise RuntimeError(f"处理失败: {e}")
+        _handle_translation_error(e, logger)
     finally:
         # --- 清理中间翻译文件，保留原始转录文件 ---
         if preserve_intermediate:

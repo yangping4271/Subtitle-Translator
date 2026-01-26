@@ -6,7 +6,7 @@ import os
 import re
 import typer
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from typing_extensions import Annotated
 
 from rich import print
@@ -141,6 +141,47 @@ def _validate_target_language(target_lang: str):
     print(f"🎯 [bold green]目标语言:[/bold green] [cyan]{target_language_name}[/cyan] ([dim]{target_lang}[/dim])")
 
 
+def _get_file_type_info(file_ext: str) -> Tuple[str, str]:
+    """获取文件类型和处理方式
+
+    Returns:
+        (file_type, process_type)
+    """
+    if file_ext == '.srt':
+        return "字幕文件", "直接翻译"
+    if file_ext in AUDIO_EXTENSIONS:
+        return "音频文件", "转录+翻译"
+    if file_ext in VIDEO_EXTENSIONS:
+        return "视频文件", "转录+翻译"
+    return "未知类型", "未知"
+
+
+def _format_file_size(file_path: Path) -> str:
+    """格式化文件大小显示"""
+    try:
+        file_size = file_path.stat().st_size
+        if file_size < 1024:
+            return f"{file_size} B"
+        if file_size < 1024 * 1024:
+            return f"{file_size / 1024:.1f} KB"
+        return f"{file_size / (1024 * 1024):.1f} MB"
+    except:
+        return "未知"
+
+
+def _remove_language_suffix(base_name: str) -> str:
+    """移除文件名中的语言后缀"""
+    language_suffixes = [
+        r'\.zh$', r'\.zh-cn$', r'\.zh-tw$',  # 中文
+        r'\.ja$', r'\.ko$', r'\.th$', r'\.vi$',  # 亚洲语言
+        r'\.fr$', r'\.de$', r'\.es$', r'\.pt$', r'\.it$', r'\.ru$',  # 欧洲语言
+        r'\.ar$', r'\.en$'  # 其他
+    ]
+    for suffix_pattern in language_suffixes:
+        base_name = re.sub(suffix_pattern, '', base_name)
+    return base_name
+
+
 def _natural_sort_key(s: str):
     """用于自然排序的key函数：将数字片段按整数比较，其他片段按不区分大小写的字符串比较"""
     parts = re.split(r"(\d+)", s)
@@ -184,15 +225,9 @@ def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path, 
         all_exts = ['srt'] + [ext.lstrip('.') for ext in MEDIA_EXTENSIONS]
         ext_pattern = r'\.(' + '|'.join(all_exts) + r')$'
         base_name = re.sub(ext_pattern, '', file_name, flags=re.IGNORECASE)
+
         # 移除各种语言后缀
-        language_suffixes = [
-            r'\.zh$', r'\.zh-cn$', r'\.zh-tw$',  # 中文
-            r'\.ja$', r'\.ko$', r'\.th$', r'\.vi$',  # 亚洲语言
-            r'\.fr$', r'\.de$', r'\.es$', r'\.pt$', r'\.it$', r'\.ru$',  # 欧洲语言
-            r'\.ar$', r'\.en$'  # 其他
-        ]
-        for suffix_pattern in language_suffixes:
-            base_name = re.sub(suffix_pattern, '', base_name)
+        base_name = _remove_language_suffix(base_name)
         base_names.add(base_name)
     
     # 自然排序基础文件名（EP2 在 EP10 之前）
@@ -282,31 +317,11 @@ def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: 
             file_name = file_path.name
             file_ext = file_path.suffix.lower()
 
-            # 确定文件类型
-            if file_ext == '.srt':
-                file_type = "字幕文件"
-                process_type = "直接翻译"
-            elif file_ext in AUDIO_EXTENSIONS:
-                file_type = "音频文件"
-                process_type = "转录+翻译"
-            elif file_ext in VIDEO_EXTENSIONS:
-                file_type = "视频文件"
-                process_type = "转录+翻译"
-            else:
-                file_type = "未知类型"
-                process_type = "未知"
+            # 确定文件类型和处理方式
+            file_type, process_type = _get_file_type_info(file_ext)
 
             # 获取文件大小
-            try:
-                file_size = file_path.stat().st_size
-                if file_size < 1024:
-                    size_str = f"{file_size} B"
-                elif file_size < 1024 * 1024:
-                    size_str = f"{file_size / 1024:.1f} KB"
-                else:
-                    size_str = f"{file_size / (1024 * 1024):.1f} MB"
-            except:
-                size_str = "未知"
+            size_str = _format_file_size(file_path)
 
             file_table.add_row(str(idx), file_name, file_type, size_str, process_type)
 

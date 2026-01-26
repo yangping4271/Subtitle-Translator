@@ -347,38 +347,57 @@ def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences
 
     return new_segments
 
+def _should_merge_segments(current_seg, next_seg, max_word_count: int) -> bool:
+    """判断是否应该合并两个分段
+
+    Args:
+        current_seg: 当前分段
+        next_seg: 下一个分段
+        max_word_count: 最大单词数限制
+
+    Returns:
+        是否应该合并
+    """
+    time_gap = abs(next_seg.start_time - current_seg.end_time)
+    current_words = count_words(current_seg.text)
+    next_words = count_words(next_seg.text)
+    total_words = current_words + next_words
+
+    # 判断条件：
+    # 1. 时间间隔小于300ms
+    # 2. 当前段落或下一段落词数小于5
+    # 3. 合并后总词数不超过限制
+    # 4. 当前段落不以句子结束标记结尾
+    has_sentence_end = any(mark in current_seg.text for mark in [".", "?", "!"])
+
+    return (time_gap < 300 and
+            (current_words < 5 or next_words <= 5) and
+            total_words <= max_word_count and
+            not has_sentence_end)
+
+
 def merge_short_segment(segments: List[SubtitleSegment]) -> None:
     """
     合并过短的分段
     """
-    if not segments:  # 添加空列表检查
+    if not segments:
         return
-        
-    i = 0  # 从头开始遍历
-    while i < len(segments) - 1:  # 修改遍历方式
+
+    config = get_default_config()
+    max_word_count = config.max_word_count_english
+
+    i = 0
+    while i < len(segments) - 1:
         current_seg = segments[i]
         next_seg = segments[i + 1]
-        
-        # 判断是否需要合并:
-        # 1. 时间间隔小于300ms
-        # 2. 当前段落或下一段落词数小于5
-        # 3. 合并后总词数不超过限制
-        time_gap = abs(next_seg.start_time - current_seg.end_time)
-        current_words = count_words(current_seg.text)
-        next_words = count_words(next_seg.text)
-        total_words = current_words + next_words
-        config = get_default_config()
-        max_word_count = config.max_word_count_english
 
-        if time_gap < 300 and (current_words < 5 or next_words <= 5) \
-            and total_words <= max_word_count \
-            and ("." not in current_seg.text and "?" not in current_seg.text and "!" not in current_seg.text):
+        if _should_merge_segments(current_seg, next_seg, max_word_count):
             # 执行合并操作
-            logger.info(f"合并优化: {current_seg.text} --- {next_seg.text}") 
+            logger.info(f"合并优化: {current_seg.text} --- {next_seg.text}")
             # 更新当前段落的文本和结束时间
             current_seg.text += " " + next_seg.text
             current_seg.end_time = next_seg.end_time
-            
+
             # 从列表中移除下一个段落
             segments.pop(i + 1)
             # 不增加i，因为需要继续检查合并后的段落

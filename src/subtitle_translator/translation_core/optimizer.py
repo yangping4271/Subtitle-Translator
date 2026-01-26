@@ -194,19 +194,25 @@ class SubtitleOptimizer:
                         if _is_translation_failed(r.get('translation', ''))}
 
         if failed_items:
-            logger.info(f"发现 {len(failed_items)} 条翻译失败，重试")
-            try:
-                retry_results = self._translate({str(k): v for k, v in failed_items.items()}, summary_content)
-                # 合并成功的重试结果
-                retry_map = {r['id']: r for r in retry_results
-                            if not _is_translation_failed(r.get('translation', ''))}
-                for i, r in enumerate(results):
-                    if r['id'] in retry_map:
-                        results[i] = retry_map[r['id']]
-                logger.info(f"重试成功 {len(retry_map)}/{len(failed_items)} 条")
-            except Exception as e:
-                logger.warning(f"重试失败: {e}")
+            results = self._retry_failed_translations(failed_items, subtitle_json, summary_content, results)
 
+        return results
+
+    def _retry_failed_translations(self, failed_items: dict, subtitle_json: dict,
+                                   summary_content: dict, results: list) -> list:
+        """重试失败的翻译"""
+        logger.info(f"发现 {len(failed_items)} 条翻译失败，重试")
+        try:
+            retry_results = self._translate({str(k): v for k, v in failed_items.items()}, summary_content)
+            # 合并成功的重试结果
+            retry_map = {r['id']: r for r in retry_results
+                        if not _is_translation_failed(r.get('translation', ''))}
+            for i, r in enumerate(results):
+                if r['id'] in retry_map:
+                    results[i] = retry_map[r['id']]
+            logger.info(f"重试成功 {len(retry_map)}/{len(failed_items)} 条")
+        except Exception as e:
+            logger.warning(f"重试失败: {e}")
         return results
 
     def translate(self, asr_data, summary_content: Dict) -> List[Dict]:
@@ -221,63 +227,73 @@ class SubtitleOptimizer:
         try:
             # 清空之前的日志
             self.batch_logs.clear()
-            
-            subtitle_json = {str(k): v["original_subtitle"] 
+
+            subtitle_json = {str(k): v["original_subtitle"]
                             for k, v in asr_data.to_json().items()}
-            
+
             # 使用多线程批量翻译
             result = self.translate_multi_thread(subtitle_json, summary_content)
 
-            # 检查是否有翻译失败的字幕（带有[翻译失败]前缀）
-            failed_subtitles = {}
-            for k, v in result["translated_subtitles"].items():
-                if _is_translation_failed(v):
-                    failed_subtitles[k] = subtitle_json[k]
-            
-            # 如果有翻译失败的字幕，使用单条翻译再次尝试
-            if failed_subtitles:
-                logger.info(f"发现{len(failed_subtitles)}个字幕翻译失败，使用单条翻译再次尝试")
-                retry_result = self._translate_chunk_by_single(failed_subtitles)
-                
-                # 更新结果
-                for k, v in retry_result["translated_subtitles"].items():
-                    if not v.startswith("[翻译失败]"):
-                        logger.info(f"字幕ID {k} 单条翻译成功")
-                        result["optimized_subtitles"][str(k)] = retry_result["optimized_subtitles"][k]
-                        result["translated_subtitles"][str(k)] = v
+            # 检查并重试失败的字幕
+            result = self._check_and_retry_failed(result, subtitle_json, summary_content)
 
             # 检查翻译结果质量
-            failed_count = sum(1 for v in result["translated_subtitles"].values()
-                               if _is_translation_failed(v))
-            
-            # 如果所有翻译都失败，抛出异常
-            if failed_count == len(result["translated_subtitles"]):
-                suggestion = "💡 建议：请检查翻译模型名称是否正确，或更换其他可用模型"
-                raise TranslationError("所有字幕翻译均失败", suggestion)
-            
-            # 如果部分翻译失败，记录警告
-            if failed_count > 0:
-                total_count = len(result["translated_subtitles"])
-                logger.warning(f"⚠️ {failed_count}/{total_count} 条字幕翻译失败")
-            
+            self._validate_translation_quality(result)
+
             # 转换结果格式
-            translated_subtitle = []
-            for k, v in result["optimized_subtitles"].items():
-                translated_text = {
-                    "id": int(k),
-                    "original": subtitle_json[str(k)],
-                    "optimized": v,
-                    "translation": result["translated_subtitles"][k]
-                }
-                translated_subtitle.append(translated_text)
-            
-            # logger.info(f"翻译结果: {json.dumps(translated_subtitle, indent=4, ensure_ascii=False)}")
-            
+            translated_subtitle = self._format_translation_results(result, subtitle_json)
+
             # 所有批次处理完成后，统一输出日志
             self._print_all_batch_logs()
             return translated_subtitle
         finally:
             self.stop()  # 确保线程池被关闭
+
+    def _check_and_retry_failed(self, result: dict, subtitle_json: dict, summary_content: dict) -> dict:
+        """检查并重试失败的字幕"""
+        failed_subtitles = {k: subtitle_json[k] for k, v in result["translated_subtitles"].items()
+                           if _is_translation_failed(v)}
+
+        if failed_subtitles:
+            logger.info(f"发现{len(failed_subtitles)}个字幕翻译失败，使用单条翻译再次尝试")
+            retry_result = self._translate_chunk_by_single(failed_subtitles)
+
+            # 更新结果
+            for k, v in retry_result["translated_subtitles"].items():
+                if not v.startswith("[翻译失败]"):
+                    logger.info(f"字幕ID {k} 单条翻译成功")
+                    result["optimized_subtitles"][str(k)] = retry_result["optimized_subtitles"][k]
+                    result["translated_subtitles"][str(k)] = v
+
+        return result
+
+    def _validate_translation_quality(self, result: dict) -> None:
+        """验证翻译结果质量"""
+        failed_count = sum(1 for v in result["translated_subtitles"].values()
+                          if _is_translation_failed(v))
+
+        # 如果所有翻译都失败，抛出异常
+        if failed_count == len(result["translated_subtitles"]):
+            suggestion = "💡 建议：请检查翻译模型名称是否正确，或更换其他可用模型"
+            raise TranslationError("所有字幕翻译均失败", suggestion)
+
+        # 如果部分翻译失败，记录警告
+        if failed_count > 0:
+            total_count = len(result["translated_subtitles"])
+            logger.warning(f"⚠️ {failed_count}/{total_count} 条字幕翻译失败")
+
+    def _format_translation_results(self, result: dict, subtitle_json: dict) -> list:
+        """格式化翻译结果"""
+        translated_subtitle = []
+        for k, v in result["optimized_subtitles"].items():
+            translated_text = {
+                "id": int(k),
+                "original": subtitle_json[str(k)],
+                "optimized": v,
+                "translation": result["translated_subtitles"][k]
+            }
+            translated_subtitle.append(translated_text)
+        return translated_subtitle
 
     def stop(self):
         """优雅关闭线程池"""
