@@ -39,25 +39,15 @@ class SubtitleTranslatorService:
         translation_model: Optional[str] = None,
         show_config: bool = True
     ) -> None:
-        """初始化翻译环境配置
-
-        Args:
-            llm_model: 覆盖所有模型（优先级低于独立参数）
-            split_model: 断句模型（优先级最高）
-            summary_model: 总结模型（优先级最高）
-            translation_model: 翻译模型（优先级最高）
-            show_config: 是否显示配置信息
-        """
+        """初始化翻译环境配置"""
         start_time = time.time()
         log_section_start(self.logger, "翻译环境初始化", "⚙️")
 
-        # 优先级：独立参数 > llm_model > 环境变量 > 默认值
         if llm_model:
             self.config.split_model = llm_model
             self.config.summary_model = llm_model
             self.config.translation_model = llm_model
 
-        # 独立参数覆盖（优先级最高）
         if split_model:
             self.config.split_model = split_model
         if summary_model:
@@ -197,23 +187,17 @@ class SubtitleTranslatorService:
             # 加载字幕文件
             asr_data = self._load_subtitle_file(input_srt_path)
 
-            # 并行预处理阶段：断句和总结同时进行（v0.5.x 性能优化）
-            # 借鉴VideoCaptioner的解决方案：统一转换为单词级别后进行断句
-            # 优势：1) 复用现有批量框架 2) 无额外API成本 3) 时间戳精确分配 4) 并行处理节省时间
             preprocessing_start_time = time.time()
             log_section_start(self.logger, "并行预处理阶段", "⚡")
 
-            # 准备原始字幕内容用于总结（断句前）
             original_subtitle_content = asr_data.to_txt()
 
-            # 先获取总结（需要作为翻译上下文）
             summarize_result, summary_time = self._execute_summarization(
                 original_subtitle_content,
                 str(input_srt_path.resolve())
             )
             stage_times["🔍 内容分析"] = summary_time
 
-            # 使用流水线式处理：断句 + 翻译一体化
             pipeline_start_time = time.time()
             print(f"⚡ [bold cyan]启动流水线处理：断句 + 翻译并行...[/bold cyan]")
 
@@ -226,21 +210,17 @@ class SubtitleTranslatorService:
             log_section_end(self.logger, "并行预处理阶段", preprocessing_time, "🎉")
             print(f"🎉 [bold green]流水线处理完成[/bold green] (总耗时: [cyan]{preprocessing_time:.1f}s[/cyan])")
 
-            # 添加并行处理统计
             stage_times["⚡ 并行预处理"] = preprocessing_time
 
-            # 保存字幕
             target_lang_output_path = self._save_subtitle_files(
                 asr_data, translate_result, input_srt_path, output_dir, target_lang
             )
 
             total_elapsed = time.time() - task_start_time
 
-            # 显示时间统计
             print()
             self._format_time_stats(stage_times, total_elapsed)
 
-            # 任务完成统计
             final_stats = {
                 "输入文件": input_srt_path.name,
                 "字幕数量": len(asr_data.segments),
@@ -257,7 +237,6 @@ class SubtitleTranslatorService:
             raise
 
         except Exception as e:
-            # 检查是否是智能断句、翻译、总结或空文件异常，如果是则直接传播
             if isinstance(e, (SmartSplitError, TranslationError, SummaryError, EmptySubtitleError)):
                 raise e
 

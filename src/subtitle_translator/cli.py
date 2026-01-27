@@ -14,15 +14,12 @@ from rich import print
 from .env_setup import setup_environment
 from .logger import setup_logger
 
-# 默认转录模型
 DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
 
-# 媒体文件扩展名定义
 AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.wav', '.flac', '.aac', '.ogg', '.wma', '.aiff', '.opus']
 VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpeg', '.mpg', '.3gp', '.ts']
 MEDIA_EXTENSIONS = AUDIO_EXTENSIONS + VIDEO_EXTENSIONS
 
-# 初始化logger
 logger = setup_logger(__name__)
 
 
@@ -50,19 +47,16 @@ def main(
     version: bool = typer.Option(False, "--version", help="显示版本信息并退出。"),
 ):
     """字幕翻译工具主命令"""
-    # 处理版本信息请求
     if version:
         from .version_utils import get_simple_version_info
         print(get_simple_version_info())
         raise typer.Exit()
 
-    # 如果调用了子命令，就不执行主逻辑
     if ctx.invoked_subcommand is not None:
         return
 
     setup_environment()
 
-    # 早期验证目标语言代码，提供友好错误信息
     try:
         _validate_target_language(target_lang)
     except ValueError as e:
@@ -76,9 +70,7 @@ def main(
         print(f"   translate -t fr     # 法文")
         raise typer.Exit(code=1)
 
-    # 设置输出目录
     if output_dir is None:
-        # 智能默认输出目录：如果指定了输入目录，则使用输入目录；否则使用当前目录
         if input_dir:
             output_dir = input_dir
             logger.info(f"使用输入目录作为输出目录: {output_dir}")
@@ -92,7 +84,6 @@ def main(
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"输出目录已解析为: {output_dir}")
 
-    # 验证输出目录是否可写
     if not output_dir.exists():
         logger.error(f"输出目录不存在: {output_dir}")
         print(f"[bold red]❌ 输出目录不存在: {output_dir}[/bold red]")
@@ -103,9 +94,7 @@ def main(
         print(f"[bold red]❌ 输出目录不可写: {output_dir}[/bold red]")
         raise typer.Exit(code=1)
 
-    # 获取要处理的文件列表
     if input_file:
-        # 单文件模式下的转录检查
         if input_file.suffix.lower() != '.srt' and not transcribe:
             logger.error(f"未启用转录功能，无法处理非字幕文件: {input_file.name}")
             print(f"[bold red]❌ 未启用转录功能![/bold red]")
@@ -118,18 +107,14 @@ def main(
         logger.info(f"开始处理单个文件: {input_file.name}")
         print(f"开始处理单个文件: [bold cyan]{input_file.name}[/bold cyan]")
     else:
-        # 确定批量处理的输入目录
         batch_input_dir = input_dir if input_dir else Path.cwd()
-        # 确保使用绝对路径，避免相对路径在显示时造成混淆
         batch_input_dir = batch_input_dir.resolve()
         files_to_process = _get_batch_files(max_count, llm_model, batch_input_dir, transcribe)
 
-    # 处理预览模式
     if dry_run:
         _show_dry_run_summary(files_to_process, target_lang, output_dir, model, llm_model, batch_input_dir)
         raise typer.Exit(code=0)
 
-    # 批量处理文件
     _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model,
                         split_model, summary_model, translation_model, preserve_intermediate)
 
@@ -142,11 +127,7 @@ def _validate_target_language(target_lang: str):
 
 
 def _get_file_type_info(file_ext: str) -> Tuple[str, str]:
-    """获取文件类型和处理方式
-
-    Returns:
-        (file_type, process_type)
-    """
+    """获取文件类型和处理方式"""
     if file_ext == '.srt':
         return "字幕文件", "直接翻译"
     if file_ext in AUDIO_EXTENSIONS:
