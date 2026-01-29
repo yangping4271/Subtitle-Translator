@@ -92,6 +92,47 @@ translate -i video.srt -t zh
 
 上下文信息会与文件名和路径信息一起传递给翻译模型，帮助提高翻译质量和术语准确性。
 
+### 术语表配置
+
+项目支持自定义术语表，确保专业术语翻译的一致性。
+
+**全局术语表**（用户配置目录）：
+```bash
+# 创建配置目录
+mkdir -p ~/.config/subtitle-translator
+
+# 编辑全局术语表
+cat > ~/.config/subtitle-translator/terminology.txt << 'EOF'
+# 全局术语表
+[简体中文]
+AGI = 通用人工智能 (AGI)
+LLM = 大语言模型 (Large Language Model)
+Transformer = Transformer
+
+[繁体中文]
+AGI = 通用人工智慧 (AGI)
+EOF
+```
+
+**局部术语表**（字幕文件同目录）：
+```bash
+# 在字幕文件同目录创建 terminology.txt
+# 局部术语会覆盖全局术语
+cat > terminology.txt << 'EOF'
+[简体中文]
+# 覆盖全局术语
+AGI = 人工通用智能 (AGI)
+# 新增项目特定术语
+project-term = 项目术语
+EOF
+```
+
+**格式说明**：
+- 支持 `#` 开头的注释行
+- 使用 `[语言]` 标记语言段
+- 使用 `术语 = 翻译` 格式
+- 局部术语表会与全局术语表合并，相同术语以局部为准
+
 ## 工作流程
 
 ### 完整流程(英文转录+翻译)

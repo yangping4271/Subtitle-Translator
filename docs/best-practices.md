@@ -26,7 +26,7 @@ prompt = """
 
 ### 术语表外置
 
-不要硬编码术语，使用 `terminology.py` 管理。
+术语表使用外部文本文件管理，不要硬编码在代码中。
 
 ### 逻辑集中
 
@@ -34,22 +34,51 @@ prompt = """
 
 ## 自定义术语表
 
-编辑 `src/subtitle_translator/translation_core/terminology.py`：
+### 全局术语表
 
-```python
-DEFAULT_TERMINOLOGY = {
-    "简体中文": {
-        "AGI": "通用人工智能 (AGI)",
-        "LLM": "大语言模型 (Large Language Model)",
-    },
-    "繁体中文": {
-        "AGI": "通用人工智慧 (AGI)",
-    },
-    "日文": {
-        "AGI": "汎用人工知能 (AGI)",
-    }
-}
+编辑用户配置目录的术语表：
+
+```bash
+# 创建配置目录
+mkdir -p ~/.config/subtitle-translator
+
+# 编辑全局术语表
+vim ~/.config/subtitle-translator/terminology.txt
 ```
+
+格式：
+
+```
+# 全局术语表
+[简体中文]
+AGI = 通用人工智能 (AGI)
+LLM = 大语言模型 (Large Language Model)
+
+[繁体中文]
+AGI = 通用人工智慧 (AGI)
+
+[日文]
+AGI = 汎用人工知能 (AGI)
+```
+
+### 局部术语表
+
+在字幕文件同目录创建 `terminology.txt`，局部术语会与全局术语合并：
+
+```
+# 局部术语表
+[简体中文]
+# 覆盖全局术语
+AGI = 人工通用智能 (AGI)
+# 新增项目特定术语
+project-term = 项目术语
+```
+
+**格式说明**：
+- 支持 `#` 开头的注释行
+- 使用 `[语言]` 标记语言段
+- 使用 `术语 = 翻译` 格式
+- 局部术语会覆盖全局术语
 
 ## 其他规范
 

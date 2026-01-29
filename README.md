@@ -187,6 +187,8 @@ Supports translation from English to multiple languages:
 
 ## Configuration
 
+### Environment Variables
+
 Create `.env` file in the project root directory:
 ```bash
 # OpenAI API Configuration (required)
@@ -198,6 +200,65 @@ SPLIT_MODEL=gpt-4o-mini      # Sentence splitting model
 TRANSLATION_MODEL=gpt-4o     # Translation model
 LLM_MODEL=gpt-4o-mini        # Default model
 ```
+
+### External Context
+
+Provide additional translation context by creating a `context.txt` or `ctx.txt` file in the same directory as your subtitle file:
+
+```bash
+# Create context file
+cat > context.txt << 'EOF'
+This is a technical tutorial about Google Gemini CLI and AI agents.
+Key topics: Gemini API, command-line tools, agent development.
+Target audience: Developers and AI practitioners.
+EOF
+
+# Translation will automatically use the context
+translate -i video.srt -t zh
+```
+
+The context information will be passed to the translation model along with filename and path information to improve translation quality and terminology accuracy.
+
+### Terminology Configuration
+
+The project supports custom terminology to ensure consistent translation of technical terms.
+
+**Global Terminology** (user config directory):
+```bash
+# Create config directory
+mkdir -p ~/.config/subtitle-translator
+
+# Edit global terminology
+cat > ~/.config/subtitle-translator/terminology.txt << 'EOF'
+# Global terminology
+[简体中文]
+AGI = 通用人工智能 (AGI)
+LLM = 大语言模型 (Large Language Model)
+Transformer = Transformer
+
+[繁体中文]
+AGI = 通用人工智慧 (AGI)
+EOF
+```
+
+**Local Terminology** (same directory as subtitle file):
+```bash
+# Create terminology.txt in the subtitle directory
+# Local terms will merge with and override global terms
+cat > terminology.txt << 'EOF'
+[简体中文]
+# Override global terms
+AGI = 人工通用智能 (AGI)
+# Add project-specific terms
+project-term = 项目术语
+EOF
+```
+
+**Format Notes**:
+- Supports comment lines starting with `#`
+- Use `[Language]` to mark language sections
+- Use `Term = Translation` format
+- Local terminology merges with global, with local terms taking precedence
 
 ## Development
 

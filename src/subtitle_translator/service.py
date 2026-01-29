@@ -139,11 +139,8 @@ class SubtitleTranslatorService:
         print(f"   端点: [cyan]{self.config.openai_base_url}[/cyan]")
 
         api_key = self.config.openai_api_key
-        if api_key:
-            masked_key = f"{api_key[:6]}{'*' * 8}{api_key[-6:]}" if len(api_key) > 12 else '*' * len(api_key)
-            print(f"   密钥: [cyan]{masked_key}[/cyan]")
-        else:
-            print(f"   密钥: [red]未设置[/red]")
+        masked_key = f"{api_key[:6]}{'*' * 8}{api_key[-6:]}" if len(api_key) > 12 else '*' * len(api_key)
+        print(f"   密钥: [cyan]{masked_key}[/cyan]" if api_key else "   密钥: [red]未设置[/red]")
 
     def _display_model_config(self) -> None:
         """显示模型配置信息"""
@@ -171,6 +168,13 @@ class SubtitleTranslatorService:
 
             # 设置目标语言
             self._set_target_language(target_lang)
+
+            # 加载术语表（全局 + 局部）
+            from .translation_core.terminology import load_terminology
+            self.config.terminology = load_terminology(
+                self.config.target_language,
+                input_srt_path
+            )
 
             # 只在需要时初始化翻译环境
             if not skip_env_init:
@@ -274,7 +278,7 @@ class SubtitleTranslatorService:
             parent_names.append(folder_name)
             current_path = current_path.parent
 
-        return ' / '.join(reversed(parent_names)) if parent_names else ""
+        return ' / '.join(reversed(parent_names))
 
     def _translate_with_pipeline(self, asr_data: SubtitleData, context_info: str) -> Tuple[SubtitleData, list]:
         """
@@ -419,7 +423,6 @@ class SubtitleTranslatorService:
         """格式化显示时间统计"""
         print(f"⏱️  [bold blue]耗时统计:[/bold blue]")
 
-        # 按执行顺序显示各阶段（保持字典插入顺序），跳过并行预处理总计
         for stage_name, elapsed_time in stages.items():
             if elapsed_time > 0 and stage_name != "⚡ 并行预处理":
                 percentage = (elapsed_time / total_time) * 100

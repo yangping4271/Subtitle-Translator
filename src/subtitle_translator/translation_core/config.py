@@ -2,8 +2,6 @@ import os
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .terminology import DEFAULT_TERMINOLOGY
-
 # 语言代码映射表
 LANGUAGE_MAPPING = {
     "zh": "简体中文",
@@ -44,6 +42,11 @@ def get_target_language(lang_code: str) -> str:
     if lang_code in LANGUAGE_MAPPING:
         return LANGUAGE_MAPPING[lang_code]
 
+    return _build_language_error(lang_code)
+
+
+def _build_language_error(lang_code: str) -> str:
+    """构建语言代码错误信息"""
     language_groups = {
         "中文": ["zh", "zh-cn", "zh-tw"],
         "亚洲语言": ["ja", "ko", "th", "vi"],
@@ -69,10 +72,8 @@ def get_target_language(lang_code: str) -> str:
         "vietnamese": ["vi"],
     }
 
-    similar_codes = []
-    if lang_code in suggestions:
-        similar_codes = suggestions[lang_code]
-    else:
+    similar_codes = suggestions.get(lang_code, [])
+    if not similar_codes:
         for supported_code in LANGUAGE_MAPPING.keys():
             if (lang_code in supported_code or supported_code in lang_code or
                 abs(len(lang_code) - len(supported_code)) <= 1):
@@ -135,16 +136,15 @@ class SubtitleConfig:
             except ValueError:
                 pass
 
-        if self.terminology is None:
-            self.terminology = DEFAULT_TERMINOLOGY.get(self.target_language, {})
-
         if not self.openai_base_url or not self.openai_api_key:
-            error_msg = f"环境变量验证失败:\n"
-            error_msg += f"  OPENAI_BASE_URL = '{self.openai_base_url}' (长度: {len(self.openai_base_url)})\n"
-            error_msg += f"  OPENAI_API_KEY = '{self.openai_api_key[:20]}...' (长度: {len(self.openai_api_key)})\n"
-            error_msg += f"  LLM_MODEL = '{self.llm_model}'\n"
-            error_msg += f"  SPLIT_MODEL = '{self.split_model}'\n"
-            error_msg += f"  TRANSLATION_MODEL = '{self.translation_model}'"
+            error_msg = (
+                f"环境变量验证失败:\n"
+                f"  OPENAI_BASE_URL = '{self.openai_base_url}' (长度: {len(self.openai_base_url)})\n"
+                f"  OPENAI_API_KEY = '{self.openai_api_key[:20]}...' (长度: {len(self.openai_api_key)})\n"
+                f"  LLM_MODEL = '{self.llm_model}'\n"
+                f"  SPLIT_MODEL = '{self.split_model}'\n"
+                f"  TRANSLATION_MODEL = '{self.translation_model}'"
+            )
             raise ValueError(error_msg)
 
 # 文件相关常量
