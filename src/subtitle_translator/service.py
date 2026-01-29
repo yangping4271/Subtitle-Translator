@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 
 from rich import print
 
-from .exceptions import OpenAIAPIError, EmptySubtitleError, TranslationError, SummaryError, SmartSplitError
+from .exceptions import OpenAIAPIError, EmptySubtitleError, TranslationError, SmartSplitError
 from .logger import log_section_end, log_section_start, log_stats
 from .translation_core.config import SubtitleConfig
 from .translation_core.data import SubtitleData
@@ -19,7 +19,6 @@ from .translation_core.spliter import (
     preprocess_segments,
     presplit_by_punctuation,
 )
-from .translation_core.summarizer import SubtitleSummarizer
 
 
 class SubtitleTranslatorService:
@@ -27,7 +26,6 @@ class SubtitleTranslatorService:
     
     def __init__(self):
         self.config = SubtitleConfig()
-        self.summarizer = SubtitleSummarizer(self.config)
         from .env_setup import logger
         self.logger = logger
 
@@ -35,7 +33,6 @@ class SubtitleTranslatorService:
         self,
         llm_model: Optional[str] = None,
         split_model: Optional[str] = None,
-        summary_model: Optional[str] = None,
         translation_model: Optional[str] = None,
         show_config: bool = True
     ) -> None:
@@ -45,13 +42,10 @@ class SubtitleTranslatorService:
 
         if llm_model:
             self.config.split_model = llm_model
-            self.config.summary_model = llm_model
             self.config.translation_model = llm_model
 
         if split_model:
             self.config.split_model = split_model
-        if summary_model:
-            self.config.summary_model = summary_model
         if translation_model:
             self.config.translation_model = translation_model
 
@@ -59,7 +53,6 @@ class SubtitleTranslatorService:
 
         model_config = {
             "断句模型": self.config.split_model,
-            "总结模型": self.config.summary_model,
             "翻译模型": self.config.translation_model
         }
         log_stats(self.logger, model_config, "模型配置")
@@ -156,7 +149,6 @@ class SubtitleTranslatorService:
         """显示模型配置信息"""
         print(f"🤖 [bold blue]模型配置:[/bold blue]")
         print(f"   断句: [cyan]{self.config.split_model}[/cyan]")
-        print(f"   总结: [cyan]{self.config.summary_model}[/cyan]")
         print(f"   翻译: [cyan]{self.config.translation_model}[/cyan]")
 
     def translate_srt(self, input_srt_path: Path, target_lang: str, output_dir: Path,
@@ -190,18 +182,13 @@ class SubtitleTranslatorService:
             preprocessing_start_time = time.time()
             log_section_start(self.logger, "并行预处理阶段", "⚡")
 
-            original_subtitle_content = asr_data.to_txt()
-
-            summarize_result, summary_time = self._execute_summarization(
-                original_subtitle_content,
-                str(input_srt_path.resolve())
-            )
-            stage_times["🔍 内容分析"] = summary_time
+            context_info = self._extract_context_info(str(input_srt_path.resolve()))
+            stage_times["📋 上下文提取"] = 0.0  # 本地操作，耗时可忽略
 
             pipeline_start_time = time.time()
             print(f"⚡ [bold cyan]启动流水线处理：断句 + 翻译并行...[/bold cyan]")
 
-            asr_data, translate_result = self._translate_with_pipeline(asr_data, summarize_result)
+            asr_data, translate_result = self._translate_with_pipeline(asr_data, context_info)
 
             pipeline_time = time.time() - pipeline_start_time
             stage_times["🚀 流水线处理"] = pipeline_time
@@ -237,43 +224,59 @@ class SubtitleTranslatorService:
             raise
 
         except Exception as e:
-            if isinstance(e, (SmartSplitError, TranslationError, SummaryError, EmptySubtitleError)):
+            if isinstance(e, (SmartSplitError, TranslationError, EmptySubtitleError)):
                 raise e
 
             self.logger.error(f"💥 处理过程中发生错误: {str(e)}")
             self.logger.exception("详细错误信息:")
             raise
 
-    def _execute_summarization(self, subtitle_content: str, input_file: str) -> Tuple[dict, float]:
-        """执行总结处理的任务函数"""
-        summary_start_time = time.time()
-        summarize_result = self._get_subtitle_summary(subtitle_content, input_file, is_parallel=True)
-        summary_time = time.time() - summary_start_time
-        return summarize_result, summary_time
+    def _extract_context_info(self, input_file: str) -> str:
+        """提取上下文信息：外部文件 + 文件名/路径"""
+        path = Path(input_file)
+        context_parts = []
 
-    def _get_subtitle_summary(self, subtitle_content: str, input_file: str, is_parallel: bool = False) -> dict:
-        """获取字幕内容摘要
+        external_context = self._read_external_context(path.parent)
+        if external_context:
+            context_parts.append(external_context)
 
-        Args:
-            subtitle_content: 字幕内容文本
-            input_file: 输入文件路径
-            is_parallel: 是否为并行调用模式
-        """
-        # 在并行模式下，不重复输出日志头部信息
-        if not is_parallel:
-            print(f"🔍 [bold cyan]内容分析中...[/bold cyan]")
+        folder_path = self._extract_folder_path(path.parent)
+        if folder_path:
+            context_parts.append(f"Folder path: {folder_path}")
 
-        self.logger.info(f"🤖 使用模型: {self.config.summary_model}")
-        summarize_result = self.summarizer.summarize(subtitle_content, input_file)
-        self.logger.info(f"总结字幕内容:\n{summarize_result.get('summary')}\n")
+        readable_filename = path.stem.replace('_', ' ').replace('-', ' ')
+        context_parts.append(f"Filename: {readable_filename}")
 
-        # 在并行模式下，不重复输出完成信息
-        if not is_parallel:
-            print(f"✅ [bold green]内容分析完成[/bold green]")
+        return "\n\n".join(context_parts)
 
-        return summarize_result
+    def _read_external_context(self, parent_dir: Path) -> str:
+        """读取外部上下文文件"""
+        for ctx_filename in ['context.txt', 'ctx.txt']:
+            ctx_file = parent_dir / ctx_filename
+            if ctx_file.exists():
+                try:
+                    content = ctx_file.read_text(encoding='utf-8').strip()
+                    if content:
+                        return content
+                except Exception:
+                    pass
+        return ""
 
-    def _translate_with_pipeline(self, asr_data: SubtitleData, summarize_result: dict) -> Tuple[SubtitleData, list]:
+    def _extract_folder_path(self, parent_dir: Path, max_depth: int = 3) -> str:
+        """提取文件夹路径信息"""
+        parent_names = []
+        current_path = parent_dir
+
+        for _ in range(max_depth):
+            if not current_path.name or current_path.name in ['/', '.', '..']:
+                break
+            folder_name = current_path.name.replace('_', ' ').replace('-', ' ')
+            parent_names.append(folder_name)
+            current_path = current_path.parent
+
+        return ' / '.join(reversed(parent_names)) if parent_names else ""
+
+    def _translate_with_pipeline(self, asr_data: SubtitleData, context_info: str) -> Tuple[SubtitleData, list]:
         """
         流水线式翻译：每个批次断句后立即翻译
 
@@ -310,18 +313,15 @@ class SubtitleTranslatorService:
         def process_batch_task(args):
             """每个批次的完整任务：断句 + 翻译"""
             batch_index, batch = args
-            batch_num = batch_index + 1
-
             batch_segments = merge_segments_within_batch(
-                batch,
-                word_segments,
+                batch, word_segments,
                 model=self.config.split_model,
-                batch_index=batch_num
+                batch_index=batch_index + 1
             )
 
             batch_asr_data = SubtitleData(batch_segments)
             translator = SubtitleOptimizer(config=self.config)
-            batch_translate_result = translator.translate_batch_directly(batch_asr_data, summarize_result)
+            batch_translate_result = translator.translate_batch_directly(batch_asr_data, context_info)
 
             return (batch_segments, batch_translate_result, translator.batch_logs)
 

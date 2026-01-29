@@ -3,7 +3,7 @@ import json
 import re
 import string
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import retry
 
@@ -132,63 +132,72 @@ class SubtitleOptimizer:
         self.executor: Optional[ThreadPoolExecutor] = ThreadPoolExecutor(max_workers=self.thread_num)
         self.batch_logs = []
 
-    def translate_batch_directly(self, asr_data, summary_content: Dict) -> List[Dict]:
+    def translate_batch_directly(self, asr_data, context_info: str) -> List[Dict]:
         """直接翻译单个批次（用于流水线模式）"""
         subtitle_json = {str(k): v["original_subtitle"]
                         for k, v in asr_data.to_json().items()}
 
-        results = self._translate(subtitle_json, summary_content, batch_num=1, total_batches=1)
+        results = self._translate(subtitle_json, context_info, batch_num=1, total_batches=1)
 
         failed_items = {r['id']: r['original'] for r in results
                         if _is_translation_failed(r.get('translation', ''))}
 
         if failed_items:
-            results = self._retry_failed_translations(failed_items, subtitle_json, summary_content, results)
+            results = self._retry_failed_translations(failed_items, context_info, results)
 
         return results
 
-    def _retry_failed_translations(self, failed_items: dict, subtitle_json: dict,
-                                   summary_content: dict, results: list) -> list:
+    def _retry_failed_translations(self, failed_items: dict, context_info: str, results: list) -> list:
         """重试失败的翻译（批量重试 → 单条并发）"""
         logger.info(f"发现 {len(failed_items)} 条翻译失败，批量重试")
         try:
-            retry_results = self._translate({str(k): v for k, v in failed_items.items()}, summary_content)
+            retry_results = self._translate({str(k): v for k, v in failed_items.items()}, context_info)
 
-            still_failed = {}
-            retry_map = {}
-            for r in retry_results:
-                if not _is_translation_failed(r.get('translation', '')):
-                    retry_map[r['id']] = r
-                else:
-                    still_failed[r['id']] = r['original']
-
+            retry_map, still_failed = self._categorize_retry_results(retry_results)
             logger.info(f"批量重试成功 {len(retry_map)}/{len(failed_items)} 条")
 
             if still_failed:
                 logger.info(f"⚡ 批量重试后还有{len(still_failed)}条失败，降级到单条并发翻译")
                 single_result = self._translate_by_single(still_failed)
+                self._merge_single_results(single_result, retry_map)
 
-                for k, v in single_result["translated_subtitles"].items():
-                    if not v.startswith("[翻译失败]"):
-                        retry_map[int(k)] = {
-                            "id": int(k),
-                            "original": single_result["optimized_subtitles"][k],
-                            "optimized": single_result["optimized_subtitles"][k],
-                            "translation": v
-                        }
+            self._apply_retry_results(results, retry_map)
 
-            for i, r in enumerate(results):
-                if r['id'] in retry_map:
-                    results[i] = retry_map[r['id']]
-
-            success_count = len(retry_map)
-            logger.info(f"✅ 总共重试成功 {success_count}/{len(failed_items)} 条")
+            logger.info(f"✅ 总共重试成功 {len(retry_map)}/{len(failed_items)} 条")
 
         except Exception as e:
             logger.warning(f"重试失败: {e}")
         return results
 
-    def translate(self, asr_data, summary_content: Dict) -> List[Dict]:
+    def _categorize_retry_results(self, retry_results: list) -> Tuple[dict, dict]:
+        """分类重试结果为成功和失败"""
+        retry_map = {}
+        still_failed = {}
+        for r in retry_results:
+            if not _is_translation_failed(r.get('translation', '')):
+                retry_map[r['id']] = r
+            else:
+                still_failed[r['id']] = r['original']
+        return retry_map, still_failed
+
+    def _merge_single_results(self, single_result: dict, retry_map: dict) -> None:
+        """合并单条翻译结果到重试映射"""
+        for k, v in single_result["translated_subtitles"].items():
+            if not v.startswith("[翻译失败]"):
+                retry_map[int(k)] = {
+                    "id": int(k),
+                    "original": single_result["optimized_subtitles"][k],
+                    "optimized": single_result["optimized_subtitles"][k],
+                    "translation": v
+                }
+
+    def _apply_retry_results(self, results: list, retry_map: dict) -> None:
+        """应用重试结果到原始结果列表"""
+        for i, r in enumerate(results):
+            if r['id'] in retry_map:
+                results[i] = retry_map[r['id']]
+
+    def translate(self, asr_data, context_info: str) -> List[Dict]:
         """翻译字幕"""
         try:
             self.batch_logs.clear()
@@ -196,7 +205,7 @@ class SubtitleOptimizer:
             subtitle_json = {int(k): v["original_subtitle"]
                             for k, v in asr_data.to_json().items()}
 
-            result = self.translate_multi_thread(subtitle_json, summary_content)
+            result = self.translate_multi_thread(subtitle_json, context_info)
 
             self._validate_translation_quality(result)
 
@@ -245,16 +254,16 @@ class SubtitleOptimizer:
             finally:
                 self.executor = None
 
-    def translate_multi_thread(self, subtitle_json: Dict[int, str], summary_content: Optional[Dict] = None):
+    def translate_multi_thread(self, subtitle_json: Dict[int, str], context_info: Optional[str] = None):
         """多线程批量翻译字幕（流水线处理，每个批次独立降级）"""
         try:
-            result = self._batch_translate(subtitle_json, summary_content=summary_content)
+            result = self._batch_translate(subtitle_json, context_info=context_info)
             return result
         except Exception as e:
             logger.error(f"批量翻译完全失败：{e}")
             raise
 
-    def _translate_with_fallback(self, chunk: dict, summary_content: Optional[Dict],
+    def _translate_with_fallback(self, chunk: dict, context_info: Optional[str],
                                  batch_num: int, total_batches: int) -> list:
         """
         单个批次的三级降级翻译
@@ -265,33 +274,46 @@ class SubtitleOptimizer:
         """
         batch_info = f"[批次{batch_num}/{total_batches}]"
 
-        result = self._translate(chunk, summary_content, batch_num, total_batches)
-
-        failed_items = {item['id']: item['original'] for item in result
-                       if _is_translation_failed(item.get('translation', ''))}
+        result = self._translate(chunk, context_info, batch_num, total_batches)
+        failed_items = self._extract_failed_items(result)
 
         if not failed_items:
             logger.info(f"✅ {batch_info} 翻译完成，无失败")
             return result
 
         logger.info(f"🔄 {batch_info} 发现 {len(failed_items)} 条失败，批次整体重试")
-        retry_result = self._translate(chunk, summary_content, batch_num, total_batches)
-
-        retry_map = {r['id']: r for r in retry_result
-                    if not _is_translation_failed(r.get('translation', ''))}
-        for i, item in enumerate(result):
-            if item['id'] in retry_map:
-                result[i] = retry_map[item['id']]
-
-        logger.info(f"📊 {batch_info} 批次重试成功 {len(retry_map)}/{len(failed_items)} 条")
-
-        still_failed = {item['id']: item['original'] for item in result
-                       if _is_translation_failed(item.get('translation', ''))}
+        result = self._retry_batch(chunk, context_info, batch_num, total_batches, result)
+        still_failed = self._extract_failed_items(result)
 
         if not still_failed:
             return result
 
         logger.info(f"⚡ {batch_info} 批次重试后还有 {len(still_failed)} 条失败，降级到单条并发")
+        return self._fallback_to_single(still_failed, result, batch_info)
+
+    def _extract_failed_items(self, result: list) -> dict:
+        """提取失败的翻译项"""
+        return {item['id']: item['original'] for item in result
+                if _is_translation_failed(item.get('translation', ''))}
+
+    def _retry_batch(self, chunk: dict, context_info: Optional[str],
+                    batch_num: int, total_batches: int, result: list) -> list:
+        """批次整体重试"""
+        retry_result = self._translate(chunk, context_info, batch_num, total_batches)
+        retry_map = {r['id']: r for r in retry_result
+                    if not _is_translation_failed(r.get('translation', ''))}
+
+        for i, item in enumerate(result):
+            if item['id'] in retry_map:
+                result[i] = retry_map[item['id']]
+
+        failed_count = len(self._extract_failed_items(result))
+        success_count = len(retry_map)
+        logger.info(f"📊 批次重试成功 {success_count}/{success_count + failed_count} 条")
+        return result
+
+    def _fallback_to_single(self, still_failed: dict, result: list, batch_info: str) -> list:
+        """降级到单条并发翻译"""
         single_result = self._translate_by_single_no_retry(still_failed)
 
         success_count = 0
@@ -304,13 +326,23 @@ class SubtitleOptimizer:
                 result[i]['optimized'] = single_result['optimized_subtitles'][str(item['id'])]
 
         logger.info(f"✅ {batch_info} 单条并发成功 {success_count}/{len(still_failed)} 条")
-
         return result
 
-    def _batch_translate(self, subtitle_json: Dict[int, str], summary_content: Optional[Dict] = None) -> Dict:
+    def _batch_translate(self, subtitle_json: Dict[int, str], context_info: Optional[str] = None) -> Dict:
         """批量翻译字幕的核心方法（流水线处理，每个批次独立降级）"""
-        items = list(subtitle_json.items())[:]
+        items = list(subtitle_json.items())
+        chunks = self._create_smart_chunks(items)
 
+        self._log_batch_plan(chunks)
+
+        if self.executor is None:
+            raise RuntimeError("线程池未初始化")
+
+        futures = self._submit_batch_tasks(chunks, context_info)
+        return self._collect_batch_results(futures)
+
+    def _create_smart_chunks(self, items: list) -> list:
+        """创建智能分批（确保句子完整性）"""
         chunks = []
         i = 0
         adjusted_batch_count = 0
@@ -320,125 +352,120 @@ class SubtitleOptimizer:
 
             if end_idx < len(items):
                 _, last_text = items[end_idx - 1]
-
                 if not is_sentence_complete(last_text):
                     adjusted_batch_count += 1
+                    end_idx = self._adjust_chunk_boundary(items, i, end_idx)
 
-                    complete_idx = end_idx - 1
-                    while complete_idx > i and not is_sentence_complete(items[complete_idx - 1][1]):
-                        complete_idx -= 1
-
-                    if complete_idx > i:
-                        end_idx = complete_idx
-                    else:
-                        complete_idx = end_idx
-                        while complete_idx < len(items) and not is_sentence_complete(items[complete_idx - 1][1]):
-                            complete_idx += 1
-                            if complete_idx - i > self.config.max_batch_sentences * 1.5:
-                                break
-                        if complete_idx < len(items):
-                            end_idx = complete_idx
-
-            chunk = dict(items[i:end_idx])
-            chunks.append(chunk)
+            chunks.append(dict(items[i:end_idx]))
             i = end_idx
 
-        logger.info(f"📋 翻译任务规划: {len(chunks)}个批次，每批次约{self.config.max_batch_sentences}条字幕")
         if adjusted_batch_count > 0:
             logger.info(f"🔧 已优化{adjusted_batch_count}个批次边界，确保句子完整性")
 
+        return chunks
+
+    def _adjust_chunk_boundary(self, items: list, start_idx: int, end_idx: int) -> int:
+        """调整分批边界以确保句子完整"""
+        complete_idx = end_idx - 1
+        while complete_idx > start_idx and not is_sentence_complete(items[complete_idx - 1][1]):
+            complete_idx -= 1
+
+        if complete_idx > start_idx:
+            return complete_idx
+
+        complete_idx = end_idx
+        max_extension = int(self.config.max_batch_sentences * 1.5)
+        while complete_idx < len(items) and not is_sentence_complete(items[complete_idx - 1][1]):
+            complete_idx += 1
+            if complete_idx - start_idx > max_extension:
+                break
+
+        return complete_idx if complete_idx < len(items) else end_idx
+
+    def _log_batch_plan(self, chunks: list) -> None:
+        """记录批次规划信息"""
+        logger.info(f"📋 翻译任务规划: {len(chunks)}个批次，每批次约{self.config.max_batch_sentences}条字幕")
         actual_threads = min(len(chunks), self.thread_num)
         logger.info(f"⚡ 并发线程: {actual_threads}个")
 
-        if self.executor is None:
-            raise RuntimeError("线程池未初始化")
-
+    def _submit_batch_tasks(self, chunks: list, context_info: Optional[str]) -> dict:
+        """提交批次翻译任务"""
         futures = []
         chunk_map = {}
 
         for i, chunk in enumerate(chunks):
-            future = self.executor.submit(self._translate_with_fallback, chunk, summary_content, i+1, len(chunks))
+            future = self.executor.submit(self._translate_with_fallback, chunk, context_info, i+1, len(chunks))
             futures.append(future)
             chunk_map[future] = chunk
 
+        return {'futures': futures, 'chunk_map': chunk_map}
+
+    def _collect_batch_results(self, futures_data: dict) -> Dict:
+        """收集批次翻译结果"""
         optimized_subtitles = {}
         translated_subtitles = {}
 
-        for future in concurrent.futures.as_completed(futures):
+        for future in concurrent.futures.as_completed(futures_data['futures']):
             try:
                 result = future.result()
-                for item in result:
-                    k = str(item["id"])
-                    optimized_subtitles[k] = item["optimized"]
-                    if "revised_translation" in item:
-                        translated_subtitles[k] = {
-                            "translation": item["translation"],
-                            "revised_translation": item["revised_translation"],
-                            "revise_suggestions": item["revise_suggestions"]
-                        }
-                    else:
-                        translated_subtitles[k] = item["translation"]
-
+                self._merge_batch_result(result, optimized_subtitles, translated_subtitles)
             except Exception as e:
-                failed_chunk = chunk_map[future]
-                logger.error(f"❌ 批次翻译完全失败（包括所有降级尝试）: {e}")
-                for k, v in failed_chunk.items():
-                    optimized_subtitles[str(k)] = v
-                    translated_subtitles[str(k)] = f"[翻译失败] {v}"
+                self._handle_batch_failure(future, futures_data['chunk_map'],
+                                          optimized_subtitles, translated_subtitles, e)
 
         return {
             "optimized_subtitles": optimized_subtitles,
             "translated_subtitles": translated_subtitles
         }
+
+    def _merge_batch_result(self, result: list, optimized_subtitles: dict,
+                           translated_subtitles: dict) -> None:
+        """合并单个批次的结果"""
+        for item in result:
+            k = str(item["id"])
+            optimized_subtitles[k] = item["optimized"]
+            if "revised_translation" in item:
+                translated_subtitles[k] = {
+                    "translation": item["translation"],
+                    "revised_translation": item["revised_translation"],
+                    "revise_suggestions": item["revise_suggestions"]
+                }
+            else:
+                translated_subtitles[k] = item["translation"]
+
+    def _handle_batch_failure(self, future, chunk_map: dict, optimized_subtitles: dict,
+                             translated_subtitles: dict, error: Exception) -> None:
+        """处理批次翻译失败"""
+        failed_chunk = chunk_map[future]
+        logger.error(f"❌ 批次翻译完全失败（包括所有降级尝试）: {error}")
+        for k, v in failed_chunk.items():
+            optimized_subtitles[str(k)] = v
+            translated_subtitles[str(k)] = f"[翻译失败] {v}"
 
     def _translate_by_single(self, subtitle_json: Dict[int, str]) -> Dict:
         """使用单条翻译模式处理字幕（并发翻译，带重试）"""
-        logger.info(f"开始单条并发翻译 {len(subtitle_json)} 条字幕（并发数: {self.thread_num}）")
-
-        if self.executor is None:
-            raise RuntimeError("线程池未初始化")
-
-        futures = {}
-        for key, value in subtitle_json.items():
-            future = self.executor.submit(self._translate_single_subtitle, key, value)
-            futures[future] = key
-
-        optimized_subtitles = {}
-        translated_subtitles = {}
-        completed = 0
-        total = len(futures)
-
-        for future in concurrent.futures.as_completed(futures):
-            key = futures[future]
-            completed += 1
-            try:
-                result = future.result()
-                optimized_subtitles[str(key)] = result["optimized"]
-                translated_subtitles[str(key)] = result["translation"]
-                if completed % 5 == 0 or completed == total:
-                    logger.info(f"单条翻译进度: {completed}/{total}")
-            except Exception as e:
-                logger.error(f"单条翻译失败，字幕ID: {key}，错误: {e}")
-                optimized_subtitles[str(key)] = subtitle_json[key]
-                translated_subtitles[str(key)] = f"[翻译失败] {subtitle_json[key]}"
-
-        return {
-            "optimized_subtitles": optimized_subtitles,
-            "translated_subtitles": translated_subtitles
-        }
+        return self._translate_by_single_impl(subtitle_json, with_retry=True)
 
     def _translate_by_single_no_retry(self, subtitle_json: Dict[int, str]) -> Dict:
         """使用单条翻译模式处理字幕（并发翻译，不重试）"""
-        logger.info(f"开始单条并发翻译 {len(subtitle_json)} 条字幕（并发数: {self.thread_num}，不重试）")
+        return self._translate_by_single_impl(subtitle_json, with_retry=False)
+
+    def _translate_by_single_impl(self, subtitle_json: Dict[int, str], with_retry: bool) -> Dict:
+        """单条翻译的通用实现"""
+        retry_text = "并发翻译" if with_retry else "并发翻译，不重试"
+        logger.info(f"开始单条{retry_text} {len(subtitle_json)} 条字幕（并发数: {self.thread_num}）")
 
         if self.executor is None:
             raise RuntimeError("线程池未初始化")
 
-        futures = {}
-        for key, value in subtitle_json.items():
-            future = self.executor.submit(self._translate_single_subtitle_no_retry, key, value)
-            futures[future] = key
+        translate_func = self._translate_single_subtitle if with_retry else self._translate_single_subtitle_no_retry
+        futures = {self.executor.submit(translate_func, key, value): key
+                  for key, value in subtitle_json.items()}
 
+        return self._collect_single_results(futures, subtitle_json)
+
+    def _collect_single_results(self, futures: dict, subtitle_json: Dict[int, str]) -> Dict:
+        """收集单条翻译结果"""
         optimized_subtitles = {}
         translated_subtitles = {}
         completed = 0
@@ -519,34 +546,13 @@ class SubtitleOptimizer:
         return "\n".join(lines)
 
     def _create_translate_message(self, original_subtitle: Dict[str, str],
-                                summary_content: Optional[Dict]):
+                                context_info: Optional[str]):
         """创建翻译提示消息"""
         input_content = (f"Correct and translate the following subtitles into {self.config.target_language}:\n"
                         f"<subtitles>{json.dumps(original_subtitle, ensure_ascii=False)}</subtitles>")
 
-        if summary_content and 'summary' in summary_content:
-            try:
-                summary_json = parse_llm_response(summary_content.get('summary', '{}'))
-
-                reference_parts = []
-
-                if context := summary_json.get('context'):
-                    reference_parts.append(
-                        f"Context: {context.get('type', '')} - {context.get('topic', '')}"
-                    )
-
-                if corrections := summary_json.get('corrections'):
-                    reference_parts.append(
-                        f"Apply corrections: {json.dumps(corrections, ensure_ascii=False)}"
-                    )
-
-                if reference_parts:
-                    input_content += "\n\n<reference>\n" + "\n".join(reference_parts) + "\n</reference>"
-
-            except Exception as e:
-                logger.warning(f"Failed to parse summary content: {e}")
-                input_content += (f"\n\nReference information:\n"
-                                f"<reference>{summary_content.get('summary', '')}</reference>")
+        if context_info:
+            input_content += f"\n\n<reference>\n{context_info}\n</reference>"
 
         prompt = TRANSLATE_PROMPT.format(
             target_language=self.config.target_language,
@@ -597,7 +603,7 @@ class SubtitleOptimizer:
         logger.info("✅ 字幕优化汇总完成")
 
     def _translate(self, original_subtitle: Dict[str, str],
-                  summary_content: Optional[Dict], batch_num=None, total_batches=None) -> List[Dict]:
+                  context_info: Optional[str], batch_num=None, total_batches=None) -> List[Dict]:
         """翻译字幕"""
         batch_info = f"[批次{batch_num}/{total_batches}]" if batch_num and total_batches else ""
         logger.info(f"🌍 {batch_info} 翻译 {len(original_subtitle)} 条字幕")
@@ -607,7 +613,7 @@ class SubtitleOptimizer:
 
         while current_try < max_retries:
             try:
-                message = self._create_translate_message(original_subtitle, summary_content)
+                message = self._create_translate_message(original_subtitle, context_info)
 
                 logger.info(f"📤 {batch_info} 提交给LLM的字幕数据 (共{len(original_subtitle)}条):")
                 logger.info(f"   输入JSON: {json.dumps(original_subtitle, ensure_ascii=False)}")

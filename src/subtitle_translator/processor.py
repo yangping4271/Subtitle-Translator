@@ -20,12 +20,11 @@ logger = setup_logger(__name__)
 
 def _handle_translation_error(e: Exception, logger) -> None:
     """统一处理翻译相关异常"""
-    from .exceptions import SmartSplitError, TranslationError, SummaryError, EmptySubtitleError
+    from .exceptions import SmartSplitError, TranslationError, EmptySubtitleError
 
     error_types = {
         SmartSplitError: "智能断句失败",
         TranslationError: "翻译失败",
-        SummaryError: "内容分析失败",
         EmptySubtitleError: "空文件"
     }
 

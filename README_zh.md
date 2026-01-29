@@ -14,7 +14,8 @@
 - **AI驱动翻译**: 利用各种LLM模型实现高质量翻译
 - **双语字幕**: 自动生成双语ASS字幕文件(英文+目标语言)
 - **批量处理**: 同时处理多个文件
-- **模块化配置**: 可为断句、翻译、总结分别配置不同模型
+- **模块化配置**: 可为断句和翻译分别配置不同模型
+- **外部上下文支持**: 通过 context.txt 文件提供额外的翻译上下文
 
 ## 快速开始
 
@@ -43,7 +44,6 @@ OPENAI_API_KEY=your-api-key-here
 # 模型配置
 SPLIT_MODEL=gpt-4o-mini
 TRANSLATION_MODEL=gpt-4o
-SUMMARY_MODEL=gpt-4o-mini
 LLM_MODEL=gpt-4o-mini
 ```
 
@@ -73,6 +73,24 @@ transcribe video.mp4 --timestamps
 # 输出多种格式
 transcribe video.mp4 --output-format all
 ```
+
+### 使用外部上下文
+
+在字幕文件同目录下创建 `context.txt` 或 `ctx.txt` 文件，提供额外的翻译上下文：
+
+```bash
+# 创建上下文文件
+cat > context.txt << 'EOF'
+This is a technical tutorial about Google Gemini CLI and AI agents.
+Key topics: Gemini API, command-line tools, agent development.
+Target audience: Developers and AI practitioners.
+EOF
+
+# 翻译时会自动读取并使用上下文
+translate -i video.srt -t zh
+```
+
+上下文信息会与文件名和路径信息一起传递给翻译模型，帮助提高翻译质量和术语准确性。
 
 ## 工作流程
 
@@ -181,7 +199,6 @@ OPENAI_API_KEY=your-api-key-here
 # 模型配置
 SPLIT_MODEL=gpt-4o-mini      # 断句模型
 TRANSLATION_MODEL=gpt-4o     # 翻译模型
-SUMMARY_MODEL=gpt-4o-mini    # 总结模型
 LLM_MODEL=gpt-4o-mini        # 默认模型
 ```
 

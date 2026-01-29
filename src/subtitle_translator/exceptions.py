@@ -36,11 +36,6 @@ class TranslationError(SubtitleTranslatorError):
     pass
 
 
-class SummaryError(SubtitleTranslatorError):
-    """内容分析异常 - 用于总结过程中的错误"""
-    pass
-
-
 class EmptySubtitleError(SubtitleTranslatorError):
     """空字幕文件异常 - 用于 SRT 文件为空的情况"""
     pass

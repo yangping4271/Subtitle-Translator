@@ -132,7 +132,6 @@ class ColoredFormatter(logging.Formatter):
             '__main__': '主程序',
             'split_by_llm': '智能断句',
             'subtitle_merger': '断句合并',
-            'subtitle_summarizer': '内容总结',
             'subtitle_optimizer': '翻译优化',
             'subtitle_aligner': '字幕对齐',
             'subtitle_data': '数据处理',

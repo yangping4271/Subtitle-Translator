@@ -92,7 +92,6 @@ class SubtitleConfig:
     llm_model: str = "gpt-4o-mini"
 
     split_model: str = "gpt-4o-mini"
-    summary_model: str = "gpt-4o-mini"
     translation_model: str = "gpt-4o"
 
     target_language: str = "简体中文"
@@ -127,7 +126,6 @@ class SubtitleConfig:
         self.llm_model = os.getenv('LLM_MODEL', self.llm_model)
 
         self.split_model = os.getenv('SPLIT_MODEL', self.llm_model)
-        self.summary_model = os.getenv('SUMMARY_MODEL', self.llm_model)
         self.translation_model = os.getenv('TRANSLATION_MODEL', self.llm_model)
 
         env_target_lang = os.getenv('TARGET_LANGUAGE')
@@ -146,7 +144,6 @@ class SubtitleConfig:
             error_msg += f"  OPENAI_API_KEY = '{self.openai_api_key[:20]}...' (长度: {len(self.openai_api_key)})\n"
             error_msg += f"  LLM_MODEL = '{self.llm_model}'\n"
             error_msg += f"  SPLIT_MODEL = '{self.split_model}'\n"
-            error_msg += f"  SUMMARY_MODEL = '{self.summary_model}'\n"
             error_msg += f"  TRANSLATION_MODEL = '{self.translation_model}'"
             raise ValueError(error_msg)
 

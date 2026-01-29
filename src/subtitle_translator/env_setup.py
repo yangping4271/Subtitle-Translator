@@ -132,6 +132,5 @@ def setup_environment(allow_missing_config=False):
                     print(f"      [dim]OPENAI_API_KEY=your-api-key-here[/dim]")
                     print(f"      [dim]SPLIT_MODEL=gpt-4o-mini[/dim]")
                     print(f"      [dim]TRANSLATION_MODEL=gpt-4o[/dim]")
-                    print(f"      [dim]SUMMARY_MODEL=gpt-4o-mini[/dim]")
                     print()
                     sys.exit(1)

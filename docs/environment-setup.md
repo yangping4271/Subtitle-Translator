@@ -36,7 +36,6 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-key
 SPLIT_MODEL=gpt-4o-mini
 TRANSLATION_MODEL=gpt-4o
-SUMMARY_MODEL=gpt-4o-mini
 LLM_MODEL=gpt-4o-mini
 EOF
 

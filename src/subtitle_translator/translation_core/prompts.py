@@ -4,9 +4,8 @@ This file contains prompts designed for an automated workflow to process English
 
 The prompts are used in the following steps of the automated process:
 1. SPLIT_SYSTEM_PROMPT: Splits English subtitles into segments optimized for translation and display in an automated manner.
-2. SUMMARIZER_PROMPT: Summarizes the content of the subtitles automatically to provide context for translation.
-3. TRANSLATE_PROMPT: Automatically optimize and translate the segmented English subtitles into Chinese.
-4. SINGLE_TRANSLATE_PROMPT: Translates individual segments or terms into Chinese automatically.
+2. TRANSLATE_PROMPT: Automatically optimize and translate the segmented English subtitles into Chinese.
+3. SINGLE_TRANSLATE_PROMPT: Translates individual segments or terms into Chinese automatically.
 
 The ultimate goal is to create high-quality bilingual subtitles through an automated process, ensuring accuracy, readability, and visual appeal.
 """
@@ -59,99 +58,6 @@ Subtitle segmentation specialist: Segment continuous speech-recognition-derived 
   - If a segment exceeds the word limit only due to terminology protection, return it whole; otherwise, strictly obey the limit.
 
 After segmenting and applying punctuation corrections, reread your output once to ensure all guidelines were followed. Make adjustments if any guideline was missed before returning your final segmented subtitle string.
-"""
-
-SUMMARIZER_PROMPT = """
-You are a professional video analyst tasked with extracting actionable data from video subtitles to support the translation workflow. Prioritize accuracy, especially for the spellings of proper nouns, by referencing the folder path and filename as the authoritative sources.
-
-IMPORTANT CONTEXT: Today's date is {current_date}. Your knowledge may be outdated. Do not "correct" technical terms or product names based on your training data if they could be recent releases.
-
-## Processing Guidelines
-When processing proper nouns and product names:
-1. Use BOTH the folder path AND filename as authoritative references for product names
-2. Folder names often contain the correct product/topic names
-3. Only correct terms that appear to be ASR errors based on:
-   - Similar pronunciation
-   - Context indicating they refer to the same thing
-   - Mismatch with folder/filename context
-4. Do not modify other technical terms or module names that are clearly different
-
-## Task Objectives
-- Prepare concise, ready-to-use data for translators; avoid detailed reports.
-- If a proper noun's spelling differs between subtitles and the filename/folder path, always use the spelling from the filename/folder path.
-
-## Output Structure
-Output a flat JSON object with these fields:
-
-```json
-{{
-  "context": {{
-    "type": "video_type",
-    "topic": "main_topic",
-    "formality": "formality_style"
-  }},
-  "corrections": {{
-    "wrong_term1": "correct_term1",
-    "wrong_term2": "correct_term2"
-  }},
-  "style_guide": {{
-    "audience": "developers",
-    "technical_level": "intermediate",
-    "tone": "professional"
-  }}
-}}
-```
-
-**Example 1 - With ASR errors:**
-```json
-{{
-  "corrections": {{
-    "WinSurf": "Windsurf",
-    "Ghirlanda Yo": "Ghirlandaio"
-  }}
-}}
-```
-
-**Example 2 - No errors (most common case):**
-```json
-{{
-  "corrections": {{}}
-}}
-```
-
-**WRONG - Never do this:**
-```json
-{{
-  "corrections": {{
-    "Windsurf": "Windsurf",
-    "Michelangelo": "Michelangelo"
-  }}
-}}
-```
-
-## Field Guidance
-- context.type: One-word video type (tutorial, interview, documentary, etc).
-- context.topic: Main topic (max 10 words).
-- context.formality: "formal", "informal", or "technical".
-- corrections: CRITICAL - This field is for ASR ERRORS ONLY, not for listing important terms.
-  * ONLY include when ASR consistently mis-transcribes a term (e.g., "WinSurf" → "Windsurf" appears 3+ times)
-  * The key (wrong) and value (correct) MUST be DIFFERENT. Never add entries like "Windsurf": "Windsurf"
-  * If proper nouns or technical terms are already spelled correctly in the subtitles, do NOT add them here
-  * If there are NO actual transcription errors, output empty object {{}}
-  * Do NOT use this as a glossary or term list - it is strictly for corrections
-  * When in doubt, trust the ASR output and leave corrections empty
-- style_guide: Specify audience, required technical expertise, and intended tone.
-
-## Principles
-1. Do not nest structures; keep the JSON flat.
-2. Do not provide analysis, reasoning, or explanations—only actionable data.
-3. Do not include uncertainty markers or hedging; use definitive selections with folder/filename as reference.
-4. Keep all fields brief and to the point.
-5. Default to folder path and filename for final spellings.
-
-After preparing the JSON, validate that all required fields are filled, the format is correct, and resolve any ambiguities using the authoritative sources before finalizing output.
-
-Produce a single JSON object as specified above.
 """
 
 TRANSLATE_PROMPT = """

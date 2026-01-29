@@ -39,7 +39,6 @@ def main(
     model: str = typer.Option(DEFAULT_TRANSCRIPTION_MODEL, "--model", help="用于转录的 Parakeet MLX 模型。"),
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="覆盖所有模型（优先级低于独立参数）"),
     split_model: Optional[str] = typer.Option(None, "--split-model", help="断句模型"),
-    summary_model: Optional[str] = typer.Option(None, "--summary-model", help="总结模型"),
     translation_model: Optional[str] = typer.Option(None, "--translation-model", help="翻译模型"),
     preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
     dry_run: bool = typer.Option(False, "--dry-run", help="预览模式，只显示将要处理的文件信息而不实际执行翻译。"),
@@ -116,7 +115,7 @@ def main(
         raise typer.Exit(code=0)
 
     _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model,
-                        split_model, summary_model, translation_model, preserve_intermediate)
+                        split_model, translation_model, preserve_intermediate)
 
 
 def _validate_target_language(target_lang: str):
@@ -339,7 +338,7 @@ def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: 
 
 def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path,
                         model: str, llm_model: Optional[str],
-                        split_model: Optional[str], summary_model: Optional[str],
+                        split_model: Optional[str],
                         translation_model: Optional[str], preserve_intermediate: bool):
     """批量处理文件"""
     from .transcription_core.model_cache import model_context
@@ -374,7 +373,6 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
         translator_service._init_translation_env(
             llm_model=llm_model,
             split_model=split_model,
-            summary_model=summary_model,
             translation_model=translation_model,
             show_config=True
         )
@@ -417,8 +415,8 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
                 print(f"[bold green]✅ 处理完成！[/bold green]")
             
             except Exception as e:
-                from .translation_core.spliter import SmartSplitError, TranslationError, SummaryError
-                if isinstance(e, (SmartSplitError, TranslationError, SummaryError)):
+                from .translation_core.spliter import SmartSplitError, TranslationError
+                if isinstance(e, (SmartSplitError, TranslationError)):
                     # 这些异常已经在processor.py中显示过了，这里不重复显示
                     # 但需要记录到日志中用于统计
                     logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
@@ -658,10 +656,6 @@ def init():
         "翻译模型 (用于字幕翻译)",
         default="gpt-4o"
     )
-    summary_model = Prompt.ask(
-        "总结模型 (用于内容分析)",
-        default="gpt-4o-mini"
-    )
 
     # 创建配置内容
     config_content = f"""# Subtitle Translator 配置文件
@@ -674,7 +668,6 @@ OPENAI_API_KEY={api_key}
 # 模型配置
 SPLIT_MODEL={split_model}
 TRANSLATION_MODEL={translation_model}
-SUMMARY_MODEL={summary_model}
 LLM_MODEL={split_model}
 
 # 可选配置

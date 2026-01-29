@@ -14,7 +14,8 @@ A command-line tool for English video transcription and multilingual subtitle tr
 - **AI-Powered Translation**: Leverages various LLM models for high-quality translation.
 - **Bilingual Subtitles**: Automatically generates bilingual ASS subtitle files (English + target language).
 - **Batch Processing**: Processes multiple files simultaneously.
-- **Modular Configuration**: Configurable models for sentence splitting, translation, and summarization.
+- **Modular Configuration**: Configurable models for sentence splitting and translation.
+- **External Context Support**: Provide additional translation context via context.txt files.
 
 ## Quick Start
 
@@ -59,7 +60,6 @@ OPENAI_API_KEY=your-api-key-here
 # Model Configuration
 SPLIT_MODEL=gpt-4o-mini
 TRANSLATION_MODEL=gpt-4o
-SUMMARY_MODEL=gpt-4o-mini
 LLM_MODEL=gpt-4o-mini
 ```
 
@@ -196,7 +196,6 @@ OPENAI_API_KEY=your-api-key-here
 # Model Configuration
 SPLIT_MODEL=gpt-4o-mini      # Sentence splitting model
 TRANSLATION_MODEL=gpt-4o     # Translation model
-SUMMARY_MODEL=gpt-4o-mini    # Summarization model
 LLM_MODEL=gpt-4o-mini        # Default model
 ```
 
