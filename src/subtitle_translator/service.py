@@ -176,6 +176,14 @@ class SubtitleTranslatorService:
                 input_srt_path
             )
 
+            # 打印加载的术语表
+            if self.config.terminology:
+                self.logger.info(f"📚 已加载术语表: {len(self.config.terminology)} 条术语")
+                for term, translation in self.config.terminology.items():
+                    self.logger.info(f"   {term} → {translation}")
+            else:
+                self.logger.info("📚 未加载任何术语表")
+
             # 只在需要时初始化翻译环境
             if not skip_env_init:
                 self._init_translation_env(llm_model)
@@ -188,6 +196,15 @@ class SubtitleTranslatorService:
 
             context_info = self._extract_context_info(str(input_srt_path.resolve()))
             stage_times["📋 上下文提取"] = 0.0  # 本地操作，耗时可忽略
+
+            # 打印加载的上下文信息
+            if context_info:
+                self.logger.info("📋 已加载上下文信息:")
+                for line in context_info.split('\n'):
+                    if line.strip():
+                        self.logger.info(f"   {line}")
+            else:
+                self.logger.info("📋 未加载任何上下文信息")
 
             pipeline_start_time = time.time()
             print(f"⚡ [bold cyan]启动流水线处理：断句 + 翻译并行...[/bold cyan]")
