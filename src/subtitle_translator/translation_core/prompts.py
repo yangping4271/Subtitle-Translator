@@ -1,13 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-This file contains prompts designed for an automated workflow to process English subtitles and generate bilingual (English-Chinese) subtitles.
+"""字幕处理提示词模板。
 
-The prompts are used in the following steps of the automated process:
-1. SPLIT_SYSTEM_PROMPT: Splits English subtitles into segments optimized for translation and display in an automated manner.
-2. TRANSLATE_PROMPT: Automatically optimize and translate the segmented English subtitles into Chinese.
-3. SINGLE_TRANSLATE_PROMPT: Translates individual segments or terms into Chinese automatically.
-
-The ultimate goal is to create high-quality bilingual subtitles through an automated process, ensuring accuracy, readability, and visual appeal.
+包含三个主要提示词：
+1. SPLIT_SYSTEM_PROMPT: 将连续文本分割为适合翻译和显示的字幕片段
+2. TRANSLATE_PROMPT: 批量优化和翻译字幕
+3. SINGLE_TRANSLATE_PROMPT: 单条字幕翻译
 """
 
 SPLIT_SYSTEM_PROMPT = """
@@ -74,10 +70,10 @@ If provided, use the following reference data:
 ### 1. Subtitle Text Optimization
 - Ensure subtitle numbering fully matches the input; do not combine, remove, or split subtitles.
 - All optimizations must be performed in the source language (from the original subtitles).
-- Do NOT translate or paraphrase to {target_language} when preparing the "optimized_subtitle" field; this field must remain in the source language. Translation is exclusively in the "translation" field.
+- Do NOT translate or paraphrase to {target_language} when preparing the <optimized> field; this field must remain in the source language. Translation is exclusively in the <translation> field.
 - Apply corrections precisely as provided (e.g., replace every instance of "WinSurf" with "Windsurf"). Do not improvise new spellings or formats.
 - Correct spelling and grammar errors, ensure terminology is consistent, and remove repeated words or phrases.
-- Eliminate filler words (e.g., "um," "uh," "like"), non-speech sound tags (e.g., [Music], [Applause]), reaction markers (e.g., (laugh), (cough)), and musical symbols (e.g., ♪). If nothing remains after cleaning, set "optimized_subtitle" to an empty string.
+- Eliminate filler words (e.g., "um," "uh," "like"), non-speech sound tags (e.g., [Music], [Applause]), reaction markers (e.g., (laugh), (cough)), and musical symbols (e.g., ♪). If nothing remains after cleaning, set <optimized> to an empty string.
 
 ### 2. Translation Procedures
 - Using the cleaned and corrected original text, translate each subtitle into {target_language}.
@@ -92,27 +88,17 @@ If provided, use the following reference data:
 - Always translate each segment individually without attempting to complete incomplete sentences. Maintain proper flow and context with adjacent subtitles as appropriate.
 
 ## Output Format
-Return a valid JSON object where each key (e.g., "1", "01") from the input maps to an object with the following structure:
+Return results using XML tags. For each subtitle, wrap it in a <subtitle> tag with the id attribute matching the input key:
 
-```json
-{{
-  "subtitle_key": {{
-    "optimized_subtitle": "Cleaned and processed original text",
-    "translation": "Translated text in {target_language}"
-  }}
-}}
-```
+<subtitle id="subtitle_key">
+<optimized>Cleaned and processed original text</optimized>
+<translation>Translated text in {target_language}</translation>
+</subtitle>
 
-- Ensure the output key order matches that of the input and uses the exact string values.
-- If the input is empty or contains only non-speech elements after cleaning, set "optimized_subtitle" to an empty string and translate accordingly.
-- Do not add, omit, or renumber keys for any reason. Retain any non-sequential or duplicate keys.
-- Return strictly valid JSON with no extra fields, comments, or trailing commas.
-
-After producing the output, validate that:
-- Output keys and their order exactly match the input.
-- JSON is valid and contains no extra fields or comments.
-- All required fields per subtitle are present.
-If validation fails, self-correct and re-output strictly to specification.
+- Ensure all subtitle ids and their order exactly match the input.
+- If the input is empty or contains only non-speech elements after cleaning, set <optimized> to empty.
+- Do not add, omit, or renumber ids for any reason.
+- Every <subtitle> must contain both <optimized> and <translation> tags.
 
 {terminology}
 """

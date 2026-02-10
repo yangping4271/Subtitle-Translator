@@ -135,7 +135,7 @@ class ColoredFormatter(logging.Formatter):
             'subtitle_optimizer': '翻译优化',
             'subtitle_aligner': '字幕对齐',
             'subtitle_data': '数据处理',
-            'json_repair': 'JSON修复'
+            'response_parser': '响应解析'
         }
         return name_mapping.get(name, name)
 

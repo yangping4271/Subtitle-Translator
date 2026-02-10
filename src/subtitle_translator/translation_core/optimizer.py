@@ -13,36 +13,42 @@ from .config import SubtitleConfig
 from .llm_client import LLMClient
 from .prompts import SINGLE_TRANSLATE_PROMPT, TRANSLATE_PROMPT
 from .utils.api import validate_api_response
-from .utils.json_repair import parse_llm_response
+from .utils.response_parser import parse_xml_response
 
 logger = setup_logger("subtitle_optimizer")
 
 
 def _is_format_change_only(original: str, optimized: str) -> bool:
-    """判断是否只有格式变化（大小写和标点符号）"""
-    original_normalized = original.lower().translate(str.maketrans('', '', string.punctuation))
-    optimized_normalized = optimized.lower().translate(str.maketrans('', '', string.punctuation))
+    """判断是否只有格式变化（大小写和标点符号）。"""
+    remove_punctuation = str.maketrans('', '', string.punctuation)
+    original_normalized = original.lower().translate(remove_punctuation)
+    optimized_normalized = optimized.lower().translate(remove_punctuation)
     return original_normalized == optimized_normalized
 
 
 def _is_wrong_replacement(original: str, optimized: str) -> bool:
-    """检测是否存在错误的替换（替换了不相关的词）"""
+    """检测是否存在错误的替换（替换了不相关的词）。"""
     original_words = set(re.findall(r'\b\w+\b', original.lower()))
     optimized_words = set(re.findall(r'\b\w+\b', optimized.lower()))
 
     removed_words = original_words - optimized_words
     added_words = optimized_words - original_words
 
-    if removed_words and added_words:
-        for removed in removed_words:
-            for added in added_words:
-                if len(removed) > 3 and len(added) > 3 and not any(c in removed for c in added):
-                    return True
+    if not (removed_words and added_words):
+        return False
+
+    for removed in removed_words:
+        if len(removed) <= 3:
+            continue
+        for added in added_words:
+            if len(added) > 3 and not any(c in removed for c in added):
+                return True
+
     return False
 
 
 def _is_translation_failed(value) -> bool:
-    """检查翻译结果是否为失败状态"""
+    """检查翻译结果是否为失败状态。"""
     if isinstance(value, str):
         return value.startswith("[翻译失败]")
     if isinstance(value, dict):
@@ -51,7 +57,7 @@ def _is_translation_failed(value) -> bool:
 
 
 def is_sentence_complete(text: str) -> bool:
-    """检查句子是否完整"""
+    """检查句子是否完整。"""
     sentence_end_markers = ['.', '!', '?', '。', '！', '？', '…']
     bad_end_words = ["and", "or", "but", "so", "yet", "for", "nor", "in", "on", "at", "to", "with", "by", "as"]
 
@@ -62,19 +68,15 @@ def is_sentence_complete(text: str) -> bool:
     if any(text.endswith(marker) for marker in sentence_end_markers):
         return True
 
-    for word in bad_end_words:
-        if text.lower().endswith(" " + word) or text.lower() == word:
-            return False
-
-    words = text.split()
-    if len(words) < 3:
+    text_lower = text.lower()
+    if any(text_lower.endswith(" " + word) or text_lower == word for word in bad_end_words):
         return False
 
-    return True
+    return len(text.split()) >= 3
 
 
 def format_diff(original: str, optimized: str) -> str:
-    """格式化两个字符串的差异，只显示变化部分"""
+    """格式化两个字符串的差异，只显示变化部分。"""
     if original == optimized:
         return f"无变化: {original}"
 
@@ -101,28 +103,23 @@ def format_diff(original: str, optimized: str) -> str:
     context_before = ''.join(original_words[max(0, start_diff - 3):start_diff])
     context_after = ''.join(original_words[end_diff_original + 1:min(len(original_words), end_diff_original + 4)])
 
-    result = ''
-
+    parts = []
     if start_diff > 3:
-        result += '...'
-
-    result += context_before
-
+        parts.append('...')
+    parts.append(context_before)
     if deleted_part:
-        result += f'[-{deleted_part}-]'
+        parts.append(f'[-{deleted_part}-]')
     if added_part:
-        result += f' [+{added_part}+]'
-
-    result += context_after
-
+        parts.append(f' [+{added_part}+]')
+    parts.append(context_after)
     if end_diff_original + 4 < len(original_words):
-        result += '...'
+        parts.append('...')
 
-    return result.strip()
+    return ''.join(parts).strip()
 
 
 class SubtitleOptimizer:
-    """字幕优化和翻译类"""
+    """字幕优化和翻译类。"""
 
     def __init__(self, config: Optional[SubtitleConfig] = None):
         self.config = config or SubtitleConfig()
@@ -133,7 +130,7 @@ class SubtitleOptimizer:
         self.batch_logs = []
 
     def translate_batch_directly(self, asr_data, context_info: str) -> List[Dict]:
-        """直接翻译单个批次（用于流水线模式）"""
+        """直接翻译单个批次（用于流水线模式）。"""
         subtitle_json = {str(k): v["original_subtitle"]
                         for k, v in asr_data.to_json().items()}
 
@@ -148,7 +145,7 @@ class SubtitleOptimizer:
         return results
 
     def _retry_failed_translations(self, failed_items: dict, context_info: str, results: list) -> list:
-        """重试失败的翻译（批量重试 → 单条并发）"""
+        """重试失败的翻译（批量重试 → 单条并发）。"""
         logger.info(f"发现 {len(failed_items)} 条翻译失败，批量重试")
         try:
             retry_results = self._translate({str(k): v for k, v in failed_items.items()}, context_info)
@@ -170,7 +167,7 @@ class SubtitleOptimizer:
         return results
 
     def _categorize_retry_results(self, retry_results: list) -> Tuple[dict, dict]:
-        """分类重试结果为成功和失败"""
+        """分类重试结果为成功和失败。"""
         retry_map = {}
         still_failed = {}
         for r in retry_results:
@@ -181,7 +178,7 @@ class SubtitleOptimizer:
         return retry_map, still_failed
 
     def _merge_single_results(self, single_result: dict, retry_map: dict) -> None:
-        """合并单条翻译结果到重试映射"""
+        """合并单条翻译结果到重试映射。"""
         for k, v in single_result["translated_subtitles"].items():
             if not v.startswith("[翻译失败]"):
                 retry_map[int(k)] = {
@@ -192,13 +189,13 @@ class SubtitleOptimizer:
                 }
 
     def _apply_retry_results(self, results: list, retry_map: dict) -> None:
-        """应用重试结果到原始结果列表"""
+        """应用重试结果到原始结果列表。"""
         for i, r in enumerate(results):
             if r['id'] in retry_map:
                 results[i] = retry_map[r['id']]
 
     def translate(self, asr_data, context_info: str) -> List[Dict]:
-        """翻译字幕"""
+        """翻译字幕。"""
         try:
             self.batch_logs.clear()
 
@@ -217,7 +214,7 @@ class SubtitleOptimizer:
             self.stop()
 
     def _validate_translation_quality(self, result: dict) -> None:
-        """验证翻译结果质量"""
+        """验证翻译结果质量。"""
         failed_count = sum(1 for v in result["translated_subtitles"].values()
                           if _is_translation_failed(v))
 
@@ -230,7 +227,7 @@ class SubtitleOptimizer:
             logger.warning(f"⚠️ {failed_count}/{total_count} 条字幕翻译失败")
 
     def _format_translation_results(self, result: dict, subtitle_json: dict) -> list:
-        """格式化翻译结果"""
+        """格式化翻译结果。"""
         translated_subtitle = []
         for k, v in result["optimized_subtitles"].items():
             translated_text = {
@@ -243,7 +240,7 @@ class SubtitleOptimizer:
         return translated_subtitle
 
     def stop(self):
-        """优雅关闭线程池"""
+        """优雅关闭线程池。"""
         if hasattr(self, 'executor') and self.executor is not None:
             try:
                 logger.info("正在等待线程池任务完成...")
@@ -255,7 +252,7 @@ class SubtitleOptimizer:
                 self.executor = None
 
     def translate_multi_thread(self, subtitle_json: Dict[int, str], context_info: Optional[str] = None):
-        """多线程批量翻译字幕（流水线处理，每个批次独立降级）"""
+        """多线程批量翻译字幕（流水线处理，每个批次独立降级）。"""
         try:
             result = self._batch_translate(subtitle_json, context_info=context_info)
             return result
@@ -265,8 +262,7 @@ class SubtitleOptimizer:
 
     def _translate_with_fallback(self, chunk: dict, context_info: Optional[str],
                                  batch_num: int, total_batches: int) -> list:
-        """
-        单个批次的三级降级翻译
+        """单个批次的三级降级翻译。
 
         Level 1: 批量翻译
         Level 2: 批次整体重试（1次）
@@ -292,13 +288,13 @@ class SubtitleOptimizer:
         return self._fallback_to_single(still_failed, result, batch_info)
 
     def _extract_failed_items(self, result: list) -> dict:
-        """提取失败的翻译项"""
+        """提取失败的翻译项。"""
         return {item['id']: item['original'] for item in result
                 if _is_translation_failed(item.get('translation', ''))}
 
     def _retry_batch(self, chunk: dict, context_info: Optional[str],
                     batch_num: int, total_batches: int, result: list) -> list:
-        """批次整体重试"""
+        """批次整体重试。"""
         retry_result = self._translate(chunk, context_info, batch_num, total_batches)
         retry_map = {r['id']: r for r in retry_result
                     if not _is_translation_failed(r.get('translation', ''))}
@@ -313,7 +309,7 @@ class SubtitleOptimizer:
         return result
 
     def _fallback_to_single(self, still_failed: dict, result: list, batch_info: str) -> list:
-        """降级到单条并发翻译"""
+        """降级到单条并发翻译。"""
         single_result = self._translate_by_single_no_retry(still_failed)
 
         success_count = 0
@@ -329,7 +325,7 @@ class SubtitleOptimizer:
         return result
 
     def _batch_translate(self, subtitle_json: Dict[int, str], context_info: Optional[str] = None) -> Dict:
-        """批量翻译字幕的核心方法（流水线处理，每个批次独立降级）"""
+        """批量翻译字幕的核心方法（流水线处理，每个批次独立降级）。"""
         items = list(subtitle_json.items())
         chunks = self._create_smart_chunks(items)
 
@@ -342,7 +338,7 @@ class SubtitleOptimizer:
         return self._collect_batch_results(futures)
 
     def _create_smart_chunks(self, items: list) -> list:
-        """创建智能分批（确保句子完整性）"""
+        """创建智能分批（确保句子完整性）。"""
         chunks = []
         i = 0
         adjusted_batch_count = 0
@@ -365,7 +361,7 @@ class SubtitleOptimizer:
         return chunks
 
     def _adjust_chunk_boundary(self, items: list, start_idx: int, end_idx: int) -> int:
-        """调整分批边界以确保句子完整"""
+        """调整分批边界以确保句子完整。"""
         complete_idx = end_idx - 1
         while complete_idx > start_idx and not is_sentence_complete(items[complete_idx - 1][1]):
             complete_idx -= 1
@@ -383,13 +379,13 @@ class SubtitleOptimizer:
         return complete_idx if complete_idx < len(items) else end_idx
 
     def _log_batch_plan(self, chunks: list) -> None:
-        """记录批次规划信息"""
+        """记录批次规划信息。"""
         logger.info(f"📋 翻译任务规划: {len(chunks)}个批次，每批次约{self.config.max_batch_sentences}条字幕")
         actual_threads = min(len(chunks), self.thread_num)
         logger.info(f"⚡ 并发线程: {actual_threads}个")
 
     def _submit_batch_tasks(self, chunks: list, context_info: Optional[str]) -> dict:
-        """提交批次翻译任务"""
+        """提交批次翻译任务。"""
         futures = []
         chunk_map = {}
 
@@ -401,7 +397,7 @@ class SubtitleOptimizer:
         return {'futures': futures, 'chunk_map': chunk_map}
 
     def _collect_batch_results(self, futures_data: dict) -> Dict:
-        """收集批次翻译结果"""
+        """收集批次翻译结果。"""
         optimized_subtitles = {}
         translated_subtitles = {}
 
@@ -420,7 +416,7 @@ class SubtitleOptimizer:
 
     def _merge_batch_result(self, result: list, optimized_subtitles: dict,
                            translated_subtitles: dict) -> None:
-        """合并单个批次的结果"""
+        """合并单个批次的结果。"""
         for item in result:
             k = str(item["id"])
             optimized_subtitles[k] = item["optimized"]
@@ -435,7 +431,7 @@ class SubtitleOptimizer:
 
     def _handle_batch_failure(self, future, chunk_map: dict, optimized_subtitles: dict,
                              translated_subtitles: dict, error: Exception) -> None:
-        """处理批次翻译失败"""
+        """处理批次翻译失败。"""
         failed_chunk = chunk_map[future]
         logger.error(f"❌ 批次翻译完全失败（包括所有降级尝试）: {error}")
         for k, v in failed_chunk.items():
@@ -443,15 +439,15 @@ class SubtitleOptimizer:
             translated_subtitles[str(k)] = f"[翻译失败] {v}"
 
     def _translate_by_single(self, subtitle_json: Dict[int, str]) -> Dict:
-        """使用单条翻译模式处理字幕（并发翻译，带重试）"""
+        """使用单条翻译模式处理字幕（并发翻译，带重试）。"""
         return self._translate_by_single_impl(subtitle_json, with_retry=True)
 
     def _translate_by_single_no_retry(self, subtitle_json: Dict[int, str]) -> Dict:
-        """使用单条翻译模式处理字幕（并发翻译，不重试）"""
+        """使用单条翻译模式处理字幕（并发翻译，不重试）。"""
         return self._translate_by_single_impl(subtitle_json, with_retry=False)
 
     def _translate_by_single_impl(self, subtitle_json: Dict[int, str], with_retry: bool) -> Dict:
-        """单条翻译的通用实现"""
+        """单条翻译的通用实现。"""
         retry_text = "并发翻译" if with_retry else "并发翻译，不重试"
         logger.info(f"开始单条{retry_text} {len(subtitle_json)} 条字幕（并发数: {self.thread_num}）")
 
@@ -465,7 +461,7 @@ class SubtitleOptimizer:
         return self._collect_single_results(futures, subtitle_json)
 
     def _collect_single_results(self, futures: dict, subtitle_json: Dict[int, str]) -> Dict:
-        """收集单条翻译结果"""
+        """收集单条翻译结果。"""
         optimized_subtitles = {}
         translated_subtitles = {}
         completed = 0
@@ -492,26 +488,29 @@ class SubtitleOptimizer:
 
     @retry.retry(tries=2)
     def _translate_single_subtitle(self, key: int, value: str) -> Dict:
-        """翻译单条字幕（带重试）"""
+        """翻译单条字幕（带重试）。"""
         return self._translate_single_subtitle_impl(key, value)
 
     def _translate_single_subtitle_no_retry(self, key: int, value: str) -> Dict:
-        """翻译单条字幕（不重试）"""
+        """翻译单条字幕（不重试）。"""
         return self._translate_single_subtitle_impl(key, value)
 
     def _translate_single_subtitle_impl(self, key: int, value: str) -> Dict:
-        """翻译单条字幕的实现"""
+        """翻译单条字幕的实现。"""
         try:
-            message = [{
-                "role": "system",
-                "content": SINGLE_TRANSLATE_PROMPT.format(
-                    target_language=self.config.target_language,
-                    terminology=self._format_terminology()
-                )
-            }, {
-                "role": "user",
-                "content": value
-            }]
+            message = [
+                {
+                    "role": "system",
+                    "content": SINGLE_TRANSLATE_PROMPT.format(
+                        target_language=self.config.target_language,
+                        terminology=self._format_terminology()
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": value
+                }
+            ]
 
             response = self.client.chat.completions.create(
                 model=self.config.translation_model,
@@ -535,7 +534,7 @@ class SubtitleOptimizer:
             }
 
     def _format_terminology(self) -> str:
-        """格式化术语表为 prompt 文本"""
+        """格式化术语表为 prompt 文本。"""
         if not self.config.terminology:
             return ""
 
@@ -547,7 +546,7 @@ class SubtitleOptimizer:
 
     def _create_translate_message(self, original_subtitle: Dict[str, str],
                                 context_info: Optional[str]):
-        """创建翻译提示消息"""
+        """创建翻译提示消息。"""
         input_content = (f"Correct and translate the following subtitles into {self.config.target_language}:\n"
                         f"<subtitles>{json.dumps(original_subtitle, ensure_ascii=False)}</subtitles>")
 
@@ -565,7 +564,7 @@ class SubtitleOptimizer:
         ]
 
     def _print_all_batch_logs(self):
-        """统一打印所有批次的日志"""
+        """统一打印所有批次的日志。"""
         if not self.batch_logs:
             return
 
@@ -604,7 +603,7 @@ class SubtitleOptimizer:
 
     def _translate(self, original_subtitle: Dict[str, str],
                   context_info: Optional[str], batch_num=None, total_batches=None) -> List[Dict]:
-        """翻译字幕"""
+        """翻译字幕。"""
         batch_info = f"[批次{batch_num}/{total_batches}]" if batch_num and total_batches else ""
         logger.info(f"🌍 {batch_info} 翻译 {len(original_subtitle)} 条字幕")
 
@@ -628,7 +627,7 @@ class SubtitleOptimizer:
                 raw_response = validate_api_response(response, batch_info)
                 logger.info(f"{batch_info} LLM原始返回数据:\n{raw_response}")
 
-                response_content = parse_llm_response(raw_response)
+                response_content = parse_xml_response(raw_response)
 
                 response_content = self._normalize_response_format(response_content, batch_info)
 
@@ -659,7 +658,7 @@ class SubtitleOptimizer:
         return self._create_failed_results(original_subtitle)
 
     def _normalize_response_format(self, response_content, batch_info: str) -> dict:
-        """规范化响应格式（将数组转换为字典）"""
+        """规范化响应格式（将数组转换为字典）。"""
         if isinstance(response_content, list):
             logger.warning(f"⚠️ {batch_info} LLM返回array，尝试转换")
             new_dict = {}
@@ -679,7 +678,7 @@ class SubtitleOptimizer:
         return response_content
 
     def _check_missing_ids(self, response_content: dict, original_subtitle: dict, batch_info: str) -> None:
-        """检查并记录缺失的ID"""
+        """检查并记录缺失的ID。"""
         input_ids = set(original_subtitle.keys())
         output_ids = set(response_content.keys())
         missing_ids = input_ids - output_ids
@@ -687,7 +686,7 @@ class SubtitleOptimizer:
             logger.warning(f"⚠️ {batch_info} LLM丢失ID: {sorted([int(x) for x in missing_ids])}")
 
     def _fill_missing_fields(self, response_content: dict, original_subtitle: dict) -> dict:
-        """补全缺失的字段"""
+        """补全缺失的字段。"""
         for k in original_subtitle.keys():
             if str(k) not in response_content:
                 response_content[str(k)] = {
@@ -702,7 +701,7 @@ class SubtitleOptimizer:
         return response_content
 
     def _build_translation_results(self, response_content: dict, original_subtitle: dict) -> list:
-        """构建翻译结果列表"""
+        """构建翻译结果列表。"""
         translated_subtitle = []
         for k, v in response_content.items():
             k = int(k)
@@ -725,7 +724,7 @@ class SubtitleOptimizer:
         return translated_subtitle
 
     def _create_failed_results(self, original_subtitle: dict) -> list:
-        """创建失败的翻译结果"""
+        """创建失败的翻译结果。"""
         return [{
             "id": int(k),
             "original": v,
