@@ -44,7 +44,7 @@ def _handle_translation_error(e: Exception, logger) -> None:
 
     # 其他异常
     logger.error(f"❌ 处理失败: {e}")
-    logger.exception("详细错误信息:")
+    logger.debug("详细错误信息:", exc_info=True)
     print(f"[bold red]❌ 处理失败:[/bold red] {e}")
     raise RuntimeError(f"处理失败: {e}")
 

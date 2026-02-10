@@ -249,7 +249,7 @@ class SubtitleTranslatorService:
                 raise e
 
             self.logger.error(f"💥 处理过程中发生错误: {str(e)}")
-            self.logger.exception("详细错误信息:")
+            self.logger.debug("详细错误信息:", exc_info=True)
             raise
 
     def _extract_context_info(self, input_file: str) -> str:

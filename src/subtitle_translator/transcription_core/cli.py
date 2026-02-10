@@ -562,5 +562,16 @@ def version():
     display_version_info(console)
 
 
+def cli_main():
+    """CLI入口点包装器，捕获所有未处理异常，避免输出 traceback"""
+    try:
+        app()
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"[bold red]❌ 发生错误:[/bold red] {e}")
+        raise SystemExit(1)
+
+
 if __name__ == "__main__":
-    app()
+    cli_main()
