@@ -688,28 +688,36 @@ class SubtitleOptimizer:
     def _fill_missing_fields(self, response_content: dict, original_subtitle: dict) -> dict:
         """补全缺失的字段。"""
         for k in original_subtitle.keys():
-            if str(k) not in response_content:
+            subtitle_id = str(k)
+            if subtitle_id not in response_content:
                 response_content[str(k)] = {
                     "optimized_subtitle": original_subtitle[str(k)],
-                    "translation": f"[翻译失败] {original_subtitle[str(k)]}"
+                    "translation": ""
                 }
             else:
-                if "optimized_subtitle" not in response_content[str(k)]:
-                    response_content[str(k)]["optimized_subtitle"] = original_subtitle[str(k)]
-                if "translation" not in response_content[str(k)]:
-                    response_content[str(k)]["translation"] = f"[翻译失败] {original_subtitle[str(k)]}"
+                current_result = response_content[subtitle_id]
+
+                optimized = current_result.get("optimized_subtitle")
+                if not isinstance(optimized, str) or not optimized.strip():
+                    current_result["optimized_subtitle"] = original_subtitle[subtitle_id]
+
+                translation = current_result.get("translation")
+                if translation is None or not isinstance(translation, str):
+                    current_result["translation"] = ""
         return response_content
 
     def _build_translation_results(self, response_content: dict, original_subtitle: dict) -> list:
         """构建翻译结果列表。"""
         translated_subtitle = []
-        for k, v in response_content.items():
-            k = int(k)
+        for key in original_subtitle.keys():
+            subtitle_id = str(key)
+            v = response_content[subtitle_id]
+            k = int(subtitle_id)
             translated_text = {
                 "id": k,
-                "original": original_subtitle[str(k)],
+                "original": original_subtitle[subtitle_id],
                 "optimized": v["optimized_subtitle"],
-                "translation": v["translation"]
+                "translation": v.get("translation", "") if isinstance(v.get("translation", ""), str) else ""
             }
             translated_subtitle.append(translated_text)
 
@@ -729,5 +737,5 @@ class SubtitleOptimizer:
             "id": int(k),
             "original": v,
             "optimized": v,
-            "translation": f"[翻译失败] {v}"
+            "translation": ""
         } for k, v in original_subtitle.items()]

@@ -1,6 +1,6 @@
 import re
 import os
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pathlib import Path
 from dataclasses import dataclass
 import logging
@@ -244,7 +244,7 @@ class SubtitleData:
             }
         return result_json
 
-    def merge_segments(self, start_index: int, end_index: int, merged_text: str = None):
+    def merge_segments(self, start_index: int, end_index: int, merged_text: Optional[str] = None):
         """合并从 start_index 到 end_index 的段（包含）"""
         if start_index < 0 or end_index >= len(self.segments) or start_index > end_index:
             raise IndexError("无效的段索引。")
@@ -300,9 +300,13 @@ class SubtitleData:
 
         # 只在最后统一打印总体统计
         total = len(self.segments)
-        valid = sum(1 for item in translate_result if item.get("optimized", "").strip())
-        skipped = total - valid
-        logger.info(f"总字幕数: {total}, 有效字幕数: {valid}, 跳过字幕数: {skipped}")
+        english_fallback = sum(1 for item in translate_result if not (item.get("optimized") or "").strip())
+        empty_translations = sum(
+            1
+            for item in translate_result
+            if not (item.get("translation") or "").strip()
+        )
+        logger.info(f"总字幕数: {total}, 英文回退数: {english_fallback}, 空翻译数: {empty_translations}")
         logger.info("保存完成")
 
     def save_translation(self, output_path: str, subtitle_dict: Dict[int, str], operation: str = "处理") -> None:
@@ -323,8 +327,9 @@ class SubtitleData:
         srt_lines = []
         logger.info(f"{operation}字幕段落数: {len(self.segments)}")
         
-        # 记录有效字幕数
-        valid_subtitle_count = 0
+        # 记录写入字幕数
+        saved_subtitle_count = 0
+        empty_translation_count = 0
         
         for i, segment in enumerate(self.segments, 1):
             if i not in subtitle_dict:
@@ -334,31 +339,37 @@ class SubtitleData:
             # 获取字幕内容，确保是字符串类型
             subtitle_text = subtitle_dict[i]
             if subtitle_text is None:
-                logger.warning(f"字幕 {i} 的内容为None，将被跳过")
-                continue
+                if operation == "优化":
+                    logger.warning(f"字幕 {i} 的优化内容为None，将回退为原文")
+                    subtitle_text = segment.transcript
+                else:
+                    logger.warning(f"字幕 {i} 的翻译内容为None，将保留为空字幕")
+                    subtitle_text = ""
                 
             processed_text = subtitle_text.strip()
 
             # 按 Netflix 规范处理标点
             if operation == "翻译":
-                # 跳过翻译失败的字幕
-                if not processed_text.startswith("[翻译失败]"):
+                if processed_text:
                     processed_text = normalize_chinese_punctuation(processed_text)
             elif operation == "优化":
-                processed_text = normalize_english_punctuation(processed_text)
+                if processed_text:
+                    processed_text = normalize_english_punctuation(processed_text)
+                if not processed_text:
+                    logger.warning(f"字幕 {i} 的优化内容为空，将回退为原文")
+                    processed_text = normalize_english_punctuation(segment.transcript.strip())
 
-            # 如果字幕内容为空，跳过该字幕
-            if not processed_text:
-                logger.info(f"字幕 {i} 的内容为空，将被跳过")
-                continue
-                
-            # 有效字幕数加1
-            valid_subtitle_count += 1
+            if operation == "翻译" and not processed_text:
+                empty_translation_count += 1
+                logger.info(f"字幕 {i} 的翻译为空，保留时间轴并写入空字幕")
+
+            saved_subtitle_count += 1
+            output_text = processed_text if processed_text else ""
             
             srt_lines.extend([
-                str(valid_subtitle_count),  # 使用新的编号
+                str(saved_subtitle_count),  # 使用新的编号
                 segment.to_srt_ts(),
-                processed_text,
+                output_text,
                 ""  # 空行分隔
             ])
 
@@ -372,6 +383,8 @@ class SubtitleData:
             raise Exception(f"字幕{operation}失败: 文件未能成功保存")
             
         logger.info(f"{operation}后的字幕已保存至: {output_path}")
+        if operation == "翻译" and empty_translation_count > 0:
+            logger.info(f"空翻译字幕数: {empty_translation_count}")
 
     def save_translations_to_files(self, translate_result: List[Dict],
                                 english_output: str, target_lang_output: str) -> None:
@@ -462,8 +475,16 @@ def _parse_srt(srt_str: str) -> 'SubtitleData':
         if len(lines) < 3:
             continue
 
-        match = srt_time_pattern.match(lines[1])
-        if not match:
+        # 灵活查找时间戳行，而不是固定在 lines[1]
+        match = None
+        time_line_index = -1
+        for i, line in enumerate(lines):
+            match = srt_time_pattern.match(line)
+            if match:
+                time_line_index = i
+                break
+
+        if not match or time_line_index == -1:
             continue
 
         time_parts = list(map(int, match.groups()))
@@ -480,10 +501,13 @@ def _parse_srt(srt_str: str) -> 'SubtitleData':
             time_parts[7]
         ])
 
+        # 字幕文本在时间戳行之后
+        text_lines = lines[time_line_index + 1:]
+
         if has_translated_subtitle:
-            text = '\n'.join(lines[2:]).strip()
+            text = '\n'.join(text_lines).strip()
         else:
-            text = ' '.join(lines[2:])
+            text = ' '.join(text_lines)
 
         segments.append(SubtitleSegment(text, start_time, end_time))
 
