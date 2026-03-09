@@ -268,47 +268,6 @@ class SubtitleData:
         # 删除下一个段
         del self.segments[index + 1]
 
-    def save_translations(self, base_path: Path, translate_result: List[Dict], 
-                        english_suffix: str = ".en.srt", target_lang_suffix: str = ".target.srt") -> None:
-        """
-        保存翻译结果，包括优化后的英文字幕和翻译后的目标语言字幕
-        
-        Args:
-            base_path: 基础文件路径
-            translate_result: 翻译结果列表
-            english_suffix: 英文字幕文件后缀
-            target_lang_suffix: 目标语言字幕文件后缀（默认为中文，但可以是任何语言）
-        """
-        # 构建输出文件路径
-        base_name = base_path.stem
-        output_dir = base_path.parent
-        english_path = output_dir / f"{base_name}{english_suffix}"
-        target_lang_path = output_dir / f"{base_name}{target_lang_suffix}"
-
-        logger.info("开始保存...")
-
-        # 保存优化后的英文字幕
-        optimized_subtitles = {item["id"]: item["optimized"] for item in translate_result}
-        self.save_translation(str(english_path), optimized_subtitles, "优化")
-
-        # 保存翻译后的目标语言字幕
-        translated_subtitles = {
-            item["id"]: item.get("revised_translation", item["translation"])
-            for item in translate_result
-        }
-        self.save_translation(str(target_lang_path), translated_subtitles, "翻译")
-
-        # 只在最后统一打印总体统计
-        total = len(self.segments)
-        english_fallback = sum(1 for item in translate_result if not (item.get("optimized") or "").strip())
-        empty_translations = sum(
-            1
-            for item in translate_result
-            if not (item.get("translation") or "").strip()
-        )
-        logger.info(f"总字幕数: {total}, 英文回退数: {english_fallback}, 空翻译数: {empty_translations}")
-        logger.info("保存完成")
-
     def save_translation(self, output_path: str, subtitle_dict: Dict[int, str], operation: str = "处理") -> None:
         """
         保存翻译或优化后的字幕文件
@@ -404,16 +363,16 @@ class SubtitleData:
 
         # 保存翻译后的目标语言字幕
         translated_subtitles = {
-            item["id"]: item.get("revised_translation", item["translation"])
+            item["id"]: item["translation"]
             for item in translate_result
         }
         self.save_translation(target_lang_output, translated_subtitles, "翻译")
 
         # 只在最后统一打印总体统计
         total = len(self.segments)
-        valid = sum(1 for item in translate_result if item.get("optimized", "").strip())
-        skipped = total - valid
-        logger.info(f"总字幕数: {total}, 有效字幕数: {valid}, 跳过字幕数: {skipped}")
+        english_fallback = sum(1 for item in translate_result if not (item.get("optimized") or "").strip())
+        empty_translations = sum(1 for item in translate_result if not (item.get("translation") or "").strip())
+        logger.info(f"总字幕数: {total}, 英文回退数: {english_fallback}, 空翻译数: {empty_translations}")
         logger.info("保存完成")
 
     def __str__(self):

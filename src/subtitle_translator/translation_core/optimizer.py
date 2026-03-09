@@ -7,7 +7,6 @@ from typing import Dict, List, Optional, Tuple
 
 import retry
 
-from ..exceptions import TranslationError
 from ..logger import setup_logger
 from .config import SubtitleConfig
 from .llm_client import LLMClient
@@ -48,11 +47,11 @@ def _is_wrong_replacement(original: str, optimized: str) -> bool:
 
 
 def _is_translation_failed(value) -> bool:
-    """检查翻译结果是否为失败状态。"""
+    """检查翻译结果是否为失败状态（空字符串视为失败）。"""
     if isinstance(value, str):
-        return value.startswith("[翻译失败]")
+        return not value.strip()
     if isinstance(value, dict):
-        return value.get("translation", "").startswith("[翻译失败]")
+        return not value.get("translation", "").strip()
     return False
 
 
@@ -180,7 +179,7 @@ class SubtitleOptimizer:
     def _merge_single_results(self, single_result: dict, retry_map: dict) -> None:
         """合并单条翻译结果到重试映射。"""
         for k, v in single_result["translated_subtitles"].items():
-            if not v.startswith("[翻译失败]"):
+            if v.strip():
                 retry_map[int(k)] = {
                     "id": int(k),
                     "original": single_result["optimized_subtitles"][k],
@@ -219,8 +218,9 @@ class SubtitleOptimizer:
                           if _is_translation_failed(v))
 
         if failed_count == len(result["translated_subtitles"]):
-            suggestion = "💡 建议：请检查翻译模型名称是否正确，或更换其他可用模型"
-            raise TranslationError("所有字幕翻译均失败", suggestion)
+            logger.warning("⚠️ 所有字幕翻译均失败，将保存优化后字幕，翻译轨为空")
+            logger.warning("💡 建议：请检查翻译模型名称是否正确，或更换其他可用模型")
+            return
 
         if failed_count > 0:
             total_count = len(result["translated_subtitles"])
@@ -436,7 +436,7 @@ class SubtitleOptimizer:
         logger.error(f"❌ 批次翻译完全失败（包括所有降级尝试）: {error}")
         for k, v in failed_chunk.items():
             optimized_subtitles[str(k)] = v
-            translated_subtitles[str(k)] = f"[翻译失败] {v}"
+            translated_subtitles[str(k)] = ""
 
     def _translate_by_single(self, subtitle_json: Dict[int, str]) -> Dict:
         """使用单条翻译模式处理字幕（并发翻译，带重试）。"""
@@ -479,7 +479,7 @@ class SubtitleOptimizer:
             except Exception as e:
                 logger.error(f"单条翻译失败，字幕ID: {key}，错误: {e}")
                 optimized_subtitles[str(key)] = subtitle_json[key]
-                translated_subtitles[str(key)] = f"[翻译失败] {subtitle_json[key]}"
+                translated_subtitles[str(key)] = ""
 
         return {
             "optimized_subtitles": optimized_subtitles,
@@ -530,7 +530,7 @@ class SubtitleOptimizer:
             logger.error(f"✗ 字幕ID {key} 翻译失败: {e}")
             return {
                 "optimized": value,
-                "translation": f"[翻译失败] {value}"
+                "translation": ""
             }
 
     def _format_terminology(self) -> str:
