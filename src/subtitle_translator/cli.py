@@ -415,7 +415,7 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
                 print(f"[bold green]✅ 处理完成！[/bold green]")
             
             except Exception as e:
-                from .translation_core.spliter import SmartSplitError, TranslationError
+                from .exceptions import SmartSplitError, TranslationError
                 if isinstance(e, (SmartSplitError, TranslationError)):
                     # 这些异常已经在processor.py中显示过了，这里不重复显示
                     # 但需要记录到日志中用于统计
