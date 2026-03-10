@@ -2,16 +2,12 @@
 文件处理模块 - 处理单个文件的核心逻辑
 """
 import os
-import time
 from pathlib import Path
 from typing import Optional
 
 from rich import print
 
 from .service import SubtitleTranslatorService
-from .transcription_core import from_pretrained
-from .transcription_core.cli import to_srt
-from .transcription_core.model_cache import model_context
 from .logger import setup_logger
 
 # 初始化logger
@@ -49,160 +45,23 @@ def _handle_translation_error(e: Exception, logger) -> None:
     raise RuntimeError(f"处理失败: {e}")
 
 
-def precheck_model_availability(model: str, show_progress: bool = True, silent: bool = False) -> bool:
-    """
-    预检查模型可用性，确保在开始处理前模型已可用
-    
-    Args:
-        model: 模型ID或路径
-        show_progress: 是否显示进度信息
-        silent: 是否静默模式（不显示任何输出）
-        
-    Returns:
-        bool: 模型是否可用
-    """
-    try:
-        if show_progress and not silent:
-            print(f"\n🔍 [bold blue]检查转录模型可用性:[/bold blue] [cyan]{model}[/cyan]")
-        
-        # 尝试加载模型（但不实际使用，只是验证可用性）
-        from .transcription_core.utils import _find_cached_model, _check_network_connectivity
-        
-        # 检查指定模型的可用性
-        try:
-            config_path, weight_path = _find_cached_model(model)
-            if show_progress and not silent:
-                print("✅ [green]模型已在本地缓存，可立即使用[/green]")
-                print(f"💡 [dim]配置文件: {Path(config_path).name}[/dim]")
-                print(f"💡 [dim]权重文件: {Path(weight_path).name} ({Path(weight_path).stat().st_size / 1024 / 1024:.1f}MB)[/dim]")
-            return True
-        except:
-            # 本地没有指定模型的缓存，检查网络连接
-            if show_progress and not silent:
-                print("📥 [yellow]转录模型需要下载[/yellow]")
-                print("   模型: mlx-community/parakeet-tdt-0.6b-v2")
-                print("   大小: ~1.2GB")
-                print("   说明: 首次使用需下载，后续将使用缓存")
-                print()
-                print("🔍 [dim]检查网络连接...[/dim]")
-
-            if not _check_network_connectivity():
-                if show_progress and not silent:
-                    print("❌ [red]网络连接失败，无法下载模型[/red]")
-                    print()
-                    print("💡 [bold blue]解决方法:[/bold blue]")
-                    print("   1. 检查网络连接是否正常")
-                    print("   2. 确认可以访问 huggingface.co")
-                    print("   3. 如有代理，请确保已正确配置")
-                    print()
-                return False
-
-            if show_progress and not silent:
-                print("✅ [green]网络正常，处理时将自动下载模型[/green]")
-                print()
-            return True
-            
-    except Exception as e:
-        if show_progress and not silent:
-            print(f"⚠️  [yellow]模型可用性检查失败: {e}[/yellow]")
-            print("💡 [dim]将在处理时尝试下载模型[/dim]")
-        return True  # 即使检查失败也继续，让实际处理时处理错误
-
-
-def _check_model_precheck(model_precheck_passed: Optional[bool], model: str) -> None:
-    """检查模型预检查结果，如果失败则抛出异常"""
-    if model_precheck_passed is None:
-        # 单文件处理模式，需要完整的预检查
-        print("[bold blue]>>> 预检查转录环境...[/bold blue]")
-        model_available = precheck_model_availability(model, show_progress=True)
-
-        if not model_available:
-            print("[bold red]❌ 转录模型不可用，无法继续处理[/bold red]")
-            raise RuntimeError(f"转录模型 {model} 不可用")
-    elif not model_precheck_passed:
-        # 全局预检查失败，抛出异常
-        print("[bold red]❌ 转录模型不可用，无法继续处理[/bold red]")
-        raise RuntimeError(f"转录模型 {model} 不可用")
-
-
 def process_single_file(
     input_file: Path, target_lang: str, output_dir: Path,
-    model: str, llm_model: Optional[str],
-    model_precheck_passed: Optional[bool] = None,
+    llm_model: Optional[str],
     batch_mode: bool = False, translator_service = None,
     preserve_intermediate: bool = False
 ):
     """处理单个文件的核心逻辑"""
 
-    # 检测输入文件类型
-    if input_file.suffix.lower() == '.srt':
-        print("[bold yellow]>>> 检测到SRT文件，跳过转录步骤...[/bold yellow]")
-        temp_srt_path = input_file
-    else:
-        # 检查模型预检查结果
-        _check_model_precheck(model_precheck_passed, model)
+    # 只接受 SRT 文件
+    if input_file.suffix.lower() != '.srt':
+        logger.error(f"只支持 SRT 字幕文件，当前文件: {input_file.name}")
+        print(f"[bold red]❌ 只支持 SRT 字幕文件![/bold red]")
+        print(f"文件 [cyan]{input_file.name}[/cyan] 不是 SRT 格式。")
+        raise RuntimeError(f"只支持 SRT 字幕文件，当前文件: {input_file.name}")
 
-        # --- 转录阶段 ---
-        logger.info(">>> 开始转录...")
-        print("[bold green]>>> 开始转录...[/bold green]")
-        temp_srt_path = output_dir / f"{input_file.stem}.srt"
-        try:
-            # 转录阶段 - 使用优化的缓存管理
-            logger.info("开始转录音频...")
-            print(f"🎤 [bold cyan]正在转录音频...[/bold cyan]")
-
-            # 记录转录开始时间
-            transcribe_start_time = time.time()
-
-            # 直接使用模型，不再嵌套 model_context（因为外部已有上下文管理）
-            # 懒加载模型，只在需要时加载
-            loaded_model = from_pretrained(
-                model,
-                use_cache=True  # 启用缓存优化
-            )
-
-            # 对于长音频，启用智能分块，并增大重叠以降低边界丢词风险
-            # chunk_duration=-1 表示自动选择（见 parakeet.get_optimal_chunk_duration）
-            # 默认启用 VAD 智能分块，获得更好的转录质量
-            result = loaded_model.transcribe(
-                input_file,
-                chunk_duration=-1,
-                overlap_duration=30.0,
-                use_vad=True,  # 默认使用 VAD 智能分块
-            )
-
-            # 计算转录耗时
-            transcribe_elapsed = time.time() - transcribe_start_time
-
-            # 根据批量模式决定是否显示缓存释放信息
-            if not batch_mode:
-                # 此时模型缓存已自动释放
-                pass  # 在单文件模式下会显示释放信息
-
-            # 将转录结果保存为 SRT，使用 timestamps=True 获得更精细的时间戳
-            srt_content = to_srt(result, timestamps=True)
-
-            # 确保输出目录存在
-            temp_srt_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # 验证输出路径可写
-            if not temp_srt_path.parent.exists():
-                raise RuntimeError(f"转录输出目录不存在: {temp_srt_path.parent}")
-
-            logger.info(f"转录SRT将保存到: {temp_srt_path}")
-            with open(temp_srt_path, "w", encoding="utf-8") as f:
-                f.write(srt_content)
-            logger.info(f"转录SRT已保存: {temp_srt_path}")
-
-            # 统计字幕数量并显示时间统计
-            sentence_count = len(result.sentences)
-            logger.info(f"转录完成，SRT文件保存至: {temp_srt_path}")
-            logger.info(f"⏱️  转录耗时: {transcribe_elapsed:.1f}秒")
-            print(f"✅ [bold green]转录完成[/bold green] (共 [cyan]{sentence_count}[/cyan] 条字幕) - 耗时: [cyan]{transcribe_elapsed:.1f}秒[/cyan]")
-
-        except Exception as e:
-            print(f"[bold red]转录失败:[/bold red] {e}")
-            raise RuntimeError(f"转录失败: {e}")
+    print("[bold yellow]>>> 检测到SRT文件，开始翻译...[/bold yellow]")
+    temp_srt_path = input_file
 
     final_target_lang_path = None
     final_english_path = None

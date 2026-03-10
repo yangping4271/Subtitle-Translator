@@ -14,12 +14,6 @@ from rich import print
 from .env_setup import setup_environment
 from .logger import setup_logger
 
-DEFAULT_TRANSCRIPTION_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
-
-AUDIO_EXTENSIONS = ['.mp3', '.m4a', '.wav', '.flac', '.aac', '.ogg', '.wma', '.aiff', '.opus']
-VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpeg', '.mpg', '.3gp', '.ts']
-MEDIA_EXTENSIONS = AUDIO_EXTENSIONS + VIDEO_EXTENSIONS
-
 logger = setup_logger(__name__)
 
 
@@ -36,13 +30,11 @@ def main(
     max_count: int = typer.Option(-1, "--count", "-n", help="最大处理文件数量，-1表示处理所有文件。"),
     target_lang: str = typer.Option("zh", "--target-lang", "-t", help="目标翻译语言。支持：zh/zh-cn(简中), zh-tw(繁中), ja(日), ko(韩), fr(法), de(德), es(西), pt(葡), it(意), ru(俄), ar(阿), th(泰), vi(越)等。"),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir", "-o", help="输出文件的目录，默认为当前目录。"),
-    model: str = typer.Option(DEFAULT_TRANSCRIPTION_MODEL, "--model", help="用于转录的 Parakeet MLX 模型。"),
     llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="覆盖所有模型（优先级低于独立参数）"),
     split_model: Optional[str] = typer.Option(None, "--split-model", help="断句模型"),
     translation_model: Optional[str] = typer.Option(None, "--translation-model", help="翻译模型"),
     preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
     dry_run: bool = typer.Option(False, "--dry-run", help="预览模式，只显示将要处理的文件信息而不实际执行翻译。"),
-    transcribe: bool = typer.Option(False, "--transcribe", help="当找不到字幕文件时，是否允许进行语音转录。"),
     version: bool = typer.Option(False, "--version", help="显示版本信息并退出。"),
 ):
     """字幕翻译工具主命令"""
@@ -94,11 +86,10 @@ def main(
         raise typer.Exit(code=1)
 
     if input_file:
-        if input_file.suffix.lower() != '.srt' and not transcribe:
-            logger.error(f"未启用转录功能，无法处理非字幕文件: {input_file.name}")
-            print(f"[bold red]❌ 未启用转录功能![/bold red]")
-            print(f"文件 [cyan]{input_file.name}[/cyan] 需要转录才能处理。")
-            print(f"请添加 [bold magenta]--transcribe[/bold magenta] 参数以启用转录功能。")
+        if input_file.suffix.lower() != '.srt':
+            logger.error(f"只支持 SRT 字幕文件: {input_file.name}")
+            print(f"[bold red]❌ 只支持 SRT 字幕文件![/bold red]")
+            print(f"文件 [cyan]{input_file.name}[/cyan] 不是 SRT 格式。")
             raise typer.Exit(code=1)
 
         files_to_process = [input_file]
@@ -108,13 +99,13 @@ def main(
     else:
         batch_input_dir = input_dir if input_dir else Path.cwd()
         batch_input_dir = batch_input_dir.resolve()
-        files_to_process = _get_batch_files(max_count, llm_model, batch_input_dir, transcribe)
+        files_to_process = _get_batch_files(max_count, llm_model, batch_input_dir)
 
     if dry_run:
-        _show_dry_run_summary(files_to_process, target_lang, output_dir, model, llm_model, batch_input_dir)
+        _show_dry_run_summary(files_to_process, target_lang, output_dir, llm_model, batch_input_dir)
         raise typer.Exit(code=0)
 
-    _process_files_batch(files_to_process, target_lang, output_dir, model, llm_model,
+    _process_files_batch(files_to_process, target_lang, output_dir, llm_model,
                         split_model, translation_model, preserve_intermediate)
 
 
@@ -168,51 +159,43 @@ def _natural_sort_key(s: str):
     return [int(p) if p.isdigit() else p.casefold() for p in parts]
 
 
-def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path, transcribe: bool) -> list:
+def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path) -> list:
     """获取批量处理的文件列表"""
-    if transcribe:
-        # 转录模式：支持字幕和所有媒体文件
-        patterns = ["*.srt"] + [f"*{ext}" for ext in MEDIA_EXTENSIONS]
-    else:
-        # 翻译模式：只支持字幕文件
-        patterns = ["*.srt"]
+    # 只支持字幕文件
+    patterns = ["*.srt"]
 
     # 确保input_dir是绝对路径
     input_dir = input_dir.resolve()
 
-    # 查找所有媒体文件（使用绝对路径）
-    media_files = []
+    # 查找所有 SRT 文件（使用绝对路径）
+    srt_files = []
     for pattern in patterns:
-        media_files.extend(glob.glob(str(input_dir / pattern)))
-    
-    if not media_files:
-        print(f"[bold red]{input_dir} 目录中没有找到需要处理的媒体文件。[/bold red]")
+        srt_files.extend(glob.glob(str(input_dir / pattern)))
+
+    if not srt_files:
+        print(f"[bold red]{input_dir} 目录中没有找到 SRT 字幕文件。[/bold red]")
         print("[dim]支持的格式：[/dim]")
         print("[dim]  • 字幕文件: .srt[/dim]")
-        print("[dim]  • 音频文件: .mp3, .m4a, .wav, .flac, .aac, .ogg, .wma, .aiff, .opus[/dim]")
-        print("[dim]  • 视频文件: .mp4, .avi, .mov, .mkv, .webm, .flv, .wmv, .m4v, .mpeg, .mpg, .3gp, .ts[/dim]")
         raise typer.Exit(code=1)
-    
+
     # 提取基础文件名并去重排序
     base_names = set()
-    for file_path in media_files:
+    for file_path in srt_files:
         # 转换为Path对象并获取相对于input_dir的路径
         file = Path(file_path)
         relative_path = file.relative_to(input_dir)
         file_name = relative_path.name
 
-        # 移除扩展名（使用常量构建正则表达式）
-        all_exts = ['srt'] + [ext.lstrip('.') for ext in MEDIA_EXTENSIONS]
-        ext_pattern = r'\.(' + '|'.join(all_exts) + r')$'
-        base_name = re.sub(ext_pattern, '', file_name, flags=re.IGNORECASE)
+        # 移除扩展名
+        base_name = re.sub(r'\.srt$', '', file_name, flags=re.IGNORECASE)
 
         # 移除各种语言后缀
         base_name = _remove_language_suffix(base_name)
         base_names.add(base_name)
-    
+
     # 自然排序基础文件名（EP2 在 EP10 之前）
     base_names = sorted(base_names, key=_natural_sort_key)
-    
+
     # 为每个基础名称找到对应的输入文件
     files_to_process = []
     for base_name in base_names:
@@ -221,21 +204,14 @@ def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path, 
         if ass_file.exists():
             continue
 
-        # 确定输入文件优先级：srt > 音频 > 视频（音频转录更快）
-        input_file_found = None
-
-        for ext in ['.srt'] + AUDIO_EXTENSIONS + VIDEO_EXTENSIONS:
-            candidate = input_dir / f"{base_name}{ext}"
-            if candidate.exists():
-                input_file_found = candidate
-                break
-
-        if input_file_found:
-            files_to_process.append(input_file_found)
-            print(f"📄 发现文件 [cyan]{input_file_found}[/cyan]")
+        # 查找 SRT 文件
+        candidate = input_dir / f"{base_name}.srt"
+        if candidate.exists():
+            files_to_process.append(candidate)
+            print(f"📄 发现文件 [cyan]{candidate}[/cyan]")
         else:
-            print(f"❌ 没有找到 [yellow]{base_name}[/yellow] 的输入文件")
-    
+            print(f"❌ 没有找到 [yellow]{base_name}[/yellow] 的 SRT 文件")
+
     if not files_to_process:
         print("[bold yellow]没有找到需要处理的新文件。[/bold yellow]")
         raise typer.Exit(code=0)
@@ -252,7 +228,7 @@ def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path, 
 
 
 def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: Path,
-                         model: str, llm_model: Optional[str], input_dir: Path):
+                         llm_model: Optional[str], input_dir: Path):
     """显示预览模式的文件处理信息"""
     from rich.console import Console
     from rich.table import Table
@@ -276,10 +252,6 @@ def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: 
     # 显示模型配置
     if llm_model:
         info_table.add_row("🤖 LLM模型", llm_model)
-
-    needs_transcription = any(f.suffix.lower() != '.srt' for f in files_to_process)
-    if needs_transcription:
-        info_table.add_row("🎙️  转录模型", model)
 
     console.print(info_table)
     console.print()
@@ -309,14 +281,12 @@ def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: 
 
         # 统计信息
         total_size = sum(f.stat().st_size for f in files_to_process if f.exists())
-        srt_count = sum(1 for f in files_to_process if f.suffix.lower() == '.srt')
-        media_count = len(files_to_process) - srt_count
+        srt_count = len(files_to_process)  # 现在只有 SRT 文件
 
         summary = f"""
 [bold]📊 处理统计:[/bold]
 • 总文件数: {len(files_to_process)} 个
 • 字幕文件: {srt_count} 个 (直接翻译)
-• 音视频文件: {media_count} 个 (转录+翻译)
 • 总大小: {total_size / (1024 * 1024):.1f} MB
         """
         console.print(Panel(summary.strip(), title="[bold green]处理概览[/bold green]", border_style="green"))
@@ -337,35 +307,13 @@ def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: 
 
 
 def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path,
-                        model: str, llm_model: Optional[str],
+                        llm_model: Optional[str],
                         split_model: Optional[str],
                         translation_model: Optional[str], preserve_intermediate: bool):
     """批量处理文件"""
-    from .transcription_core.model_cache import model_context
-    
     count = 0
     generated_ass_files = []
-    
-    # 全局预检查转录模型（只对需要转录的文件执行）
-    model_precheck_passed = None
-    needs_transcription = any(f.suffix.lower() != '.srt' for f in files_to_process)
-    
-    if needs_transcription:
-        from .processor import precheck_model_availability
-        print("[bold blue]>>> 预检查转录环境...[/bold blue]")
-        model_precheck_passed = precheck_model_availability(model, show_progress=True)
-        
-        if not model_precheck_passed:
-            print("[bold red]❌ 转录模型不可用，无法处理需要转录的文件[/bold red]")
-            # 过滤掉需要转录的文件，只处理 .srt 文件
-            srt_files = [f for f in files_to_process if f.suffix.lower() == '.srt']
-            if srt_files:
-                print(f"[bold yellow]将只处理 {len(srt_files)} 个 SRT 文件[/bold yellow]")
-                files_to_process = srt_files
-            else:
-                print("[bold red]没有可处理的 SRT 文件，退出批量处理[/bold red]")
-                return
-    
+
     # 在批量处理开始时初始化翻译服务并显示配置（只显示一次）
     from .service import SubtitleTranslatorService
     try:
@@ -380,59 +328,51 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
     except Exception as init_error:
         print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
         raise
-    
+
     # 根据文件数量决定使用批量模式还是单文件模式
     is_batch_mode = len(files_to_process) > 1
-    
-    with model_context(batch_mode=is_batch_mode):
-        for i, current_input_file in enumerate(files_to_process):
-            print()
-            logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
-            if is_batch_mode:
-                print(f"🎯 [bold cyan]开始处理第 {i+1}/{len(files_to_process)} 个文件...[/bold cyan]")
-            else:
-                print(f"🎯 [bold cyan]开始处理文件...[/bold cyan]")
-            
-            try:
-                # 根据实际情况传递批量模式标志
-                from .processor import process_single_file
-                process_single_file(
-                    current_input_file, target_lang, output_dir, model,
-                    llm_model, model_precheck_passed,
-                    batch_mode=is_batch_mode, translator_service=translator_service,
-                    preserve_intermediate=preserve_intermediate
-                )
-                count += 1
-                
-                # 检查是否生成了ASS文件
-                ass_file = output_dir / f"{current_input_file.stem}.ass"
-                if ass_file.exists():
-                    generated_ass_files.append(ass_file)
-                    logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
-                    print(f"📺 [cyan]双语ASS文件已生成[/cyan]")
-                
-                logger.info(f"✅ {current_input_file.stem} 处理完成！")
-                print(f"[bold green]✅ 处理完成！[/bold green]")
-            
-            except Exception as e:
-                from .exceptions import SmartSplitError, TranslationError
-                if isinstance(e, (SmartSplitError, TranslationError)):
-                    # 这些异常已经在processor.py中显示过了，这里不重复显示
-                    # 但需要记录到日志中用于统计
-                    logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
-                else:
-                    logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
-                    print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
-            
-            print()  # 添加空行分隔
-    
-    # 处理完成，显示模型优化信息
-    if needs_transcription and count > 0:
+
+    for i, current_input_file in enumerate(files_to_process):
+        print()
+        logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
         if is_batch_mode:
-            print("🎯 [dim]批量处理完成，模型已自动释放，内存已优化[/dim]")
+            print(f"🎯 [bold cyan]开始处理第 {i+1}/{len(files_to_process)} 个文件...[/bold cyan]")
         else:
-            print("🎯 [dim]处理完成，模型已自动释放，内存已优化[/dim]")
-    
+            print(f"🎯 [bold cyan]开始处理文件...[/bold cyan]")
+
+        try:
+            # 处理单个文件
+            from .processor import process_single_file
+            process_single_file(
+                current_input_file, target_lang, output_dir,
+                llm_model,
+                batch_mode=is_batch_mode, translator_service=translator_service,
+                preserve_intermediate=preserve_intermediate
+            )
+            count += 1
+
+            # 检查是否生成了ASS文件
+            ass_file = output_dir / f"{current_input_file.stem}.ass"
+            if ass_file.exists():
+                generated_ass_files.append(ass_file)
+                logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
+                print(f"📺 [cyan]双语ASS文件已生成[/cyan]")
+
+            logger.info(f"✅ {current_input_file.stem} 处理完成！")
+            print(f"[bold green]✅ 处理完成！[/bold green]")
+
+        except Exception as e:
+            from .exceptions import SmartSplitError, TranslationError
+            if isinstance(e, (SmartSplitError, TranslationError)):
+                # 这些异常已经在processor.py中显示过了，这里不重复显示
+                # 但需要记录到日志中用于统计
+                logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
+            else:
+                logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
+                print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
+
+        print()  # 添加空行分隔
+
     # 显示处理结果
     _show_results(count, generated_ass_files, output_dir, is_batch_mode)
 
@@ -458,153 +398,6 @@ def _show_results(count: int, generated_ass_files: list, output_dir: Path, is_ba
             print(f"📺 [bold green]已生成 {len(generated_ass_files)} 个双语ASS文件[/bold green]")
         
         logger.info("处理完毕！")
-
-
-@app.command("model")
-def model_cmd(
-    ctx: typer.Context,
-    action: str = typer.Argument(..., help="要执行的操作: list(列出已缓存模型), info(显示模型信息), download(预下载模型), clean(清理缓存)"),
-    model_id: Optional[str] = typer.Argument(None, help=f"模型ID (download和info操作默认: {DEFAULT_TRANSCRIPTION_MODEL})")
-):
-    """模型管理命令"""
-    from rich.console import Console
-    from rich.table import Table
-    from pathlib import Path
-    import os
-    import shutil
-    
-    console = Console()
-    
-    if action == "list":
-        """列出已缓存的模型"""
-        try:
-            # 获取缓存目录
-            cache_dir = os.environ.get("HF_HOME") or os.environ.get("HUGGINGFACE_HUB_CACHE") or Path.home() / ".cache" / "huggingface"
-            cache_dir = Path(cache_dir) / "hub"
-            
-            if not cache_dir.exists():
-                console.print("[yellow]📂 还没有缓存任何模型[/yellow]")
-                return
-            
-            # 查找模型缓存目录
-            model_dirs = [d for d in cache_dir.iterdir() if d.is_dir() and d.name.startswith("models--")]
-            
-            if not model_dirs:
-                console.print("[yellow]📂 还没有缓存任何模型[/yellow]")
-                return
-            
-            # 创建表格显示模型信息
-            table = Table(title="🤖 已缓存的模型列表")
-            table.add_column("模型ID", style="cyan")
-            table.add_column("缓存大小", style="green")
-            table.add_column("最后修改时间", style="dim")
-            
-            for model_dir in sorted(model_dirs):
-                # 解析模型ID
-                model_id = model_dir.name.replace("models--", "").replace("--", "/")
-                
-                # 计算目录大小
-                total_size = sum(f.stat().st_size for f in model_dir.rglob('*') if f.is_file())
-                size_mb = total_size / (1024 * 1024)
-                
-                # 获取最后修改时间
-                import datetime
-                mtime = datetime.datetime.fromtimestamp(model_dir.stat().st_mtime)
-                
-                table.add_row(
-                    model_id,
-                    f"{size_mb:.1f} MB",
-                    mtime.strftime("%Y-%m-%d %H:%M")
-                )
-            
-            console.print(table)
-            console.print(f"\n📍 缓存位置: [dim]{cache_dir}[/dim]")
-            
-        except Exception as e:
-            console.print(f"[red]❌ 获取模型列表失败: {str(e)}[/red]")
-    
-    elif action == "info":
-        """显示指定模型的详细信息"""
-        # 如果没有指定模型ID，使用默认模型
-        if not model_id:
-            model_id = DEFAULT_TRANSCRIPTION_MODEL
-            console.print(f"[dim]使用默认模型: {model_id}[/dim]")
-
-        try:
-            # 尝试查找本地缓存
-            from .transcription_core.utils import _find_model_in_hf_cache
-            try:
-                model_path = _find_model_in_hf_cache(model_id)
-                console.print(f"✅ [green]模型已缓存[/green]: [bold]{model_id}[/bold]")
-                console.print(f"📄 模型路径: [dim]{model_path}[/dim]")
-
-                # 显示文件大小
-                config_path = model_path / "config.json"
-                weight_path = model_path / "model.safetensors"
-                if config_path.exists() and weight_path.exists():
-                    config_size = config_path.stat().st_size / 1024
-                    weight_size = weight_path.stat().st_size / (1024 * 1024)
-                    console.print(f"📊 大小: 配置 {config_size:.1f} KB, 权重 {weight_size:.1f} MB")
-
-            except FileNotFoundError:
-                console.print(f"[yellow]⚠️  模型未缓存[/yellow]: [bold]{model_id}[/bold]")
-                console.print(f"💡 请使用以下命令下载模型:")
-                console.print(f"   [green]hf download {model_id}[/green]")
-
-        except Exception as e:
-            console.print(f"[red]❌ 获取模型信息失败: {str(e)}[/red]")
-    
-    elif action == "download":
-        """预下载指定模型"""
-        console.print(f"[yellow]⚠️  该命令已废弃[/yellow]")
-        console.print(f"请使用 HuggingFace CLI 下载模型:")
-        console.print(f"  [green]hf download {model_id or DEFAULT_TRANSCRIPTION_MODEL}[/green]")
-    
-    elif action == "clean":
-        """清理模型缓存"""
-        try:
-            # 获取缓存目录
-            cache_dir = os.environ.get("HF_HOME") or os.environ.get("HUGGINGFACE_HUB_CACHE") or Path.home() / ".cache" / "huggingface"
-            cache_dir = Path(cache_dir) / "hub"
-            
-            if not cache_dir.exists():
-                console.print("[yellow]📂 缓存目录不存在，无需清理[/yellow]")
-                return
-            
-            # 计算缓存大小
-            total_size = sum(f.stat().st_size for f in cache_dir.rglob('*') if f.is_file())
-            size_mb = total_size / (1024 * 1024)
-            
-            # 询问确认
-            if size_mb > 0:
-                console.print(f"⚠️  [yellow]即将清理 {size_mb:.1f} MB 的模型缓存[/yellow]")
-                console.print(f"📍 缓存位置: [dim]{cache_dir}[/dim]")
-                
-                confirm = typer.confirm("确定要清理所有模型缓存吗？")
-                if not confirm:
-                    console.print("❌ 取消清理操作")
-                    return
-                
-                # 清理缓存
-                shutil.rmtree(cache_dir)
-                console.print("✅ [green]模型缓存清理完成[/green]")
-            else:
-                console.print("[yellow]📂 缓存目录为空，无需清理[/yellow]")
-                
-        except Exception as e:
-            console.print(f"[red]❌ 清理缓存失败: {str(e)}[/red]")
-    
-    else:
-        console.print(f"[red]❌ 未知操作: {action}[/red]")
-        console.print("💡 支持的操作: list, info, download, clean")
-        console.print("\n📖 使用示例:")
-        console.print("   translate model list                                    # 列出已缓存模型")
-        console.print("   translate model info                                    # 显示默认模型信息")
-        console.print("   translate model info mlx-community/parakeet-tdt-0.6b-v2  # 显示指定模型信息")
-        console.print("   translate model download                                      # 预下载默认模型")
-        console.print("   translate model download mlx-community/parakeet-tdt-0.6b-v2  # 预下载指定模型")
-        console.print("   translate model clean                                   # 清理缓存")
-
 
 
 @app.command("version")

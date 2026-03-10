@@ -2,13 +2,10 @@
 
 [English](./README.md) | [中文](./README_zh.md)
 
-A command-line tool for English video transcription and multilingual subtitle translation. It transcribes English audio/video into subtitles, translates them into multiple target languages, and generates bilingual ASS subtitle files.
-
-> ⚠️ **Source Language**: This tool only supports **English** audio/video for transcription. If your content is in another language, please provide English SRT subtitles first.
+A command-line tool for multilingual subtitle translation. Translates English SRT subtitles into multiple target languages and generates bilingual ASS subtitle files.
 
 ## Features
 
-- **English Audio/Video Transcription**: Uses Parakeet MLX model to transcribe English speech to SRT subtitles.
 - **Multilingual Translation**: Supports translating English subtitles into Chinese, Japanese, Korean, French, and many other languages.
 - **Intelligent Segmentation**: Multi-tier fallback strategies including punctuation-based and rule-based semantic splitting.
 - **AI-Powered Translation**: Leverages various LLM models for high-quality translation.
@@ -16,24 +13,9 @@ A command-line tool for English video transcription and multilingual subtitle tr
 - **Batch Processing**: Processes multiple files simultaneously.
 - **Modular Configuration**: Configurable models for sentence splitting and translation.
 - **External Context Support**: Provide additional translation context via context.txt files.
+- **Terminology Support**: Supports global and local terminology to ensure consistent translation of technical terms.
 
 ## Quick Start
-
-### Prerequisites
-
-**Download Transcription Model (Required for transcription)**
-
-Before using the transcription feature, you must download the model:
-
-```bash
-# Download the default transcription model (~1.2GB)
-hf download mlx-community/parakeet-tdt-0.6b-v2
-```
-
-The model will be automatically cached at:
-- macOS/Linux: `~/.cache/huggingface/hub/models--mlx-community--parakeet-tdt-0.6b-v2/`
-
-> **Note**: This step is only required for transcription. If you already have English SRT files, you can skip this and directly use the `translate` command.
 
 ### Installation
 ```bash
@@ -65,116 +47,60 @@ LLM_MODEL=gpt-4o-mini
 
 ### Basic Usage
 ```bash
-# Batch process all files in the current directory (translates to Chinese by default)
+# Batch process all SRT files in the current directory (translates to Chinese by default)
 translate
 
 # Process a single file
-translate -i video.mp4
+translate -i subtitle.srt
 
 # Translate to different target languages (Chinese, Japanese, Korean, etc.)
-translate -i video.mp4 -t zh    # Chinese (Simplified)
-translate -i video.mp4 -t ja    # Japanese
-translate -i video.mp4 -t ko    # Korean
-translate -i video.mp4 -t fr    # French
+translate -i subtitle.srt -t zh    # Chinese (Simplified)
+translate -i subtitle.srt -t ja    # Japanese
+translate -i subtitle.srt -t ko    # Korean
+translate -i subtitle.srt -t fr    # French
 
-# Transcribe audio/video only (no translation)
-transcribe video.mp4
-
-# Transcribe multiple files
-transcribe audio1.mp3 audio2.wav video.mp4
-
-# Generate word-level timestamps
-transcribe video.mp4 --timestamps
-
-# Output in multiple formats
-transcribe video.mp4 --output-format all
+# Preserve intermediate translation files
+translate -i subtitle.srt -t zh --preserve-intermediate
 ```
 
 ## Workflow
 
-### Full Workflow (English transcription + translation)
 ```
-English Audio/Video → Transcribe → English SRT → Translate → Bilingual ASS
-```
-
-### Translation-Only (with existing English subtitles)
-```
-English SRT → Translate to Target Language → Bilingual ASS
-```
-
-### Transcription-Only (transcribe command)
-```
-English Audio/Video → Transcribe → SRT/TXT/VTT/JSON
+English SRT Subtitle → Intelligent Segmentation → AI Translation → Bilingual ASS Subtitle
 ```
 
 ## Supported Formats
 
 ### Input Formats
-- **Subtitle Files**: `.srt` (skips transcription, directly translates)
-- **Audio Formats** (9 formats): `.mp3`, `.m4a`, `.wav`, `.flac`, `.aac`, `.ogg`, `.wma`, `.aiff`, `.opus`
-- **Video Formats** (11 formats): `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`, `.flv`, `.wmv`, `.m4v`, `.mpeg`, `.mpg`, `.3gp`, `.ts`
-
-**Processing Priority**: `.srt` > audio formats > video formats (audio transcription is faster)
+- **Subtitle Files**: `.srt` (English subtitles)
 
 ### Output Formats
-- **translate**: Generates `.srt` (English) and `.ass` (bilingual) files.
-- **transcribe**: Supports various formats like TXT, SRT, VTT, JSON, etc.
-
-## Transcription Features
-
-A professional transcription tool based on the Parakeet MLX model:
-
-- **High Performance**: Excellent performance on Apple Silicon, powered by the Apple MLX framework.
-- **Smart Chunking**: Automatically handles long audio files to prevent memory overflow.
-- **Precise Timestamps**: Supports word-level timestamps with millisecond accuracy.
-- **Batch Processing**: Transcribe multiple audio files at once.
-
-### Advanced Usage
-```bash
-# Process long audio (automatic chunking)
-transcribe long_podcast.mp3 --chunk-duration 120 --overlap-duration 15
-
-# Custom output directory and filename
-transcribe interview.mp3 --output-dir ./transcripts --output-template "interview_{filename}"
-
-# High-precision mode
-transcribe audio.mp3 --fp32
-```
+- **English SRT**: Original English subtitles
+- **Target Language SRT**: Translated subtitles
+- **Bilingual ASS**: Bilingual subtitle file (English + target language)
 
 ## Command-Line Reference
 
 ### translate Command
 ```bash
-translate [OPTIONS] [COMMAND]
+translate [OPTIONS]
 
 Options:
   -i, --input-file FILE    Path to a single file. If not specified, batch processes the current directory.
   -n, --count INTEGER      Maximum number of files to process [default: -1]
-  -t, --target_lang TEXT   Target language [default: zh]
-  -o, --output_dir PATH    Output directory [default: Current directory]
-  --model TEXT             Transcription model
+  -t, --target-lang TEXT   Target language [default: zh]
+  -o, --output-dir PATH    Output directory [default: Current directory]
   -m, --llm-model TEXT     LLM model
-```
-
-### transcribe Command
-```bash
-transcribe [OPTIONS] AUDIOS...
-
-Options:
-  --model TEXT                    Transcription model path (optional, defaults to HF cache)
-  --output-dir PATH               Output directory [default: .]
-  --output-format [txt|srt|vtt|json|all]  Output format [default: srt]
-  --output-template TEXT          Filename template [default: {filename}]
-  --timestamps/--no-timestamps    Output word-level timestamps [default: False]
-  --overlap-duration FLOAT        Overlap duration in seconds [default: 30.0]
-  -v, --verbose                   Show detailed information
-  --fp32/--bf16                   Use FP32 precision [default: bf16]
+  --split-model TEXT       Sentence splitting model
+  --translation-model TEXT Translation model
+  -p, --preserve-intermediate  Preserve intermediate translation files
+  --dry-run                Preview mode, show files without processing
 ```
 
 ### Supported Languages
 
 **Source Language:**
-- English only (for transcription)
+- English only
 
 **Target Languages:**
 Supports translation from English to multiple languages:
@@ -183,7 +109,7 @@ Supports translation from English to multiple languages:
 - **European Languages**: `fr` (French), `de` (German), `es` (Spanish), `pt` (Portuguese), `it` (Italian), `ru` (Russian)
 - **Other**: `ar` (Arabic), and more
 
-> **Note**: The system is designed to transcribe English audio/video and translate to any supported target language.
+> **Note**: This tool focuses on translating English subtitles and requires English SRT subtitle files as input.
 
 ## Configuration
 
