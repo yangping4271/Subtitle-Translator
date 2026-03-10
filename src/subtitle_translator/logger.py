@@ -198,7 +198,7 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
         if new_level != self._current_level:
             self._current_level = new_level
             if self._file_handler:
-                self._file_handler.setLevel(new_level)
+                self._file_handler.setLevel(logging.DEBUG)
         
     def start_listener(self):
         if self._queue_listener is None:
@@ -220,8 +220,9 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
         )
         file_formatter = ColoredFormatter(use_color=False, use_emoji=True)
         self._file_handler.setFormatter(file_formatter)
-        self._file_handler.setLevel(self._current_level)
-        
+        # 文件处理器使用 DEBUG 级别，记录所有详细信息
+        self._file_handler.setLevel(logging.DEBUG)
+
         return [self._file_handler]
 
 def setup_logger(name: str,
@@ -229,7 +230,8 @@ def setup_logger(name: str,
                 datefmt: str = '%Y-%m-%d %H:%M:%S') -> logging.Logger:
     """
     创建并配置一个日志记录器。
-    所有日志统一使用INFO级别。
+    logger 允许 DEBUG 及以上级别进入队列，由文件处理器统一写入日志。
+    终端输出仍由各处的 print 控制，避免与日志重复输出。
 
     参数：
     - name: 日志记录器的名称
@@ -238,7 +240,7 @@ def setup_logger(name: str,
     """
     global queue_handler
 
-    level = logging.INFO
+    level = logging.DEBUG
 
     logger = logging.getLogger(name)
     logger.setLevel(level)

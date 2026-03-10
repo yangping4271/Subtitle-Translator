@@ -89,7 +89,7 @@ def fix_timestamp_overlaps(subtitles: List[Dict]) -> tuple[List[Dict], int]:
                 # 如果下一条开始时间 <= 当前开始时间，设为零时长以彻底消除重叠
                 if new_end_ms <= current_start_ms:
                     new_end_ms = current_start_ms
-                    logger.warning(
+                    logger.debug(
                         f"字幕 {sub['id']} 和 {subtitles[i+1]['id']} 开始时间相同或倒序，"
                         f"将字幕 {sub['id']} 设为零时长以消除重叠"
                     )
