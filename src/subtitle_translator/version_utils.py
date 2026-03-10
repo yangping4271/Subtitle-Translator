@@ -42,14 +42,13 @@ def get_project_version() -> str:
 def get_dependency_versions() -> Dict[str, str]:
     """获取主要依赖的版本信息"""
     dependencies = {
-        "mlx": "MLX框架",
-        "typer": "命令行框架", 
+        "openai": "OpenAI 客户端",
+        "typer": "命令行框架",
         "rich": "终端美化",
-        "openai": "OpenAI客户端",
-        "librosa": "音频处理",
-        "huggingface-hub": "模型下载"
+        "httpx": "HTTP 客户端",
+        "numpy": "数值计算",
     }
-    
+
     versions = {}
     for dep_name, desc in dependencies.items():
         try:
@@ -57,7 +56,7 @@ def get_dependency_versions() -> Dict[str, str]:
             versions[dep_name] = {"version": version, "description": desc}
         except importlib.metadata.PackageNotFoundError:
             versions[dep_name] = {"version": "未安装", "description": desc}
-    
+
     return versions
 
 
@@ -80,7 +79,7 @@ def display_version_info(console: Optional[Console] = None) -> None:
     # 创建主版本信息面板
     version_text = f"""
 [bold cyan]Subtitle Translator[/bold cyan] v{project_version}
-语音转录和字幕翻译的统一工具
+字幕翻译命令行工具
 
 [dim]Python版本:[/dim] {python_version}
 [dim]平台:[/dim] {sys.platform}
@@ -111,7 +110,7 @@ def display_version_info(console: Optional[Console] = None) -> None:
     console.print()
     console.print(dep_table)
     console.print()
-    console.print("[dim]💡 获取更多帮助: translate --help 或 transcribe --help[/dim]")
+    console.print("[dim]💡 获取更多帮助: translate --help[/dim]")
 
 
 if __name__ == "__main__":

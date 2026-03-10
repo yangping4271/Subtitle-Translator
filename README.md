@@ -194,9 +194,6 @@ uv sync --dev
 
 # Run the main program
 uv run python -m subtitle_translator.cli --help
-
-# Run the transcription feature
-uv run python -m subtitle_translator.transcription_core.cli --help
 ```
 
 
@@ -206,7 +203,6 @@ MIT License - See the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgements
 
-- [Parakeet MLX](https://github.com/senstella/parakeet-mlx) - An implementation of the Nvidia Parakeet model using MLX on Apple Silicon.
 - [Video Captioner](https://github.com/WEIFENG2333/VideoCaptioner) - An intelligent subtitle assistant project.
 - [uv](https://github.com/astral-sh/uv) - A modern Python package management tool.
 - [Typer](https://github.com/tiangolo/typer) - An excellent command-line interface framework.

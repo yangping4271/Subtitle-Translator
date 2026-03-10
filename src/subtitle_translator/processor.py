@@ -108,7 +108,7 @@ def process_single_file(
     except Exception as e:
         _handle_translation_error(e, logger)
     finally:
-        # --- 清理中间翻译文件，保留原始转录文件 ---
+        # 清理中间翻译文件
         if preserve_intermediate:
             logger.info(">>> 保留中间翻译文件...")
             preserved_files = []
@@ -118,7 +118,7 @@ def process_single_file(
             if final_english_path and final_english_path.exists():
                 preserved_files.append("英文 SRT")
                 logger.info(f"保留中间文件: {final_english_path}")
-            
+
             if preserved_files:
                 print(f"💾 [bold green]已保留中间文件:[/bold green] {', '.join(preserved_files)}")
         else:
@@ -132,12 +132,6 @@ def process_single_file(
                 os.remove(final_english_path)
                 logger.info(f"已删除中间文件: {final_english_path}")
                 cleaned_files += 1
-            
+
             if cleaned_files > 0:
-                print(f"🧹 已清理 {cleaned_files} 个中间文件")
-        
-        # 处理原始SRT文件
-        if temp_srt_path and temp_srt_path.exists():
-            if input_file.suffix.lower() != '.srt':
-                logger.info(f"保留原始转录文件: {temp_srt_path}")
-                print(f"💾 [bold green]保留转录文件[/bold green]") 
+                print(f"🧹 已清理 {cleaned_files} 个中间文件") 

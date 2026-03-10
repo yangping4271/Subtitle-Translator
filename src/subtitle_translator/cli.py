@@ -18,7 +18,7 @@ logger = setup_logger(__name__)
 
 
 app = typer.Typer(
-    help="一个集成了语音转录、字幕翻译和格式转换的命令行工具"
+    help="字幕翻译命令行工具"
 )
 
 
@@ -120,10 +120,6 @@ def _get_file_type_info(file_ext: str) -> Tuple[str, str]:
     """获取文件类型和处理方式"""
     if file_ext == '.srt':
         return "字幕文件", "直接翻译"
-    if file_ext in AUDIO_EXTENSIONS:
-        return "音频文件", "转录+翻译"
-    if file_ext in VIDEO_EXTENSIONS:
-        return "视频文件", "转录+翻译"
     return "未知类型", "未知"
 
 

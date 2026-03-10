@@ -192,9 +192,6 @@ uv sync --dev
 
 # 运行主程序
 uv run python -m subtitle_translator.cli --help
-
-# 运行转录功能
-uv run python -m subtitle_translator.transcription_core.cli --help
 ```
 
 
@@ -204,7 +201,6 @@ MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
 
 ## 🙏 致谢
 
-- [Parakeet MLX](https://github.com/senstella/parakeet-mlx) - Nvidia Parakeet 模型在 Apple Silicon 上使用 MLX 的实现
 - [Video Captioner](https://github.com/WEIFENG2333/VideoCaptioner) - 智能字幕助手项目
 - [uv](https://github.com/astral-sh/uv) - 现代化的 Python 包管理工具
 - [Typer](https://github.com/tiangolo/typer) - 出色的命令行接口框架
