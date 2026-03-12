@@ -19,7 +19,7 @@ A command-line tool for multilingual subtitle translation. Translates English SR
 
 ### Installation
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/yangping4271/Subtitle-Translator.git
 cd Subtitle-Translator
 uv tool install .
 
@@ -30,16 +30,30 @@ uv tool update-shell
 
 ### Configuration
 
-Create `.env` file in your project directory:
+**Recommended: Use the interactive setup**
 
 ```bash
-# API Base URL
+translate init
+```
+
+This will create a configuration file at `~/.config/subtitle-translator/.env` with your API settings.
+
+**Alternative: Set environment variables directly**
+
+```bash
+export OPENAI_BASE_URL=https://api.openai.com/v1
+export OPENAI_API_KEY=your-api-key-here
+export SPLIT_MODEL=gpt-4o-mini
+export TRANSLATION_MODEL=gpt-4o
+```
+
+**Alternative: Manually create config file**
+
+Create `~/.config/subtitle-translator/.env`:
+
+```bash
 OPENAI_BASE_URL=https://api.openai.com/v1
-
-# API Key
 OPENAI_API_KEY=your-api-key-here
-
-# Model Configuration
 SPLIT_MODEL=gpt-4o-mini
 TRANSLATION_MODEL=gpt-4o
 LLM_MODEL=gpt-4o-mini
@@ -115,7 +129,27 @@ Supports translation from English to multiple languages:
 
 ### Environment Variables
 
-Create `.env` file in the project root directory:
+**Recommended: Use the interactive setup**
+
+```bash
+translate init
+```
+
+This will create a configuration file at `~/.config/subtitle-translator/.env` with your API settings.
+
+**Alternative: Set environment variables directly**
+
+```bash
+export OPENAI_BASE_URL=https://api.openai.com/v1
+export OPENAI_API_KEY=your-api-key-here
+export SPLIT_MODEL=gpt-4o-mini
+export TRANSLATION_MODEL=gpt-4o
+```
+
+**Alternative: Manually create config file**
+
+Create `~/.config/subtitle-translator/.env`:
+
 ```bash
 # OpenAI API Configuration (required)
 OPENAI_BASE_URL=https://api.openai.com/v1

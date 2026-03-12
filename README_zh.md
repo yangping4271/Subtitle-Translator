@@ -19,7 +19,7 @@
 
 ### 安装
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/yangping4271/Subtitle-Translator.git
 cd Subtitle-Translator
 uv tool install .
 
@@ -30,16 +30,30 @@ uv tool update-shell
 
 ### 配置
 
-在项目目录创建 `.env` 文件并配置API密钥：
+**推荐：使用交互式配置**
 
 ```bash
-# API 基础URL
+translate init
+```
+
+这将在 `~/.config/subtitle-translator/.env` 创建配置文件。
+
+**方式二：直接设置环境变量**
+
+```bash
+export OPENAI_BASE_URL=https://api.openai.com/v1
+export OPENAI_API_KEY=your-api-key-here
+export SPLIT_MODEL=gpt-4o-mini
+export TRANSLATION_MODEL=gpt-4o
+```
+
+**方式三：手动创建配置文件**
+
+创建 `~/.config/subtitle-translator/.env`：
+
+```bash
 OPENAI_BASE_URL=https://api.openai.com/v1
-
-# API 密钥
 OPENAI_API_KEY=your-api-key-here
-
-# 模型配置
 SPLIT_MODEL=gpt-4o-mini
 TRANSLATION_MODEL=gpt-4o
 LLM_MODEL=gpt-4o-mini
@@ -172,7 +186,27 @@ translate [OPTIONS]
 
 ## 配置
 
-在当前目录创建 `.env` 文件：
+**推荐：使用交互式配置**
+
+```bash
+translate init
+```
+
+这将在 `~/.config/subtitle-translator/.env` 创建配置文件。
+
+**方式二：直接设置环境变量**
+
+```bash
+export OPENAI_BASE_URL=https://api.openai.com/v1
+export OPENAI_API_KEY=your-api-key-here
+export SPLIT_MODEL=gpt-4o-mini
+export TRANSLATION_MODEL=gpt-4o
+```
+
+**方式三：手动创建配置文件**
+
+创建 `~/.config/subtitle-translator/.env`：
+
 ```bash
 # OpenAI API 配置（必需）
 OPENAI_BASE_URL=https://api.openai.com/v1
