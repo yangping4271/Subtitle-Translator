@@ -32,7 +32,7 @@ class SubtitleTranslatorService:
         from .env_setup import logger
         self.logger = logger
 
-    def _init_translation_env(
+    def init_translation_env(
         self,
         llm_model: Optional[str] = None,
         split_model: Optional[str] = None,
@@ -171,7 +171,7 @@ class SubtitleTranslatorService:
 
             # 只在需要时初始化翻译环境
             if not skip_env_init:
-                self._init_translation_env(llm_model)
+                self.init_translation_env(llm_model)
 
             # 加载字幕文件
             asr_data = self._load_subtitle_file(input_srt_path)

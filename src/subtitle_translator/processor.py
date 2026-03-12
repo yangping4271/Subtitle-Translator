@@ -30,7 +30,7 @@ def process_batch(
 
     try:
         translator_service = SubtitleTranslatorService()
-        translator_service._init_translation_env(
+        translator_service.init_translation_env(
             llm_model=llm_model,
             split_model=split_model,
             translation_model=translation_model,
@@ -144,7 +144,7 @@ def process_single_file(
         # 单文件模式，需要创建并初始化翻译服务
         try:
             translator_service = SubtitleTranslatorService()
-            translator_service._init_translation_env(llm_model, show_config=True)
+            translator_service.init_translation_env(llm_model, show_config=True)
         except Exception as init_error:
             print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
             raise

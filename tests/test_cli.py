@@ -45,3 +45,26 @@ def test_dry_run_empty_dir(tmp_path):
         result = runner.invoke(app, ["--dry-run", "--input-dir", str(tmp_path)])
     assert result.exit_code == 1  # 应该失败
     assert "没有找到" in result.output or "No" in result.output  # 应该有错误提示
+
+
+def test_dry_run_does_not_create_output_dir(tmp_path):
+    """测试 dry-run 模式不会创建输出目录"""
+    # 创建一个测试 SRT 文件
+    test_srt = tmp_path / "test.srt"
+    test_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nTest subtitle\n")
+
+    # 指定一个不存在的输出目录
+    output_dir = tmp_path / "output_should_not_exist"
+
+    with patch("subtitle_translator.cli.setup_environment"):
+        result = runner.invoke(app, [
+            "--dry-run",
+            "-i", str(test_srt),
+            "-o", str(output_dir)
+        ])
+
+    # dry-run 应该成功退出
+    assert result.exit_code == 0
+    # 输出目录不应该被创建
+    assert not output_dir.exists()
+

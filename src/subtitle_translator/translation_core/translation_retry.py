@@ -221,36 +221,36 @@ class TranslationExecutor:
 
     def _translate_single_subtitle_no_retry(self, key: int, value: str) -> Dict:
         """翻译单条字幕（不重试）。"""
-        return self._translate_single_subtitle_impl(key, value)
-
-    def _translate_single_subtitle_impl(self, key: int, value: str) -> Dict:
-        """翻译单条字幕的实现。"""
         try:
-            message = [
-                {
-                    "role": "system",
-                    "content": SINGLE_TRANSLATE_PROMPT.format(
-                        target_language=self.config.target_language,
-                        terminology=self._format_terminology(),
-                    ),
-                },
-                {"role": "user", "content": value},
-            ]
-
-            response = self.client.chat.completions.create(
-                model=self.config.translation_model,
-                stream=False,
-                messages=message,
-                temperature=0.7,
-                timeout=80,
-            )
-
-            translate = validate_api_response(response, f"字幕ID {key}").strip()
-            logger.info(f"✓ 字幕ID {key} 翻译成功")
-            return {"optimized": value, "translation": translate}
+            return self._translate_single_subtitle_impl(key, value)
         except Exception as e:
             logger.error(f"✗ 字幕ID {key} 翻译失败: {e}")
             return {"optimized": value, "translation": ""}
+
+    def _translate_single_subtitle_impl(self, key: int, value: str) -> Dict:
+        """翻译单条字幕的实现。"""
+        message = [
+            {
+                "role": "system",
+                "content": SINGLE_TRANSLATE_PROMPT.format(
+                    target_language=self.config.target_language,
+                    terminology=self._format_terminology(),
+                ),
+            },
+            {"role": "user", "content": value},
+        ]
+
+        response = self.client.chat.completions.create(
+            model=self.config.translation_model,
+            stream=False,
+            messages=message,
+            temperature=0.7,
+            timeout=80,
+        )
+
+        translate = validate_api_response(response, f"字幕ID {key}").strip()
+        logger.info(f"✓ 字幕ID {key} 翻译成功")
+        return {"optimized": value, "translation": translate}
 
     def _format_terminology(self) -> str:
         """格式化术语表为 prompt 文本。"""

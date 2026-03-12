@@ -76,18 +76,7 @@ def main(
         logger.info(f"使用指定输出目录: {output_dir}")
 
     output_dir = output_dir.resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"输出目录已解析为: {output_dir}")
-
-    if not output_dir.exists():
-        logger.error(f"输出目录不存在: {output_dir}")
-        print(f"[bold red]❌ 输出目录不存在: {output_dir}[/bold red]")
-        raise typer.Exit(code=1)
-
-    if not os.access(output_dir, os.W_OK):
-        logger.error(f"输出目录不可写: {output_dir}")
-        print(f"[bold red]❌ 输出目录不可写: {output_dir}[/bold red]")
-        raise typer.Exit(code=1)
 
     if input_file:
         if input_file.suffix.lower() != '.srt':
@@ -108,6 +97,18 @@ def main(
     if dry_run:
         show_dry_run_summary(files_to_process, target_lang, output_dir, llm_model, batch_input_dir)
         raise typer.Exit(code=0)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not output_dir.exists():
+        logger.error(f"输出目录不存在: {output_dir}")
+        print(f"[bold red]❌ 输出目录不存在: {output_dir}[/bold red]")
+        raise typer.Exit(code=1)
+
+    if not os.access(output_dir, os.W_OK):
+        logger.error(f"输出目录不可写: {output_dir}")
+        print(f"[bold red]❌ 输出目录不可写: {output_dir}[/bold red]")
+        raise typer.Exit(code=1)
 
     process_batch(
         files_to_process, target_lang, output_dir, llm_model,
