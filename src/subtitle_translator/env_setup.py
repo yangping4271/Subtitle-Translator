@@ -33,15 +33,7 @@ def setup_environment(allow_missing_config=False):
 
     required_vars = ['OPENAI_BASE_URL', 'OPENAI_API_KEY']
 
-    # 先检查环境变量是否已经满足，满足则直接返回
-    if all(os.environ.get(v) for v in required_vars):
-        _env_loaded = True
-        if logger is None:
-            from .logger import setup_logger
-            logger = setup_logger(__name__)
-        return
-
-    # 环境变量不满足，尝试加载配置文件
+    # 先加载配置文件（不覆盖已有的环境变量）
     env_path = _get_config_path()
     if env_path.is_file():
         load_dotenv(env_path, verbose=False)
