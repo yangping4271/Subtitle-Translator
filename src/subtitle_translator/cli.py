@@ -12,6 +12,7 @@ from typing_extensions import Annotated
 from rich import print
 
 from .env_setup import setup_environment
+from .exceptions import ConfigurationError
 from .logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -46,7 +47,10 @@ def main(
     if ctx.invoked_subcommand is not None:
         return
 
-    setup_environment()
+    try:
+        setup_environment()
+    except ConfigurationError:
+        raise typer.Exit(code=1)
 
     try:
         _validate_target_language(target_lang)
@@ -480,7 +484,7 @@ def cli_main():
     """CLI入口点包装器，捕获所有未处理异常，避免输出 traceback"""
     try:
         app()
-    except SystemExit:
+    except (SystemExit, ConfigurationError):
         raise
     except Exception as e:
         print(f"[bold red]❌ 发生错误:[/bold red] {e}")

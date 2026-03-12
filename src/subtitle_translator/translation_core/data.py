@@ -1,5 +1,6 @@
 import re
 import os
+import math
 from typing import List, Dict, Optional
 from pathlib import Path
 from dataclasses import dataclass
@@ -31,7 +32,6 @@ def normalize_chinese_punctuation(text: str) -> str:
 def normalize_english_punctuation(text: str) -> str:
     """按 Netflix 规范处理英文标点：保留 ? ! ... ' "，删除 . , ; :"""
     # 先保护省略号
-    ELLIPSIS_PLACEHOLDER = '<<<ELLIPSIS>>>'
     text = text.replace('...', ELLIPSIS_PLACEHOLDER)
 
     # 删除 . , ; :
@@ -129,12 +129,7 @@ class SubtitleData:
             转换后的字幕将被现有的断句系统进一步优化，
             最终生成适合观看的句子级别字幕
         """
-        import math
-        import re
-        
-        CHARS_PER_PHONEME = 4  # 每个音素包含的字符数（基于语音学理论）
         new_segments = []
-        
         for seg in self.segments:
             text = seg.text
             duration = seg.end_time - seg.start_time

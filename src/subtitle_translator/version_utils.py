@@ -45,8 +45,6 @@ def get_dependency_versions() -> Dict[str, str]:
         "openai": "OpenAI 客户端",
         "typer": "命令行框架",
         "rich": "终端美化",
-        "httpx": "HTTP 客户端",
-        "numpy": "数值计算",
     }
 
     versions = {}

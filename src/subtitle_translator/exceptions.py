@@ -44,3 +44,8 @@ class EmptySubtitleError(SubtitleTranslatorError):
 class SubtitleProcessError(SubtitleTranslatorError):
     """字幕处理通用异常 - 用于其他字幕处理相关错误"""
     pass
+
+
+class ConfigurationError(SubtitleTranslatorError):
+    """配置异常 - 缺少或无效的配置"""
+    pass

@@ -193,52 +193,6 @@ class SubtitleOptimizer:
             if r['id'] in retry_map:
                 results[i] = retry_map[r['id']]
 
-    def translate(self, asr_data, context_info: str) -> List[Dict]:
-        """翻译字幕。"""
-        try:
-            self.batch_logs.clear()
-
-            subtitle_json = {int(k): v["original_subtitle"]
-                            for k, v in asr_data.to_json().items()}
-
-            result = self.translate_multi_thread(subtitle_json, context_info)
-
-            self._validate_translation_quality(result)
-
-            translated_subtitle = self._format_translation_results(result, subtitle_json)
-
-            self._print_all_batch_logs()
-            return translated_subtitle
-        finally:
-            self.stop()
-
-    def _validate_translation_quality(self, result: dict) -> None:
-        """验证翻译结果质量。"""
-        failed_count = sum(1 for v in result["translated_subtitles"].values()
-                          if _is_translation_failed(v))
-
-        if failed_count == len(result["translated_subtitles"]):
-            logger.warning("⚠️ 所有字幕翻译均失败，将保存优化后字幕，翻译轨为空")
-            logger.warning("💡 建议：请检查翻译模型名称是否正确，或更换其他可用模型")
-            return
-
-        if failed_count > 0:
-            total_count = len(result["translated_subtitles"])
-            logger.warning(f"⚠️ {failed_count}/{total_count} 条字幕翻译失败")
-
-    def _format_translation_results(self, result: dict, subtitle_json: dict) -> list:
-        """格式化翻译结果。"""
-        translated_subtitle = []
-        for k, v in result["optimized_subtitles"].items():
-            translated_text = {
-                "id": int(k),
-                "original": subtitle_json[str(k)],
-                "optimized": v,
-                "translation": result["translated_subtitles"][k]
-            }
-            translated_subtitle.append(translated_text)
-        return translated_subtitle
-
     def stop(self):
         """优雅关闭线程池。"""
         if hasattr(self, 'executor') and self.executor is not None:
@@ -250,15 +204,6 @@ class SubtitleOptimizer:
                 logger.error(f"关闭线程池时发生错误: {e}")
             finally:
                 self.executor = None
-
-    def translate_multi_thread(self, subtitle_json: Dict[int, str], context_info: Optional[str] = None):
-        """多线程批量翻译字幕（流水线处理，每个批次独立降级）。"""
-        try:
-            result = self._batch_translate(subtitle_json, context_info=context_info)
-            return result
-        except Exception as e:
-            logger.error(f"批量翻译完全失败：{e}")
-            raise
 
     def _translate_with_fallback(self, chunk: dict, context_info: Optional[str],
                                  batch_num: int, total_batches: int) -> list:

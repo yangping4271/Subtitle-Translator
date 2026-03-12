@@ -4,18 +4,21 @@ version = "0.5.6"
 description = "A command-line tool for multilingual subtitle translation."
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+authors = [{name = "yangping4271"}]
+keywords = ["subtitle", "translation", "srt", "ass", "llm"]
 dependencies = [
     "openai",
     "retry",
     "python-dotenv",
-    "requests",
-    "dacite>=1.9.2",
-    "numpy>=2.2.5",
     "typer>=0.15.3",
-    "httpx[socks]",
     "rich>=13.0.0",
-    "psutil>=5.9.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yangping4271/Subtitle-Translator"
+Repository = "https://github.com/yangping4271/Subtitle-Translator"
+Issues = "https://github.com/yangping4271/Subtitle-Translator/issues"
 
 [project.scripts]
 translate = "subtitle_translator.cli:cli_main"
@@ -26,3 +29,14 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+]

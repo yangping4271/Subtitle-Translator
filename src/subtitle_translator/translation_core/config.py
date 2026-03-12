@@ -137,15 +137,15 @@ class SubtitleConfig:
                 pass
 
         if not self.openai_base_url or not self.openai_api_key:
-            error_msg = (
-                f"环境变量验证失败:\n"
-                f"  OPENAI_BASE_URL = '{self.openai_base_url}' (长度: {len(self.openai_base_url)})\n"
-                f"  OPENAI_API_KEY = '{self.openai_api_key[:20]}...' (长度: {len(self.openai_api_key)})\n"
-                f"  LLM_MODEL = '{self.llm_model}'\n"
-                f"  SPLIT_MODEL = '{self.split_model}'\n"
-                f"  TRANSLATION_MODEL = '{self.translation_model}'"
+            missing = []
+            if not self.openai_base_url:
+                missing.append("OPENAI_BASE_URL")
+            if not self.openai_api_key:
+                missing.append("OPENAI_API_KEY")
+            raise ValueError(
+                f"缺少必需的环境变量: {', '.join(missing)}。"
+                f"请运行 'translate init' 初始化配置。"
             )
-            raise ValueError(error_msg)
 
 # 文件相关常量
 SRT_SUFFIX = ".srt"

@@ -56,6 +56,6 @@ def test_openai(base_url, api_key, model):
 if __name__ == "__main__":
     base_url = os.getenv("OPENAI_BASE_URL")
     api_key = os.getenv("OPENAI_API_KEY")
-    model = "google/gemini-2.0-flash-lite"
+    model = os.getenv("LLM_MODEL") or os.getenv("TRANSLATION_MODEL")
     success, msg = test_openai(base_url, api_key, model)
     print(f"Success: {success}, Message: {msg}")

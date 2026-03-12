@@ -11,14 +11,15 @@ from rich import print
 from .exceptions import OpenAIAPIError, EmptySubtitleError, TranslationError, SmartSplitError
 from .logger import log_section_end, log_section_start, log_stats
 from .translation_core.config import SubtitleConfig
-from .translation_core.data import SubtitleData
-from .translation_core.optimizer import SubtitleOptimizer
+from .translation_core.data import SubtitleData, load_subtitle
+from .translation_core.optimizer import SubtitleOptimizer, format_diff, _is_format_change_only, _is_wrong_replacement
 from .translation_core.spliter import (
     batch_by_sentence_count,
     merge_segments_within_batch,
     preprocess_segments,
     presplit_by_punctuation,
 )
+from .translation_core.terminology import load_terminology
 
 
 class SubtitleTranslatorService:
@@ -104,8 +105,6 @@ class SubtitleTranslatorService:
 
     def _load_subtitle_file(self, input_srt_path: Path) -> SubtitleData:
         """加载并验证字幕文件"""
-        from .translation_core.data import load_subtitle
-
         self.logger.info("📂 正在加载字幕文件...")
 
         asr_data = load_subtitle(str(input_srt_path))
@@ -170,7 +169,6 @@ class SubtitleTranslatorService:
             self._set_target_language(target_lang)
 
             # 加载术语表（全局 + 局部）
-            from .translation_core.terminology import load_terminology
             self.config.terminology = load_terminology(
                 self.config.target_language,
                 input_srt_path
@@ -393,8 +391,6 @@ class SubtitleTranslatorService:
 
     def _print_optimization_details(self, batch_logs: list) -> None:
         """打印详细的优化日志"""
-        from .translation_core.optimizer import format_diff
-
         self.logger.info("📊 字幕优化结果汇总")
 
         # 遍历所有日志，打印有实际改动的
@@ -411,8 +407,6 @@ class SubtitleTranslatorService:
 
     def _get_optimization_stats(self, batch_logs: list) -> dict:
         """从batch_logs中获取优化统计信息"""
-        from .translation_core.optimizer import _is_format_change_only, _is_wrong_replacement
-
         format_changes = 0
         content_changes = 0
         wrong_changes = 0
