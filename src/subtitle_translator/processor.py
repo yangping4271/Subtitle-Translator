@@ -3,15 +3,83 @@
 """
 import os
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from rich import print
 
 from .service import SubtitleTranslatorService
 from .logger import setup_logger
+from .console_views import show_results
 
 # 初始化logger
 logger = setup_logger(__name__)
+
+
+def process_batch(
+    files_to_process: List[Path],
+    target_lang: str,
+    output_dir: Path,
+    llm_model: Optional[str],
+    split_model: Optional[str],
+    translation_model: Optional[str],
+    preserve_intermediate: bool,
+) -> None:
+    """批量处理文件"""
+    count = 0
+    generated_ass_files = []
+
+    try:
+        translator_service = SubtitleTranslatorService()
+        translator_service._init_translation_env(
+            llm_model=llm_model,
+            split_model=split_model,
+            translation_model=translation_model,
+            show_config=True,
+        )
+        print()
+    except Exception as init_error:
+        print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
+        raise
+
+    is_batch_mode = len(files_to_process) > 1
+
+    for i, current_input_file in enumerate(files_to_process):
+        print()
+        logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
+        if is_batch_mode:
+            print(f"🎯 [bold cyan]开始处理第 {i+1}/{len(files_to_process)} 个文件...[/bold cyan]")
+        else:
+            print("[bold cyan]🎯 开始处理文件...[/bold cyan]")
+
+        try:
+            process_single_file(
+                current_input_file, target_lang, output_dir,
+                llm_model,
+                batch_mode=is_batch_mode, translator_service=translator_service,
+                preserve_intermediate=preserve_intermediate,
+            )
+            count += 1
+
+            ass_file = output_dir / f"{current_input_file.stem}.ass"
+            if ass_file.exists():
+                generated_ass_files.append(ass_file)
+                logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
+                print("[cyan]📺 双语ASS文件已生成[/cyan]")
+
+            logger.info(f"✅ {current_input_file.stem} 处理完成！")
+            print("[bold green]✅ 处理完成！[/bold green]")
+
+        except Exception as e:
+            from .exceptions import SmartSplitError, TranslationError
+            if isinstance(e, (SmartSplitError, TranslationError)):
+                logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
+            else:
+                logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
+                print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
+
+        print()
+
+    show_results(count, generated_ass_files, output_dir, is_batch_mode)
 
 
 def _handle_translation_error(e: Exception, logger) -> None:
@@ -56,7 +124,7 @@ def process_single_file(
     # 只接受 SRT 文件
     if input_file.suffix.lower() != '.srt':
         logger.error(f"只支持 SRT 字幕文件，当前文件: {input_file.name}")
-        print(f"[bold red]❌ 只支持 SRT 字幕文件![/bold red]")
+        print("[bold red]❌ 只支持 SRT 字幕文件![/bold red]")
         print(f"文件 [cyan]{input_file.name}[/cyan] 不是 SRT 格式。")
         raise RuntimeError(f"只支持 SRT 字幕文件，当前文件: {input_file.name}")
 

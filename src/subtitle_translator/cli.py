@@ -12,7 +12,8 @@ from .env_setup import setup_environment
 from .exceptions import ConfigurationError
 from .logger import setup_logger
 from .file_discovery import get_batch_files
-from .console_views import show_dry_run_summary, show_results
+from .console_views import show_dry_run_summary
+from .processor import process_batch
 
 logger = setup_logger(__name__)
 
@@ -55,13 +56,13 @@ def main(
         _validate_target_language(target_lang)
     except ValueError as e:
         logger.error(f"❌ 命令行参数错误 - 目标语言: {str(e)}")
-        print(f"[bold red]❌ 目标语言参数错误![/bold red]")
+        print("[bold red]❌ 目标语言参数错误![/bold red]")
         print(str(e))
-        print(f"\n💡 [bold blue]使用示例:[/bold blue]")
-        print(f"   translate -t zh     # 简体中文（默认）")
-        print(f"   translate -t ja     # 日文")
-        print(f"   translate -t ko     # 韩文")
-        print(f"   translate -t fr     # 法文")
+        print("\n💡 [bold blue]使用示例:[/bold blue]")
+        print("   translate -t zh     # 简体中文（默认）")
+        print("   translate -t ja     # 日文")
+        print("   translate -t ko     # 韩文")
+        print("   translate -t fr     # 法文")
         raise typer.Exit(code=1)
 
     if output_dir is None:
@@ -91,7 +92,7 @@ def main(
     if input_file:
         if input_file.suffix.lower() != '.srt':
             logger.error(f"只支持 SRT 字幕文件: {input_file.name}")
-            print(f"[bold red]❌ 只支持 SRT 字幕文件![/bold red]")
+            print("[bold red]❌ 只支持 SRT 字幕文件![/bold red]")
             print(f"文件 [cyan]{input_file.name}[/cyan] 不是 SRT 格式。")
             raise typer.Exit(code=1)
 
@@ -108,8 +109,10 @@ def main(
         show_dry_run_summary(files_to_process, target_lang, output_dir, llm_model, batch_input_dir)
         raise typer.Exit(code=0)
 
-    _process_files_batch(files_to_process, target_lang, output_dir, llm_model,
-                        split_model, translation_model, preserve_intermediate)
+    process_batch(
+        files_to_process, target_lang, output_dir, llm_model,
+        split_model, translation_model, preserve_intermediate
+    )
 
 
 def _validate_target_language(target_lang: str):
@@ -118,76 +121,6 @@ def _validate_target_language(target_lang: str):
     target_language_name = get_target_language(target_lang)
     print(f"🎯 [bold green]目标语言:[/bold green] [cyan]{target_language_name}[/cyan] ([dim]{target_lang}[/dim])")
 
-
-def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path,
-                        llm_model: Optional[str],
-                        split_model: Optional[str],
-                        translation_model: Optional[str], preserve_intermediate: bool):
-    """批量处理文件"""
-    count = 0
-    generated_ass_files = []
-
-    # 在批量处理开始时初始化翻译服务并显示配置（只显示一次）
-    from .service import SubtitleTranslatorService
-    try:
-        translator_service = SubtitleTranslatorService()
-        translator_service._init_translation_env(
-            llm_model=llm_model,
-            split_model=split_model,
-            translation_model=translation_model,
-            show_config=True
-        )
-        print()  # 添加空行分隔
-    except Exception as init_error:
-        print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
-        raise
-
-    # 根据文件数量决定使用批量模式还是单文件模式
-    is_batch_mode = len(files_to_process) > 1
-
-    for i, current_input_file in enumerate(files_to_process):
-        print()
-        logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
-        if is_batch_mode:
-            print(f"🎯 [bold cyan]开始处理第 {i+1}/{len(files_to_process)} 个文件...[/bold cyan]")
-        else:
-            print(f"🎯 [bold cyan]开始处理文件...[/bold cyan]")
-
-        try:
-            # 处理单个文件
-            from .processor import process_single_file
-            process_single_file(
-                current_input_file, target_lang, output_dir,
-                llm_model,
-                batch_mode=is_batch_mode, translator_service=translator_service,
-                preserve_intermediate=preserve_intermediate
-            )
-            count += 1
-
-            # 检查是否生成了ASS文件
-            ass_file = output_dir / f"{current_input_file.stem}.ass"
-            if ass_file.exists():
-                generated_ass_files.append(ass_file)
-                logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
-                print(f"📺 [cyan]双语ASS文件已生成[/cyan]")
-
-            logger.info(f"✅ {current_input_file.stem} 处理完成！")
-            print(f"[bold green]✅ 处理完成！[/bold green]")
-
-        except Exception as e:
-            from .exceptions import SmartSplitError, TranslationError
-            if isinstance(e, (SmartSplitError, TranslationError)):
-                # 这些异常已经在processor.py中显示过了，这里不重复显示
-                # 但需要记录到日志中用于统计
-                logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
-            else:
-                logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
-                print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
-
-        print()  # 添加空行分隔
-
-    # 显示处理结果
-    show_results(count, generated_ass_files, output_dir, is_batch_mode)
 
 
 @app.command("version")
@@ -265,9 +198,9 @@ LLM_MODEL={split_model}
     os.chmod(config_file, 0o600)
 
     print(f"\n[bold green]✅ 配置文件已创建:[/bold green] {config_file}")
-    print(f"\n[bold blue]💡 下一步:[/bold blue]")
-    print(f"   运行 [green]translate -i your-file.srt[/green] 开始翻译")
-    print(f"   或运行 [green]translate --help[/green] 查看所有选项")
+    print("\n[bold blue]💡 下一步:[/bold blue]")
+    print("   运行 [green]translate -i your-file.srt[/green] 开始翻译")
+    print("   或运行 [green]translate --help[/green] 查看所有选项")
 
 
 def cli_main():

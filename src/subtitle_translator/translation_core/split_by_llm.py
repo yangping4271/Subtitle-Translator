@@ -211,14 +211,14 @@ def split_by_llm(text: str,
                         logger.info(f"智能分割成功: 分为{len(split_results)}段")
                         new_sentences.extend(split_results)
                     else:
-                        logger.warning(f"智能分割失败，使用降级分割")
+                        logger.warning("智能分割失败，使用降级分割")
                         new_sentences.extend(fallback_split(segment, max_word_count_english, warning_threshold))
                         stats[stat_key] += 1
 
         sentences = new_sentences
 
         # 记录统计信息（使用动态阈值显示）
-        logger.info(f"📊 断句质量统计:")
+        logger.info("📊 断句质量统计:")
         logger.info(f"   ✅ 正常: {stats['normal']}句 (≤{max_word_count_english}字)")
         if stats['tolerated'] > 0:
             logger.info(f"   ✓ 轻度超标: {stats['tolerated']}句 ({max_word_count_english}-{tolerance_threshold}字)")
@@ -305,7 +305,7 @@ def aggressive_split(text: str, max_words: int) -> List[str]:
     for i, word in enumerate(words):
         if i > 2 and i < word_count - 2:
             if word.rstrip().endswith(','):
-                split_candidates.append((i + 1, 8, f"逗号"))
+                split_candidates.append((i + 1, 8, "逗号"))
 
     # 优先级4: 并列连词
     coordinating_conj = ["and", "but", "or", "so", "yet", "nor"]

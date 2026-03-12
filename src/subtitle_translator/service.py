@@ -21,6 +21,7 @@ from .translation_core.splitter import (
 )
 from .translation_core.terminology import load_terminology
 from .context_loader import build_context_info
+from .console_views import show_api_config, show_model_config, show_time_stats
 
 
 class SubtitleTranslatorService:
@@ -60,8 +61,8 @@ class SubtitleTranslatorService:
         log_stats(self.logger, model_config, "模型配置")
 
         if show_config:
-            self._display_api_config()
-            self._display_model_config()
+            show_api_config(self.config.openai_base_url, self.config.openai_api_key)
+            show_model_config(self.config.split_model, self.config.translation_model)
 
         elapsed_time = time.time() - start_time
         log_section_end(self.logger, "翻译环境初始化", elapsed_time, "✅")
@@ -98,7 +99,7 @@ class SubtitleTranslatorService:
         if not english_output_path.exists():
             raise RuntimeError(f"英文翻译文件保存失败: {english_output_path}")
 
-        self.logger.info(f"翻译文件已保存:")
+        self.logger.info("翻译文件已保存:")
         self.logger.info(f"  - 目标语言: {target_lang_output_path}")
         self.logger.info(f"  - 英文: {english_output_path}")
 
@@ -114,10 +115,10 @@ class SubtitleTranslatorService:
 
         if len(asr_data.segments) == 0:
             self.logger.info("⚠️  SRT文件为空，跳过翻译处理")
-            print(f"[yellow]⚠️  SRT文件为空，跳过翻译处理[/yellow]")
+            print("[yellow]⚠️  SRT文件为空，跳过翻译处理[/yellow]")
             raise EmptySubtitleError("SRT文件为空，无法进行翻译")
 
-        print(f"📊 [bold blue]加载完成[/bold blue]")
+        print("📊 [bold blue]加载完成[/bold blue]")
         return asr_data
 
     def _set_target_language(self, target_lang: str) -> None:
@@ -129,24 +130,9 @@ class SubtitleTranslatorService:
             self.logger.info(f"✅ 目标语言已设置为: {self.config.target_language}")
         except ValueError as e:
             self.logger.error(f"❌ 语言设置失败: {str(e)}")
-            print(f"[bold red]❌ 语言设置失败![/bold red]")
+            print("[bold red]❌ 语言设置失败![/bold red]")
             print(str(e))
             raise
-
-    def _display_api_config(self) -> None:
-        """显示 API 配置信息"""
-        print(f"🌐 [bold blue]API 配置:[/bold blue]")
-        print(f"   端点: [cyan]{self.config.openai_base_url}[/cyan]")
-
-        api_key = self.config.openai_api_key
-        masked_key = f"{api_key[:6]}{'*' * 8}{api_key[-6:]}" if len(api_key) > 12 else '*' * len(api_key)
-        print(f"   密钥: [cyan]{masked_key}[/cyan]" if api_key else "   密钥: [red]未设置[/red]")
-
-    def _display_model_config(self) -> None:
-        """显示模型配置信息"""
-        print(f"🤖 [bold blue]模型配置:[/bold blue]")
-        print(f"   断句: [cyan]{self.config.split_model}[/cyan]")
-        print(f"   翻译: [cyan]{self.config.translation_model}[/cyan]")
 
     def translate_srt(self, input_srt_path: Path, target_lang: str, output_dir: Path,
                       llm_model: Optional[str] = None, skip_env_init: bool = False) -> Path:
@@ -206,7 +192,7 @@ class SubtitleTranslatorService:
                 self.logger.info("📋 未加载任何上下文信息")
 
             pipeline_start_time = time.time()
-            print(f"⚡ [bold cyan]启动流水线处理：断句 + 翻译并行...[/bold cyan]")
+            print("⚡ [bold cyan]启动流水线处理：断句 + 翻译并行...[/bold cyan]")
 
             asr_data, translate_result = self._translate_with_pipeline(asr_data, context_info)
 
@@ -226,7 +212,7 @@ class SubtitleTranslatorService:
             total_elapsed = time.time() - task_start_time
 
             print()
-            self._format_time_stats(stage_times, total_elapsed)
+            show_time_stats(stage_times, total_elapsed)
 
             final_stats = {
                 "输入文件": input_srt_path.name,
@@ -332,7 +318,7 @@ class SubtitleTranslatorService:
             self._print_optimization_details(batch_logs_all)
 
             # 再显示汇总统计
-            print(f"📊 [bold blue]优化统计:[/bold blue]")
+            print("📊 [bold blue]优化统计:[/bold blue]")
             if stats['format_changes'] > 0:
                 print(f"   格式优化: [cyan]{stats['format_changes']}[/cyan] 项")
             if stats['content_changes'] > 0:
@@ -385,14 +371,3 @@ class SubtitleTranslatorService:
             'wrong_changes': wrong_changes,
             'total_changes': format_changes + content_changes + wrong_changes
         }
-
-    def _format_time_stats(self, stages: dict, total_time: float) -> None:
-        """格式化显示时间统计"""
-        print(f"⏱️  [bold blue]耗时统计:[/bold blue]")
-
-        for stage_name, elapsed_time in stages.items():
-            if elapsed_time > 0 and stage_name != "⚡ 并行预处理":
-                percentage = (elapsed_time / total_time) * 100
-                print(f"   {stage_name}: [cyan]{elapsed_time:.1f}s[/cyan] ([dim]{percentage:.0f}%[/dim])")
-
-        print(f"   [bold]总计: [cyan]{total_time:.1f}s[/cyan][/bold]") 

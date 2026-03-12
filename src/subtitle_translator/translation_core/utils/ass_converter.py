@@ -111,8 +111,7 @@ def fileopen(input_file):
             with codecs.open(input_file, mode="r", encoding=enc) as fd:
                 tmp = fd.read()
                 break
-        except:
-            # print enc + ' failed'
+        except Exception:
             continue
     return [tmp, enc]
 

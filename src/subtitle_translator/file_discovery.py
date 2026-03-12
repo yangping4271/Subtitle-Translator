@@ -45,7 +45,7 @@ def format_file_size(file_path: Path) -> str:
         if file_size < 1024 * 1024:
             return f"{file_size / 1024:.1f} KB"
         return f"{file_size / (1024 * 1024):.1f} MB"
-    except:
+    except Exception:
         return "未知"
 
 

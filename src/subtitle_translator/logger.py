@@ -1,10 +1,8 @@
+import atexit
 import logging
 import logging.handlers
-import os
-import sys
 from pathlib import Path
 import queue
-import threading
 from typing import Optional, Tuple
 import time
 
@@ -295,7 +293,6 @@ def shutdown_logging():
         log_queue.join()
         queue_handler._queue_listener.stop()
         queue_handler = None
-        
+
 # 确保程序退出时正确关闭日志
-import atexit
 atexit.register(shutdown_logging)

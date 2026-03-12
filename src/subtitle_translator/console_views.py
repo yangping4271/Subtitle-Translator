@@ -13,6 +13,31 @@ from rich import box
 from .file_discovery import get_file_type_info, format_file_size
 
 
+def show_api_config(base_url: str, api_key: str) -> None:
+    """显示 API 配置信息"""
+    print("[bold blue]🌐 API 配置:[/bold blue]")
+    print(f"   端点: [cyan]{base_url}[/cyan]")
+    masked_key = f"{api_key[:6]}{'*' * 8}{api_key[-6:]}" if len(api_key) > 12 else '*' * len(api_key)
+    print(f"   密钥: [cyan]{masked_key}[/cyan]" if api_key else "   密钥: [red]未设置[/red]")
+
+
+def show_model_config(split_model: str, translation_model: str) -> None:
+    """显示模型配置信息"""
+    print("[bold blue]🤖 模型配置:[/bold blue]")
+    print(f"   断句: [cyan]{split_model}[/cyan]")
+    print(f"   翻译: [cyan]{translation_model}[/cyan]")
+
+
+def show_time_stats(stages: dict, total_time: float) -> None:
+    """格式化显示时间统计"""
+    print("[bold blue]⏱️  耗时统计:[/bold blue]")
+    for stage_name, elapsed_time in stages.items():
+        if elapsed_time > 0 and stage_name != "⚡ 并行预处理":
+            percentage = (elapsed_time / total_time) * 100
+            print(f"   {stage_name}: [cyan]{elapsed_time:.1f}s[/cyan] ([dim]{percentage:.0f}%[/dim])")
+    print(f"   [bold]总计: [cyan]{total_time:.1f}s[/cyan][/bold]")
+
+
 def show_dry_run_summary(files_to_process: List[Path], target_lang: str, output_dir: Path,
                          llm_model: Optional[str], input_dir: Path):
     """显示预览模式的文件处理信息"""

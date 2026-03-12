@@ -2,7 +2,6 @@ import difflib
 import re
 from typing import List, Optional
 
-from ..exceptions import SmartSplitError
 from ..logger import setup_logger
 from .batch_utils import calculate_batch_sizes
 from .config import get_default_config
