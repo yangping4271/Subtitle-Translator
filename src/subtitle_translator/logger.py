@@ -3,7 +3,7 @@ import logging
 import logging.handlers
 from pathlib import Path
 import queue
-from typing import Optional, Tuple
+from typing import Optional
 
 
 def _find_project_root() -> Optional[Path]:
@@ -44,17 +44,6 @@ log_queue = queue.Queue()
 queue_handler = None
 _queue_listener = None
 
-
-def get_log_file_path() -> str:
-    """获取当前使用的日志文件路径"""
-    return LOG_FILE
-
-
-def get_log_mode_info() -> Tuple[str, str]:
-    """获取日志模式信息（开发模式或生产模式）"""
-    if _find_project_root():
-        return "开发模式", "项目目录"
-    return "生产模式", "用户目录"
 
 class ColoredFormatter(logging.Formatter):
     """带颜色和emoji的日志格式化器"""
@@ -142,14 +131,7 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
         self._queue_listener = None
         self._file_handler = None
         self._current_level = level
-        
-    def update_level(self, new_level):
-        """更新日志级别，如果级别发生变化则重新配置文件处理器"""
-        if new_level != self._current_level:
-            self._current_level = new_level
-            if self._file_handler:
-                self._file_handler.setLevel(logging.DEBUG)
-        
+
     def start_listener(self):
         if self._queue_listener is None:
             handlers = self._create_handlers()
@@ -175,9 +157,7 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
 
         return [self._file_handler]
 
-def setup_logger(name: str,
-                log_fmt: str = '%(asctime)s [%(name)s] %(levelname)s: %(message)s',
-                datefmt: str = '%Y-%m-%d %H:%M:%S') -> logging.Logger:
+def setup_logger(name: str) -> logging.Logger:
     """
     创建并配置一个日志记录器。
     logger 允许 DEBUG 及以上级别进入队列，由文件处理器统一写入日志。
@@ -185,8 +165,6 @@ def setup_logger(name: str,
 
     参数：
     - name: 日志记录器的名称
-    - log_fmt: 日志格式字符串
-    - datefmt: 时间格式字符串
     """
     global queue_handler
 

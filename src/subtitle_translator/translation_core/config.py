@@ -147,9 +147,6 @@ class SubtitleConfig:
                 f"请运行 'translate init' 初始化配置。"
             )
 
-# 文件相关常量
-SRT_SUFFIX = ".srt"
-
 # 延迟创建默认配置实例
 def get_default_config() -> SubtitleConfig:
     """获取默认配置实例"""

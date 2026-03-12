@@ -3,7 +3,7 @@ import re
 import codecs
 from pathlib import Path
 import logging
-from typing import List, Dict
+from typing import List, Dict, Union
 
 logger = logging.getLogger(__name__)
 
@@ -102,34 +102,33 @@ def fix_timestamp_overlaps(subtitles: List[Dict]) -> tuple[List[Dict], int]:
 
     return result, fixed_count
 
-def fileopen(input_file):
+def fileopen(input_file: Union[str, Path]) -> tuple[str, str]:
     encodings = ["utf-32", "utf-16", "utf-8", "cp1252", "gb2312", "gbk", "big5"]
     tmp = ''
     enc = 'utf-8'  # 默认编码
     for enc in encodings:
         try:
-            with codecs.open(input_file, mode="r", encoding=enc) as fd:
+            with codecs.open(str(input_file), mode="r", encoding=enc) as fd:
                 tmp = fd.read()
                 break
-        except Exception:
+        except (UnicodeError, LookupError):
             continue
     return (tmp, enc)
 
 
-def srt2ass_converter_func(input_file, pos):
+def srt2ass_converter_func(input_file: Union[str, Path], pos: str) -> str:
     """
     将 SRT 文件转换为 ASS 格式的字幕行
 
     在内存中修复时间戳重叠，不修改原文件
     """
-    if '.ass' in input_file:
-        return input_file
+    if Path(input_file).suffix.lower() == '.ass':
+        return str(input_file)
 
     if not os.path.isfile(input_file):
         raise FileNotFoundError(f"{input_file} 不存在")
 
-    src = fileopen(input_file)
-    content = src[0]
+    content, _ = fileopen(input_file)
 
     if '\ufeff' in content:
         content = content.replace('\ufeff', '')
@@ -225,11 +224,9 @@ Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
 
     # 英文字幕使用 Default 样式（显示在上方，青色）
     english_lines = srt2ass_converter_func(str(english_srt_path), 'Default')
-    
+
     # 使用目标语言文件来获取编码信息和生成输出文件名
-    src = fileopen(str(target_lang_srt_path))
-    tmp = src[0]
-    encoding = src[1]
+    tmp, encoding = fileopen(str(target_lang_srt_path))
 
     if u'\ufeff' in tmp:
         tmp = tmp.replace(u'\ufeff', '')
