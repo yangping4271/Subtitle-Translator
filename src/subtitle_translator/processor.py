@@ -55,7 +55,7 @@ def process_batch(
             process_single_file(
                 current_input_file, target_lang, output_dir,
                 llm_model,
-                batch_mode=is_batch_mode, translator_service=translator_service,
+                translator_service=translator_service,
                 preserve_intermediate=preserve_intermediate,
             )
             count += 1
@@ -100,23 +100,19 @@ def _handle_translation_error(e: Exception, logger) -> None:
             print(f"[bold red]❌ {error_name}:[/bold red] {e.message}")
             if hasattr(e, 'suggestion') and e.suggestion:
                 print(f"[bold yellow]{e.suggestion}[/bold yellow]")
-
-            # 空文件异常特殊处理
-            if isinstance(e, EmptySubtitleError):
-                raise RuntimeError(f"{e.message}")
-            raise error_type(e.message, e.suggestion if hasattr(e, 'suggestion') else None)
+            raise
 
     # 其他异常
     logger.error(f"❌ 处理失败: {e}")
     logger.debug("详细错误信息:", exc_info=True)
     print(f"[bold red]❌ 处理失败:[/bold red] {e}")
-    raise RuntimeError(f"处理失败: {e}")
+    raise
 
 
 def process_single_file(
     input_file: Path, target_lang: str, output_dir: Path,
     llm_model: Optional[str],
-    batch_mode: bool = False, translator_service = None,
+    translator_service = None,
     preserve_intermediate: bool = False
 ):
     """处理单个文件的核心逻辑"""

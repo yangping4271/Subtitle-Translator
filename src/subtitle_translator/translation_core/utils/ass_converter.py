@@ -113,7 +113,7 @@ def fileopen(input_file):
                 break
         except Exception:
             continue
-    return [tmp, enc]
+    return (tmp, enc)
 
 
 def srt2ass_converter_func(input_file, pos):
@@ -126,8 +126,7 @@ def srt2ass_converter_func(input_file, pos):
         return input_file
 
     if not os.path.isfile(input_file):
-        print(input_file + ' not exist')
-        return
+        raise FileNotFoundError(f"{input_file} 不存在")
 
     src = fileopen(input_file)
     content = src[0]

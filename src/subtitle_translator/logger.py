@@ -4,7 +4,6 @@ import logging.handlers
 from pathlib import Path
 import queue
 from typing import Optional, Tuple
-import time
 
 
 def _find_project_root() -> Optional[Path]:
@@ -129,56 +128,9 @@ class ColoredFormatter(logging.Formatter):
         name_mapping = {
             '__main__': '主程序',
             'split_by_llm': '智能断句',
-            'subtitle_merger': '断句合并',
-            'subtitle_optimizer': '翻译优化',
-            'subtitle_aligner': '字幕对齐',
-            'subtitle_data': '数据处理',
             'response_parser': '响应解析'
         }
         return name_mapping.get(name, name)
-
-class ProgressLogger:
-    """进度日志工具"""
-    
-    def __init__(self, logger, total_steps, task_name="任务"):
-        self.logger = logger
-        self.total_steps = total_steps
-        self.task_name = task_name
-        self.current_step = 0
-        self.start_time = time.time()
-    
-    def update(self, step=None, message=""):
-        """更新进度"""
-        if step is not None:
-            self.current_step = step
-        else:
-            self.current_step += 1
-            
-        percentage = (self.current_step / self.total_steps) * 100
-        elapsed = time.time() - self.start_time
-        
-        # 生成进度条
-        bar_length = 20
-        filled_length = int(bar_length * self.current_step / self.total_steps)
-        bar = '█' * filled_length + '▒' * (bar_length - filled_length)
-        
-        # 预估剩余时间
-        if self.current_step > 0:
-            eta = (elapsed / self.current_step) * (self.total_steps - self.current_step)
-            eta_str = f" (预计剩余: {eta:.0f}秒)" if eta > 1 else ""
-        else:
-            eta_str = ""
-        
-        progress_msg = f"🚀 {self.task_name} [{bar}] {percentage:.1f}% ({self.current_step}/{self.total_steps}){eta_str}"
-        if message:
-            progress_msg += f" - {message}"
-            
-        self.logger.info(progress_msg)
-    
-    def complete(self, message="任务完成"):
-        """标记任务完成"""
-        elapsed = time.time() - self.start_time
-        self.logger.info(f"✅ {self.task_name}完成！总耗时: {elapsed:.1f}秒 - {message}")
 
 class QueueListenerHandler(logging.handlers.QueueHandler):
     """
@@ -263,10 +215,6 @@ def setup_logger(name: str,
         logging.getLogger(lib).setLevel(logging.ERROR)
 
     return logger
-
-def create_progress_logger(logger, total_steps, task_name="任务"):
-    """创建进度日志器的便捷函数"""
-    return ProgressLogger(logger, total_steps, task_name)
 
 def log_section_start(logger, section_name, emoji="🔧"):
     """记录节开始"""
