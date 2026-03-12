@@ -13,13 +13,14 @@ from .logger import log_section_end, log_section_start, log_stats
 from .translation_core.config import SubtitleConfig
 from .translation_core.data import SubtitleData, load_subtitle
 from .translation_core.optimizer import SubtitleOptimizer, format_diff, _is_format_change_only, _is_wrong_replacement
-from .translation_core.spliter import (
+from .translation_core.splitter import (
     batch_by_sentence_count,
     merge_segments_within_batch,
     preprocess_segments,
     presplit_by_punctuation,
 )
 from .translation_core.terminology import load_terminology
+from .context_loader import build_context_info
 
 
 class SubtitleTranslatorService:
@@ -192,7 +193,7 @@ class SubtitleTranslatorService:
             preprocessing_start_time = time.time()
             log_section_start(self.logger, "并行预处理阶段", "⚡")
 
-            context_info = self._extract_context_info(str(input_srt_path.resolve()))
+            context_info = build_context_info(input_srt_path.resolve())
             stage_times["📋 上下文提取"] = 0.0  # 本地操作，耗时可忽略
 
             # 打印加载的上下文信息
@@ -249,51 +250,6 @@ class SubtitleTranslatorService:
             self.logger.error(f"💥 处理过程中发生错误: {str(e)}")
             self.logger.debug("详细错误信息:", exc_info=True)
             raise
-
-    def _extract_context_info(self, input_file: str) -> str:
-        """提取上下文信息：外部文件 + 文件名/路径"""
-        path = Path(input_file)
-        context_parts = []
-
-        external_context = self._read_external_context(path.parent)
-        if external_context:
-            context_parts.append(external_context)
-
-        folder_path = self._extract_folder_path(path.parent)
-        if folder_path:
-            context_parts.append(f"Folder path: {folder_path}")
-
-        readable_filename = path.stem.replace('_', ' ').replace('-', ' ')
-        context_parts.append(f"Filename: {readable_filename}")
-
-        return "\n\n".join(context_parts)
-
-    def _read_external_context(self, parent_dir: Path) -> str:
-        """读取外部上下文文件"""
-        for ctx_filename in ['context.txt', 'ctx.txt']:
-            ctx_file = parent_dir / ctx_filename
-            if ctx_file.exists():
-                try:
-                    content = ctx_file.read_text(encoding='utf-8').strip()
-                    if content:
-                        return content
-                except Exception:
-                    pass
-        return ""
-
-    def _extract_folder_path(self, parent_dir: Path, max_depth: int = 3) -> str:
-        """提取文件夹路径信息"""
-        parent_names = []
-        current_path = parent_dir
-
-        for _ in range(max_depth):
-            if not current_path.name or current_path.name in ['/', '.', '..']:
-                break
-            folder_name = current_path.name.replace('_', ' ').replace('-', ' ')
-            parent_names.append(folder_name)
-            current_path = current_path.parent
-
-        return ' / '.join(reversed(parent_names))
 
     def _translate_with_pipeline(self, asr_data: SubtitleData, context_info: str) -> Tuple[SubtitleData, list]:
         """

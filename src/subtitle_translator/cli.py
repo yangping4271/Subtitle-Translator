@@ -1,19 +1,18 @@
 """
 主命令行接口模块 - 简洁清晰的CLI入口
 """
-import glob
 import os
-import re
 import typer
 from pathlib import Path
-from typing import Optional, List, Tuple
-from typing_extensions import Annotated
+from typing import Optional
 
 from rich import print
 
 from .env_setup import setup_environment
 from .exceptions import ConfigurationError
 from .logger import setup_logger
+from .file_discovery import get_batch_files
+from .console_views import show_dry_run_summary, show_results
 
 logger = setup_logger(__name__)
 
@@ -103,10 +102,10 @@ def main(
     else:
         batch_input_dir = input_dir if input_dir else Path.cwd()
         batch_input_dir = batch_input_dir.resolve()
-        files_to_process = _get_batch_files(max_count, llm_model, batch_input_dir)
+        files_to_process = get_batch_files(max_count, llm_model, batch_input_dir)
 
     if dry_run:
-        _show_dry_run_summary(files_to_process, target_lang, output_dir, llm_model, batch_input_dir)
+        show_dry_run_summary(files_to_process, target_lang, output_dir, llm_model, batch_input_dir)
         raise typer.Exit(code=0)
 
     _process_files_batch(files_to_process, target_lang, output_dir, llm_model,
@@ -118,192 +117,6 @@ def _validate_target_language(target_lang: str):
     from .translation_core.config import get_target_language
     target_language_name = get_target_language(target_lang)
     print(f"🎯 [bold green]目标语言:[/bold green] [cyan]{target_language_name}[/cyan] ([dim]{target_lang}[/dim])")
-
-
-def _get_file_type_info(file_ext: str) -> Tuple[str, str]:
-    """获取文件类型和处理方式"""
-    if file_ext == '.srt':
-        return "字幕文件", "直接翻译"
-    return "未知类型", "未知"
-
-
-def _format_file_size(file_path: Path) -> str:
-    """格式化文件大小显示"""
-    try:
-        file_size = file_path.stat().st_size
-        if file_size < 1024:
-            return f"{file_size} B"
-        if file_size < 1024 * 1024:
-            return f"{file_size / 1024:.1f} KB"
-        return f"{file_size / (1024 * 1024):.1f} MB"
-    except:
-        return "未知"
-
-
-def _remove_language_suffix(base_name: str) -> str:
-    """移除文件名中的语言后缀"""
-    language_suffixes = [
-        r'\.zh$', r'\.zh-cn$', r'\.zh-tw$',  # 中文
-        r'\.ja$', r'\.ko$', r'\.th$', r'\.vi$',  # 亚洲语言
-        r'\.fr$', r'\.de$', r'\.es$', r'\.pt$', r'\.it$', r'\.ru$',  # 欧洲语言
-        r'\.ar$', r'\.en$'  # 其他
-    ]
-    for suffix_pattern in language_suffixes:
-        base_name = re.sub(suffix_pattern, '', base_name)
-    return base_name
-
-
-def _natural_sort_key(s: str):
-    """用于自然排序的key函数：将数字片段按整数比较，其他片段按不区分大小写的字符串比较"""
-    parts = re.split(r"(\d+)", s)
-    return [int(p) if p.isdigit() else p.casefold() for p in parts]
-
-
-def _get_batch_files(max_count: int, llm_model: Optional[str], input_dir: Path) -> list:
-    """获取批量处理的文件列表"""
-    # 只支持字幕文件
-    patterns = ["*.srt"]
-
-    # 确保input_dir是绝对路径
-    input_dir = input_dir.resolve()
-
-    # 查找所有 SRT 文件（使用绝对路径）
-    srt_files = []
-    for pattern in patterns:
-        srt_files.extend(glob.glob(str(input_dir / pattern)))
-
-    if not srt_files:
-        print(f"[bold red]{input_dir} 目录中没有找到 SRT 字幕文件。[/bold red]")
-        print("[dim]支持的格式：[/dim]")
-        print("[dim]  • 字幕文件: .srt[/dim]")
-        raise typer.Exit(code=1)
-
-    # 提取基础文件名并去重排序
-    base_names = set()
-    for file_path in srt_files:
-        # 转换为Path对象并获取相对于input_dir的路径
-        file = Path(file_path)
-        relative_path = file.relative_to(input_dir)
-        file_name = relative_path.name
-
-        # 移除扩展名
-        base_name = re.sub(r'\.srt$', '', file_name, flags=re.IGNORECASE)
-
-        # 移除各种语言后缀
-        base_name = _remove_language_suffix(base_name)
-        base_names.add(base_name)
-
-    # 自然排序基础文件名（EP2 在 EP10 之前）
-    base_names = sorted(base_names, key=_natural_sort_key)
-
-    # 为每个基础名称找到对应的输入文件
-    files_to_process = []
-    for base_name in base_names:
-        # 跳过已存在.ass文件的
-        ass_file = input_dir / f"{base_name}.ass"
-        if ass_file.exists():
-            continue
-
-        # 查找 SRT 文件
-        candidate = input_dir / f"{base_name}.srt"
-        if candidate.exists():
-            files_to_process.append(candidate)
-            print(f"📄 发现文件 [cyan]{candidate}[/cyan]")
-        else:
-            print(f"❌ 没有找到 [yellow]{base_name}[/yellow] 的 SRT 文件")
-
-    if not files_to_process:
-        print("[bold yellow]没有找到需要处理的新文件。[/bold yellow]")
-        raise typer.Exit(code=0)
-
-    # 应用数量限制
-    if max_count > 0:
-        files_to_process = files_to_process[:max_count]
-
-    print(f"[bold green]开始批量翻译处理，共{len(files_to_process)}个文件...[/bold green]")
-    if llm_model:
-        print(f"使用LLM模型: [bold cyan]{llm_model}[/bold cyan]")
-
-    return files_to_process
-
-
-def _show_dry_run_summary(files_to_process: list, target_lang: str, output_dir: Path,
-                         llm_model: Optional[str], input_dir: Path):
-    """显示预览模式的文件处理信息"""
-    from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich import box
-
-    console = Console()
-
-    # 标题
-    console.print("\n[bold blue]🔍 预览模式 - 将要处理的文件信息[/bold blue]\n")
-
-    # 基本信息
-    info_table = Table(show_header=False, box=box.ROUNDED, expand=False)
-    info_table.add_column("项目", style="cyan", width=15)
-    info_table.add_column("值", style="white")
-
-    info_table.add_row("📁 输入目录", str(input_dir))
-    info_table.add_row("📂 输出目录", str(output_dir))
-    info_table.add_row("🎯 目标语言", target_lang)
-
-    # 显示模型配置
-    if llm_model:
-        info_table.add_row("🤖 LLM模型", llm_model)
-
-    console.print(info_table)
-    console.print()
-
-    # 文件列表
-    if files_to_process:
-        file_table = Table(title="📄 发现的文件列表", box=box.ROUNDED)
-        file_table.add_column("序号", style="cyan", width=6, justify="right")
-        file_table.add_column("文件名", style="white")
-        file_table.add_column("类型", style="yellow")
-        file_table.add_column("大小", style="green", justify="right")
-        file_table.add_column("处理方式", style="magenta")
-
-        for idx, file_path in enumerate(files_to_process, 1):
-            file_name = file_path.name
-            file_ext = file_path.suffix.lower()
-
-            # 确定文件类型和处理方式
-            file_type, process_type = _get_file_type_info(file_ext)
-
-            # 获取文件大小
-            size_str = _format_file_size(file_path)
-
-            file_table.add_row(str(idx), file_name, file_type, size_str, process_type)
-
-        console.print(file_table)
-
-        # 统计信息
-        total_size = sum(f.stat().st_size for f in files_to_process if f.exists())
-        srt_count = len(files_to_process)  # 现在只有 SRT 文件
-
-        summary = f"""
-[bold]📊 处理统计:[/bold]
-• 总文件数: {len(files_to_process)} 个
-• 字幕文件: {srt_count} 个 (直接翻译)
-• 总大小: {total_size / (1024 * 1024):.1f} MB
-        """
-        console.print(Panel(summary.strip(), title="[bold green]处理概览[/bold green]", border_style="green"))
-
-    else:
-        console.print("[bold yellow]⚠️  没有发现可处理的文件[/bold yellow]")
-
-    # 提示信息
-    tip_panel = Panel(
-        "[bold cyan]💡 提示:[/bold cyan]\n"
-        "• 移除 [bold magenta]--dry-run[/bold magenta] 参数以开始实际处理\n"
-        "• 使用 [bold magenta]--count N[/bold magenta] 限制处理文件数量\n"
-        "• 使用 [bold magenta]--output-dir[/bold magenta] 指定输出目录",
-        title="[bold]操作指南[/bold]",
-        border_style="cyan"
-    )
-    console.print("\n", tip_panel)
 
 
 def _process_files_batch(files_to_process: list, target_lang: str, output_dir: Path,
@@ -374,30 +187,7 @@ def _process_files_batch(files_to_process: list, target_lang: str, output_dir: P
         print()  # 添加空行分隔
 
     # 显示处理结果
-    _show_results(count, generated_ass_files, output_dir, is_batch_mode)
-
-
-def _show_results(count: int, generated_ass_files: list, output_dir: Path, is_batch_mode: bool):
-    """显示处理结果"""
-    print()
-    if is_batch_mode:
-        logger.info("🎉 批量处理完成！")
-        logger.info(f"总计处理文件数: {count}")
-        print(f"🎉 [bold green]批量处理完成！[/bold green] (处理 [cyan]{count}[/cyan] 个文件)")
-    else:
-        logger.info("🎉 处理完成！")
-        logger.info(f"总计处理文件数: {count}")
-        print(f"🎉 [bold green]处理完成！[/bold green] (处理 [cyan]{count}[/cyan] 个文件)")
-    
-    # 只显示本次生成的ASS文件统计
-    if count > 0:
-        if generated_ass_files:
-            logger.info("本次生成的ASS文件：")
-            for f in generated_ass_files:
-                logger.info(f"  {f.name}")
-            print(f"📺 [bold green]已生成 {len(generated_ass_files)} 个双语ASS文件[/bold green]")
-        
-        logger.info("处理完毕！")
+    show_results(count, generated_ass_files, output_dir, is_batch_mode)
 
 
 @app.command("version")
