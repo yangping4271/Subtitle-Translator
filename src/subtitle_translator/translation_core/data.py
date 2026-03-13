@@ -402,6 +402,49 @@ def load_subtitle(file_path: str) -> 'SubtitleData':
 
     return _parse_srt(content)
 
+def _validate_timestamps(segments: List[SubtitleSegment]) -> None:
+    """验证字幕时间戳合法性，发现问题时抛出异常"""
+    from ..exceptions import SubtitleProcessError
+
+    # 检查0：单条字幕 end_time < start_time（对所有数量都检查）
+    for i, seg in enumerate(segments, 1):
+        if seg.end_time < seg.start_time:
+            raise SubtitleProcessError(
+                f"SRT 时间戳不合法：第 {i} 条字幕结束时间 "
+                f"({SubtitleSegment._ms_to_srt_time(seg.end_time)}) "
+                f"早于开始时间 "
+                f"({SubtitleSegment._ms_to_srt_time(seg.start_time)})",
+                suggestion="请检查 SRT 文件时间戳是否正确。"
+            )
+
+    if len(segments) < 2:
+        return
+
+    # 检查1：时间戳倒退
+    for i in range(1, len(segments)):
+        if segments[i].start_time < segments[i - 1].start_time:
+            raise SubtitleProcessError(
+                f"SRT 时间戳不合法：第 {i + 1} 条字幕开始时间 "
+                f"({SubtitleSegment._ms_to_srt_time(segments[i].start_time)}) "
+                f"早于第 {i} 条 "
+                f"({SubtitleSegment._ms_to_srt_time(segments[i - 1].start_time)})",
+                suggestion="请检查 SRT 文件时间戳是否单调递增。"
+            )
+
+    # 检查2：过多重复开始时间（超过 20% 的相邻字幕共享同一开始时间）
+    same_start_count = sum(
+        1 for i in range(1, len(segments))
+        if segments[i].start_time == segments[i - 1].start_time
+    )
+    ratio = same_start_count / (len(segments) - 1)
+    if ratio > 0.2:
+        raise SubtitleProcessError(
+            f"SRT 时间戳不合法：{same_start_count} 对相邻字幕共享相同开始时间"
+            f"（占比 {ratio:.0%}），时间戳可能已损坏。",
+            suggestion="请检查 SRT 文件的时间戳是否正确。"
+        )
+
+
 def _parse_srt(srt_str: str) -> 'SubtitleData':
     """
     解析SRT格式的字符串
@@ -465,7 +508,9 @@ def _parse_srt(srt_str: str) -> 'SubtitleData':
 
         segments.append(SubtitleSegment(text, start_time, end_time))
 
+    _validate_timestamps(segments)
     return SubtitleData(segments)
+
 
 def save_split_results(text: str, split_results: List[str], output_path: str) -> None:
     """

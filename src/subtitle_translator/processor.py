@@ -70,8 +70,8 @@ def process_batch(
             print("[bold green]✅ 处理完成！[/bold green]")
 
         except Exception as e:
-            from .exceptions import SmartSplitError, TranslationError
-            if isinstance(e, (SmartSplitError, TranslationError)):
+            from .exceptions import SmartSplitError, TranslationError, SubtitleProcessError
+            if isinstance(e, (SmartSplitError, TranslationError, SubtitleProcessError)):
                 logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
             else:
                 logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
@@ -84,12 +84,13 @@ def process_batch(
 
 def _handle_translation_error(e: Exception, logger) -> None:
     """统一处理翻译相关异常"""
-    from .exceptions import SmartSplitError, TranslationError, EmptySubtitleError
+    from .exceptions import SmartSplitError, TranslationError, EmptySubtitleError, SubtitleProcessError
 
     error_types = {
         SmartSplitError: "智能断句失败",
         TranslationError: "翻译失败",
-        EmptySubtitleError: "空文件"
+        EmptySubtitleError: "空文件",
+        SubtitleProcessError: "字幕文件错误",
     }
 
     for error_type, error_name in error_types.items():
