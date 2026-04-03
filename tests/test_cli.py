@@ -39,6 +39,17 @@ def test_missing_config(tmp_path, monkeypatch):
     assert result.exit_code == 1
 
 
+def test_dry_run_allows_empty_api_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:1234/v1")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    test_srt = tmp_path / "test.srt"
+    test_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nTest subtitle\n")
+
+    result = runner.invoke(app, ["--dry-run", "-i", str(test_srt)])
+    assert result.exit_code == 0
+
+
 def test_dry_run_empty_dir(tmp_path):
     """空目录应该报错：没有找到 SRT 文件"""
     with patch("subtitle_translator.cli.setup_environment"):
@@ -67,4 +78,3 @@ def test_dry_run_does_not_create_output_dir(tmp_path):
     assert result.exit_code == 0
     # 输出目录不应该被创建
     assert not output_dir.exists()
-

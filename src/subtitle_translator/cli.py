@@ -162,7 +162,7 @@ def init():
         "API Base URL",
         default="https://api.openai.com/v1"
     )
-    api_key = Prompt.ask("API Key", password=True)
+    api_key = Prompt.ask("API Key (可留空，本地服务通常不需要)", password=True, default="")
 
     print("\n[bold]2. 模型配置[/bold]")
     split_model = Prompt.ask(

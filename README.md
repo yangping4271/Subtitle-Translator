@@ -9,6 +9,7 @@ A command-line tool for multilingual subtitle translation. Translates English SR
 - **Multilingual Translation**: Supports translating English subtitles into Chinese, Japanese, Korean, French, and many other languages.
 - **Intelligent Segmentation**: Multi-tier fallback strategies including punctuation-based and rule-based semantic splitting.
 - **AI-Powered Translation**: Leverages various LLM models for high-quality translation.
+- **Local Model Support**: Works with local OpenAI-compatible services such as LM Studio.
 - **Bilingual Subtitles**: Automatically generates bilingual ASS subtitle files (English + target language).
 - **Batch Processing**: Processes multiple files simultaneously.
 - **Modular Configuration**: Configurable models for sentence splitting and translation.
@@ -37,6 +38,7 @@ translate init
 ```
 
 This will create a configuration file at `~/.config/subtitle-translator/.env` with your API settings.
+`OPENAI_API_KEY` is optional for local OpenAI-compatible services.
 
 **Alternative: Set environment variables directly**
 
@@ -58,6 +60,29 @@ SPLIT_MODEL=gpt-4o-mini
 TRANSLATION_MODEL=gpt-4o
 LLM_MODEL=gpt-4o-mini
 ```
+
+### Local Models via LM Studio
+
+This project supports local OpenAI-compatible endpoints, including LM Studio.
+
+- `OPENAI_BASE_URL` should point to your local server, for example `http://127.0.0.1:1234/v1`
+- `OPENAI_API_KEY` can be left empty for local services that do not require authentication
+- If your local provider requires a key, set it as usual
+
+Example:
+
+```bash
+export OPENAI_BASE_URL=http://127.0.0.1:1234/v1
+export OPENAI_API_KEY=
+export SPLIT_MODEL=gemma-4-e2b-it
+export TRANSLATION_MODEL=gemma-4-e4b-it
+export LLM_MODEL=gemma-4-e2b-it
+```
+
+Recommended local models:
+
+- `gemma-4-e2b-it`: Strong lightweight default for sentence splitting and general subtitle cleanup
+- `gemma-4-e4b-it`: Recommended when you want better translation quality from a local model
 
 ### Basic Usage
 ```bash
@@ -136,6 +161,7 @@ translate init
 ```
 
 This will create a configuration file at `~/.config/subtitle-translator/.env` with your API settings.
+`OPENAI_API_KEY` is optional for local OpenAI-compatible services.
 
 **Alternative: Set environment variables directly**
 
@@ -151,7 +177,7 @@ export TRANSLATION_MODEL=gpt-4o
 Create `~/.config/subtitle-translator/.env`:
 
 ```bash
-# OpenAI API Configuration (required)
+# OpenAI-compatible API Configuration
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
 
@@ -159,6 +185,16 @@ OPENAI_API_KEY=your-api-key-here
 SPLIT_MODEL=gpt-4o-mini      # Sentence splitting model
 TRANSLATION_MODEL=gpt-4o     # Translation model
 LLM_MODEL=gpt-4o-mini        # Default model
+```
+
+For LM Studio or other local OpenAI-compatible servers:
+
+```bash
+OPENAI_BASE_URL=http://127.0.0.1:1234/v1
+OPENAI_API_KEY=
+SPLIT_MODEL=gemma-4-e2b-it
+TRANSLATION_MODEL=gemma-4-e4b-it
+LLM_MODEL=gemma-4-e2b-it
 ```
 
 ### External Context

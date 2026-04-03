@@ -136,12 +136,10 @@ class SubtitleConfig:
             except ValueError:
                 pass
 
-        if not self.openai_base_url or not self.openai_api_key:
+        if not self.openai_base_url:
             missing = []
             if not self.openai_base_url:
                 missing.append("OPENAI_BASE_URL")
-            if not self.openai_api_key:
-                missing.append("OPENAI_API_KEY")
             raise ValueError(
                 f"缺少必需的环境变量: {', '.join(missing)}。"
                 f"请运行 'translate init' 初始化配置。"

@@ -31,7 +31,7 @@ def setup_environment(allow_missing_config=False):
     if _env_loaded:
         return
 
-    required_vars = ['OPENAI_BASE_URL', 'OPENAI_API_KEY']
+    required_vars = ['OPENAI_BASE_URL']
 
     # 先加载配置文件（不覆盖已有的环境变量）
     env_path = _get_config_path()
@@ -65,7 +65,7 @@ def setup_environment(allow_missing_config=False):
             rprint()
             rprint("   [bold]配置示例:[/bold]")
             rprint("      [dim]OPENAI_BASE_URL=https://api.openai.com/v1[/dim]")
-            rprint("      [dim]OPENAI_API_KEY=your-api-key-here[/dim]")
+            rprint("      [dim]OPENAI_API_KEY=[/dim]")
             rprint("      [dim]SPLIT_MODEL=gpt-4o-mini[/dim]")
             rprint("      [dim]TRANSLATION_MODEL=gpt-4o[/dim]")
             rprint()

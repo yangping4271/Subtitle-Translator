@@ -9,6 +9,7 @@
 - **多语言翻译**: 支持将英文字幕翻译成中文、日文、韩文、法文等多种目标语言
 - **智能断句**: 多层降级策略，包括标点符号和基于规则的语义分割
 - **AI驱动翻译**: 利用各种LLM模型实现高质量翻译
+- **本地模型支持**: 支持 LM Studio 等兼容 OpenAI API 的本地模型服务
 - **双语字幕**: 自动生成双语ASS字幕文件(英文+目标语言)
 - **批量处理**: 同时处理多个文件
 - **模块化配置**: 可为断句和翻译分别配置不同模型
@@ -37,6 +38,7 @@ translate init
 ```
 
 这将在 `~/.config/subtitle-translator/.env` 创建配置文件。
+对于本地 OpenAI-compatible 服务，`OPENAI_API_KEY` 可以留空。
 
 **方式二：直接设置环境变量**
 
@@ -58,6 +60,29 @@ SPLIT_MODEL=gpt-4o-mini
 TRANSLATION_MODEL=gpt-4o
 LLM_MODEL=gpt-4o-mini
 ```
+
+### 通过 LM Studio 使用本地模型
+
+本项目支持 LM Studio 这类兼容 OpenAI API 的本地服务。
+
+- `OPENAI_BASE_URL` 指向本地服务地址，例如 `http://127.0.0.1:1234/v1`
+- 如果本地服务不需要鉴权，`OPENAI_API_KEY` 可以留空
+- 如果你的服务要求鉴权，照常填写即可
+
+示例：
+
+```bash
+export OPENAI_BASE_URL=http://127.0.0.1:1234/v1
+export OPENAI_API_KEY=
+export SPLIT_MODEL=gemma-4-e2b-it
+export TRANSLATION_MODEL=gemma-4-e4b-it
+export LLM_MODEL=gemma-4-e2b-it
+```
+
+推荐本地模型：
+
+- `gemma-4-e2b-it`：适合断句、字幕清洗和日常本地使用
+- `gemma-4-e4b-it`：更推荐用于本地翻译，质量通常更稳
 
 ### 基本使用
 ```bash
@@ -193,6 +218,7 @@ translate init
 ```
 
 这将在 `~/.config/subtitle-translator/.env` 创建配置文件。
+对于本地 OpenAI-compatible 服务，`OPENAI_API_KEY` 可以留空。
 
 **方式二：直接设置环境变量**
 
@@ -208,7 +234,7 @@ export TRANSLATION_MODEL=gpt-4o
 创建 `~/.config/subtitle-translator/.env`：
 
 ```bash
-# OpenAI API 配置（必需）
+# OpenAI-compatible API 配置
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
 
@@ -216,6 +242,16 @@ OPENAI_API_KEY=your-api-key-here
 SPLIT_MODEL=gpt-4o-mini      # 断句模型
 TRANSLATION_MODEL=gpt-4o     # 翻译模型
 LLM_MODEL=gpt-4o-mini        # 默认模型
+```
+
+如果使用 LM Studio 或其他本地 OpenAI-compatible 服务：
+
+```bash
+OPENAI_BASE_URL=http://127.0.0.1:1234/v1
+OPENAI_API_KEY=
+SPLIT_MODEL=gemma-4-e2b-it
+TRANSLATION_MODEL=gemma-4-e4b-it
+LLM_MODEL=gemma-4-e2b-it
 ```
 
 ## 开发
