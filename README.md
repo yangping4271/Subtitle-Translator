@@ -14,7 +14,6 @@ A command-line tool for multilingual subtitle translation. Translates English SR
 - **Batch Processing**: Processes multiple files simultaneously.
 - **Modular Configuration**: Configurable models for sentence splitting and translation.
 - **External Context Support**: Provide additional translation context via context.txt files.
-- **LLM Context Extraction**: Extracts structured translation context from subtitle content and filesystem metadata before translation.
 - **Terminology Support**: Supports global and local terminology to ensure consistent translation of technical terms.
 
 ## Quick Start
@@ -77,18 +76,13 @@ export OPENAI_BASE_URL=http://127.0.0.1:1234/v1
 export OPENAI_API_KEY=
 export SPLIT_MODEL=gemma-4-e2b-it
 export TRANSLATION_MODEL=gemma-4-e4b-it
+export LLM_MODEL=gemma-4-e2b-it
 ```
 
 Recommended local models:
 
 - `gemma-4-e2b-it`: Strong lightweight default for sentence splitting and general subtitle cleanup
 - `gemma-4-e4b-it`: Recommended when you want better translation quality from a local model
-
-Recommended LM Studio runtime settings for stability:
-
-- Default Context Length: `16384`
-- Parallel: `1` for local subtitle translation jobs
-- Avoid `Model maximum` as a global default on 16 GB machines; it increases latency and memory pressure unnecessarily
 
 ### Basic Usage
 ```bash
@@ -111,10 +105,7 @@ translate -i subtitle.srt -t zh --preserve-intermediate
 ## Workflow
 
 ```
-English SRT Subtitle
-→ Parallel preprocessing: LLM context extraction + intelligent segmentation
-→ Structured translation
-→ Bilingual ASS Subtitle
+English SRT Subtitle → Intelligent Segmentation → AI Translation → Bilingual ASS Subtitle
 ```
 
 ## Supported Formats
@@ -194,16 +185,6 @@ OPENAI_API_KEY=your-api-key-here
 SPLIT_MODEL=gpt-4o-mini      # Sentence splitting model
 TRANSLATION_MODEL=gpt-4o     # Translation model
 LLM_MODEL=gpt-4o-mini        # Default model
-
-# Stable local-model defaults
-THREAD_NUM=1
-MIN_BATCH_SENTENCES=15
-MAX_BATCH_SENTENCES=25
-TARGET_BATCH_SENTENCES=20
-MAX_WORD_COUNT_ENGLISH=19
-CONTEXT_EXCERPT_SEGMENTS=24
-CONTEXT_EXCERPT_CHARS=4500
-CONTEXT_SIBLING_TITLES=12
 ```
 
 For LM Studio or other local OpenAI-compatible servers:
@@ -213,21 +194,8 @@ OPENAI_BASE_URL=http://127.0.0.1:1234/v1
 OPENAI_API_KEY=
 SPLIT_MODEL=gemma-4-e2b-it
 TRANSLATION_MODEL=gemma-4-e4b-it
-THREAD_NUM=1
-MIN_BATCH_SENTENCES=15
-MAX_BATCH_SENTENCES=25
-TARGET_BATCH_SENTENCES=20
-MAX_WORD_COUNT_ENGLISH=19
-CONTEXT_EXCERPT_SEGMENTS=24
-CONTEXT_EXCERPT_CHARS=4500
-CONTEXT_SIBLING_TITLES=12
+LLM_MODEL=gemma-4-e2b-it
 ```
-
-### Stability Notes
-
-- Translation now prefers structured JSON Schema output and only falls back when the local provider or model does not support it.
-- For local models, stability is usually better with lower concurrency than with higher throughput.
-- If long subtitle files fail with `Context size has been exceeded`, increase LM Studio context length first before increasing batch sizes.
 
 ### External Context
 
@@ -245,13 +213,7 @@ EOF
 translate -i video.srt -t zh
 ```
 
-The translation step now combines:
-
-- user-provided context from `context.txt` / `ctx.txt`
-- filesystem-derived metadata from file names and nearby titles
-- LLM-extracted structured context from the subtitle content itself
-
-This improves topic awareness, proper noun consistency, and likely ASR correction.
+The context information will be passed to the translation model along with filename and path information to improve translation quality and terminology accuracy.
 
 ### Terminology Configuration
 

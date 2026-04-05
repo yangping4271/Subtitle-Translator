@@ -14,7 +14,6 @@
 - **批量处理**: 同时处理多个文件
 - **模块化配置**: 可为断句和翻译分别配置不同模型
 - **外部上下文支持**: 通过 context.txt 文件提供额外的翻译上下文
-- **LLM 上下文提炼**: 在翻译前从字幕内容和文件系统元数据中提炼结构化上下文
 - **术语表支持**: 支持全局和本地术语表，确保专业术语翻译一致性
 
 ## 快速开始
@@ -77,18 +76,13 @@ export OPENAI_BASE_URL=http://127.0.0.1:1234/v1
 export OPENAI_API_KEY=
 export SPLIT_MODEL=gemma-4-e2b-it
 export TRANSLATION_MODEL=gemma-4-e4b-it
+export LLM_MODEL=gemma-4-e2b-it
 ```
 
 推荐本地模型：
 
 - `gemma-4-e2b-it`：适合断句、字幕清洗和日常本地使用
 - `gemma-4-e4b-it`：更推荐用于本地翻译，质量通常更稳
-
-推荐的 LM Studio 稳定设置：
-
-- Default Context Length：`16384`
-- Parallel：`1`
-- 对 16 GB 机器，不建议把全局默认设置成 `Model maximum`，会显著增加延迟和内存压力
 
 ### 基本使用
 ```bash
@@ -111,10 +105,7 @@ translate -i subtitle.srt -t zh --preserve-intermediate
 ## 工作流程
 
 ```
-英文 SRT 字幕
-→ 并行预处理：LLM 上下文提炼 + 智能断句
-→ 结构化翻译
-→ 双语 ASS 字幕
+英文 SRT 字幕 → 智能断句 → AI 翻译 → 双语 ASS 字幕
 ```
 
 ## 支持的格式
@@ -143,13 +134,7 @@ EOF
 translate -i video.srt -t zh
 ```
 
-翻译阶段现在会综合使用以下上下文：
-
-- 用户提供的 `context.txt` / `ctx.txt`
-- 从文件名和同级标题提炼出的文件系统元数据
-- 从字幕内容本身提炼出的 LLM 结构化上下文
-
-这样可以更好地提升主题识别、专名一致性和 ASR 纠错效果。
+上下文信息会与文件名和路径信息一起传递给翻译模型，帮助提高翻译质量和术语准确性。
 
 ### 术语表配置
 
@@ -257,16 +242,6 @@ OPENAI_API_KEY=your-api-key-here
 SPLIT_MODEL=gpt-4o-mini      # 断句模型
 TRANSLATION_MODEL=gpt-4o     # 翻译模型
 LLM_MODEL=gpt-4o-mini        # 默认模型
-
-# 本地模型稳定档
-THREAD_NUM=1
-MIN_BATCH_SENTENCES=15
-MAX_BATCH_SENTENCES=25
-TARGET_BATCH_SENTENCES=20
-MAX_WORD_COUNT_ENGLISH=19
-CONTEXT_EXCERPT_SEGMENTS=24
-CONTEXT_EXCERPT_CHARS=4500
-CONTEXT_SIBLING_TITLES=12
 ```
 
 如果使用 LM Studio 或其他本地 OpenAI-compatible 服务：
@@ -276,21 +251,8 @@ OPENAI_BASE_URL=http://127.0.0.1:1234/v1
 OPENAI_API_KEY=
 SPLIT_MODEL=gemma-4-e2b-it
 TRANSLATION_MODEL=gemma-4-e4b-it
-THREAD_NUM=1
-MIN_BATCH_SENTENCES=15
-MAX_BATCH_SENTENCES=25
-TARGET_BATCH_SENTENCES=20
-MAX_WORD_COUNT_ENGLISH=19
-CONTEXT_EXCERPT_SEGMENTS=24
-CONTEXT_EXCERPT_CHARS=4500
-CONTEXT_SIBLING_TITLES=12
+LLM_MODEL=gemma-4-e2b-it
 ```
-
-### 稳定性说明
-
-- 翻译阶段现在优先使用 JSON Schema 结构化输出，只有在本地服务或模型不支持时才回退。
-- 对本地模型来说，低并发通常比高吞吐更稳定。
-- 如果长字幕文件报 `Context size has been exceeded`，优先提高 LM Studio 的 context length，而不是先增大批量大小。
 
 ## 开发
 

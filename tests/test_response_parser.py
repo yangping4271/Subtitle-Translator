@@ -21,6 +21,22 @@ def test_parse_translation_response_from_structured_json():
     }
 
 
+def test_parse_translation_response_from_translation_only_json():
+    response = """
+    {
+      "subtitles": [
+        {"id": 1, "translation": "你好，世界"}
+      ]
+    }
+    """
+
+    result = parse_translation_response(response)
+
+    assert result == {
+        "1": {"optimized_subtitle": "", "translation": "你好，世界"},
+    }
+
+
 def test_parse_translation_response_falls_back_to_xml():
     response = """
     <subtitle id="1">

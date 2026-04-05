@@ -153,25 +153,19 @@ class SubtitleOptimizer:
             translate_fn=self._translate,
         )
 
-    def translate_subtitles(self, asr_data, context_info: str) -> List[Dict]:
-        """翻译完整字幕数据，内部自行分批并并发处理。"""
-        subtitle_json = {
-            str(k): v["original_subtitle"]
-            for k, v in asr_data.to_json().items()
-        }
-        batch_result = self._batch_translate(subtitle_json, context_info)
+    def translate_batch_directly(self, asr_data, context_info: str) -> List[Dict]:
+        """直接翻译单个批次（用于流水线模式）。"""
+        subtitle_json = {str(k): v["original_subtitle"]
+                        for k, v in asr_data.to_json().items()}
 
-        results = []
-        for subtitle_id, original in subtitle_json.items():
-            key = str(subtitle_id)
-            results.append({
-                "id": int(key),
-                "original": original,
-                "optimized": batch_result["optimized_subtitles"].get(key, original),
-                "translation": batch_result["translated_subtitles"].get(key, ""),
-            })
+        results = self._translate(subtitle_json, context_info, batch_num=1, total_batches=1)
 
-        results.sort(key=lambda item: item["id"])
+        failed_items = {r['id']: r['original'] for r in results
+                        if _is_translation_failed(r.get('translation', ''))}
+
+        if failed_items:
+            results = self._executor_obj.retry_failed_translations(failed_items, context_info, results)
+
         return results
 
     def stop(self):

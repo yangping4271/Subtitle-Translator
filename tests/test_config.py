@@ -25,18 +25,12 @@ def test_get_target_language_invalid():
         get_target_language("xyz")
 
 
-def test_config_reads_batch_env_vars(monkeypatch):
+def test_config_uses_local_and_remote_default_thread_counts(monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:1234/v1")
-    monkeypatch.setenv("THREAD_NUM", "1")
-    monkeypatch.setenv("MIN_BATCH_SENTENCES", "10")
-    monkeypatch.setenv("MAX_BATCH_SENTENCES", "12")
-    monkeypatch.setenv("TARGET_BATCH_SENTENCES", "11")
-    monkeypatch.setenv("MAX_WORD_COUNT_ENGLISH", "17")
+    monkeypatch.delenv("THREAD_NUM", raising=False)
+    local_config = SubtitleConfig()
+    assert local_config.thread_num == 4
 
-    config = SubtitleConfig()
-
-    assert config.thread_num == 1
-    assert config.min_batch_sentences == 10
-    assert config.max_batch_sentences == 12
-    assert config.target_batch_sentences == 11
-    assert config.max_word_count_english == 17
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    remote_config = SubtitleConfig()
+    assert remote_config.thread_num == 18

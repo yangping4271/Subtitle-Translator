@@ -13,7 +13,6 @@ from rich import print
 from .exceptions import OpenAIAPIError, EmptySubtitleError, TranslationError, SmartSplitError
 from .logger import log_section_end, log_section_start, log_stats
 from .translation_core.config import SubtitleConfig
-from .translation_core.context_extractor import extract_context_info
 from .translation_core.data import SubtitleData, load_subtitle
 from .translation_core.optimizer import SubtitleOptimizer, format_diff, _is_format_change_only, _is_wrong_replacement
 from .translation_core.splitter import (
@@ -212,29 +211,32 @@ class SubtitleTranslatorService:
 
             preprocessing_start_time = time.time()
             log_section_start(self.logger, "并行预处理阶段", "⚡")
-            print("⚡ [bold cyan]启动并行预处理：上下文提炼 + 断句准备...[/bold cyan]")
 
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                context_future = executor.submit(self._extract_translation_context, input_srt_path.resolve(), asr_data)
-                prepare_future = executor.submit(self._prepare_subtitles_for_translation, asr_data)
+            context_info = build_context_info(input_srt_path.resolve())
+            stage_times["📋 上下文提取"] = 0.0  # 本地操作，耗时可忽略
 
-                context_info, context_time = context_future.result()
-                asr_data, split_time = prepare_future.result()
+            # 打印加载的上下文信息
+            if context_info:
+                self.logger.info("📋 已加载上下文信息:")
+                for line in context_info.split('\n'):
+                    if line.strip():
+                        self.logger.info(f"   {line}")
+            else:
+                self.logger.info("📋 未加载任何上下文信息")
 
-            stage_times["📋 上下文提炼"] = context_time
-            stage_times["✂️ 断句准备"] = split_time
+            pipeline_start_time = time.time()
+            print("⚡ [bold cyan]启动流水线处理：断句 + 翻译并行...[/bold cyan]")
 
-            self._log_context_info(context_info)
+            asr_data, translate_result = self._translate_with_pipeline(asr_data, context_info)
+
+            pipeline_time = time.time() - pipeline_start_time
+            stage_times["🚀 流水线处理"] = pipeline_time
 
             preprocessing_time = time.time() - preprocessing_start_time
             log_section_end(self.logger, "并行预处理阶段", preprocessing_time, "🎉")
-            print(f"🎉 [bold green]并行预处理完成[/bold green] (总耗时: [cyan]{preprocessing_time:.1f}s[/cyan])")
-            stage_times["⚡ 并行预处理"] = preprocessing_time
+            print(f"🎉 [bold green]流水线处理完成[/bold green] (总耗时: [cyan]{preprocessing_time:.1f}s[/cyan])")
 
-            translate_start_time = time.time()
-            print("🌍 [bold cyan]开始统一翻译...[/bold cyan]")
-            translate_result = self._translate_prepared_subtitles(asr_data, context_info)
-            stage_times["🌍 统一翻译"] = time.time() - translate_start_time
+            stage_times["⚡ 并行预处理"] = preprocessing_time
 
             target_lang_output_path = self._save_subtitle_files(
                 asr_data, translate_result, input_srt_path, output_dir, target_lang
@@ -268,30 +270,13 @@ class SubtitleTranslatorService:
             self.logger.debug("详细错误信息:", exc_info=True)
             raise
 
-    def _extract_translation_context(self, input_srt_path: Path, asr_data: SubtitleData) -> Tuple[str, float]:
-        """提炼翻译上下文，失败时回退到本地元数据。"""
-        start_time = time.time()
-        try:
-            context_info = extract_context_info(input_srt_path, asr_data, self.config)
-            return context_info, time.time() - start_time
-        except Exception as exc:
-            self.logger.warning(f"⚠️ LLM上下文提炼失败，回退到本地元数据: {exc}")
-            return build_context_info(input_srt_path), time.time() - start_time
+    def _translate_with_pipeline(self, asr_data: SubtitleData, context_info: str) -> Tuple[SubtitleData, list]:
+        """
+        流水线式翻译：每个批次断句后立即翻译
 
-    def _log_context_info(self, context_info: str) -> None:
-        """打印加载的上下文信息。"""
-        if context_info:
-            self.logger.info("📋 已加载上下文信息:")
-            for line in context_info.split('\n'):
-                if line.strip():
-                    self.logger.info(f"   {line}")
-        else:
-            self.logger.info("📋 未加载任何上下文信息")
-
-    def _prepare_subtitles_for_translation(self, asr_data: SubtitleData) -> Tuple[SubtitleData, float]:
-        """完成断句准备阶段，返回可直接翻译的字幕数据。"""
-        start_time = time.time()
-
+        Returns:
+            (final_asr_data, translate_result)
+        """
         # 1. 预处理：移除纯标点符号
         asr_data.segments = preprocess_segments(asr_data.segments)
 
@@ -313,18 +298,26 @@ class SubtitleTranslatorService:
         total_batches = len(batches)
         self.logger.info(f"📦 分为 {total_batches} 批处理 {len(word_segments)} 个单词")
 
-        # 5. 并发断句
+        # 5. 并发处理
         concurrency = self.config.thread_num
+        all_translated_results = []
         all_segments = []
+        batch_logs_all = []
 
         def process_batch_task(args):
-            """每个批次的断句任务。"""
+            """每个批次的完整任务：断句 + 翻译"""
             batch_index, batch = args
-            return merge_segments_within_batch(
+            batch_segments = merge_segments_within_batch(
                 batch, word_segments,
                 model=self.config.split_model,
                 batch_index=batch_index + 1
             )
+
+            batch_asr_data = SubtitleData(batch_segments)
+            translator = SubtitleOptimizer(config=self.config)
+            batch_translate_result = translator.translate_batch_directly(batch_asr_data, context_info)
+
+            return (batch_segments, batch_translate_result, translator.batch_logs)
 
         batch_tasks = list(enumerate(batches))
 
@@ -332,24 +325,17 @@ class SubtitleTranslatorService:
             chunk = batch_tasks[i:i + concurrency]
             with ThreadPoolExecutor(max_workers=min(len(chunk), concurrency)) as executor:
                 processed_chunks = list(executor.map(process_batch_task, chunk))
-                for segments in processed_chunks:
+                for segments, translate_result, batch_logs in processed_chunks:
                     all_segments.extend(segments)
+                    all_translated_results.extend(translate_result)
+                    batch_logs_all.extend(batch_logs)
 
                 progress = min(i + concurrency, len(batch_tasks))
-                self.logger.info(f"📈 断句进度: {progress}/{len(batch_tasks)}")
+                self.logger.info(f"📈 流水线进度: {progress}/{len(batch_tasks)}")
 
         # 6. 按时间排序
         all_segments.sort(key=lambda seg: seg.start_time)
         final_asr_data = SubtitleData(all_segments)
-
-        self.logger.info(f"✅ 断句准备完成！共 {len(all_segments)} 句")
-        return final_asr_data, time.time() - start_time
-
-    def _translate_prepared_subtitles(self, asr_data: SubtitleData, context_info: str) -> list:
-        """在上下文和断句都准备完毕后统一翻译。"""
-        translator = SubtitleOptimizer(config=self.config)
-        all_translated_results = translator.translate_subtitles(asr_data, context_info)
-        batch_logs_all = translator.batch_logs
 
         # 7. 重新编号翻译结果
         renumbered_results = []
@@ -374,8 +360,9 @@ class SubtitleTranslatorService:
                 print(f"   [yellow]可疑替换: {stats['wrong_changes']} 项[/yellow]")
             print(f"   总计: [cyan]{stats['total_changes']}[/cyan] 项优化")
 
-        self.logger.info(f"✅ 统一翻译完成！共 {len(asr_data.segments)} 句")
-        return renumbered_results
+        self.logger.info(f"✅ 流水线处理完成！共 {len(all_segments)} 句")
+
+        return final_asr_data, renumbered_results
 
     def _print_optimization_details(self, batch_logs: list) -> None:
         """打印详细的优化日志"""

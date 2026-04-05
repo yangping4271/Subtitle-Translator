@@ -9,6 +9,24 @@ from ...logger import setup_logger
 logger = setup_logger("response_parser")
 
 
+def parse_xml_response(response: str) -> Dict[str, Dict[str, str]]:
+    """解析 LLM 返回的 XML 响应。
+
+    Returns:
+        解析后的字典，格式为 {subtitle_id: {optimized_subtitle, translation}}
+        解析失败返回空字典
+    """
+    if not response:
+        return {}
+
+    cleaned = _clean_response(response)
+
+    if _is_json_format(cleaned):
+        return _parse_json_fallback(cleaned)
+
+    return _parse_xml_format(cleaned)
+
+
 def parse_translation_response(response: str) -> Dict[str, Dict[str, str]]:
     """解析翻译响应，优先 JSON，其次 XML。"""
     if not response:
@@ -70,12 +88,11 @@ def _parse_translation_json(text: str) -> Dict[str, Dict[str, str]]:
             continue
 
         subtitle_id = item.get("id")
-        optimized = item.get("optimized", "")
-        translation = item.get("translation", "")
-
         if subtitle_id is None:
             continue
 
+        optimized = item.get("optimized", "")
+        translation = item.get("translation", "")
         results[str(subtitle_id)] = {
             "optimized_subtitle": optimized.strip() if isinstance(optimized, str) else "",
             "translation": translation.strip() if isinstance(translation, str) else "",
