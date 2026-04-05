@@ -1,5 +1,5 @@
 import pytest
-from subtitle_translator.translation_core.config import get_target_language
+from subtitle_translator.translation_core.config import SubtitleConfig, get_target_language
 
 
 def test_get_target_language_valid():
@@ -23,3 +23,20 @@ def test_get_target_language_invalid():
 
     with pytest.raises(ValueError):
         get_target_language("xyz")
+
+
+def test_config_reads_batch_env_vars(monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:1234/v1")
+    monkeypatch.setenv("THREAD_NUM", "1")
+    monkeypatch.setenv("MIN_BATCH_SENTENCES", "10")
+    monkeypatch.setenv("MAX_BATCH_SENTENCES", "12")
+    monkeypatch.setenv("TARGET_BATCH_SENTENCES", "11")
+    monkeypatch.setenv("MAX_WORD_COUNT_ENGLISH", "17")
+
+    config = SubtitleConfig()
+
+    assert config.thread_num == 1
+    assert config.min_batch_sentences == 10
+    assert config.max_batch_sentences == 12
+    assert config.target_batch_sentences == 11
+    assert config.max_word_count_english == 17

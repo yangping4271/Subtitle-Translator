@@ -85,6 +85,20 @@ def _build_language_error(lang_code: str) -> str:
     error_msg += f"\n\n📊 总计支持 {len(set(LANGUAGE_MAPPING.values()))} 种语言，{len(LANGUAGE_MAPPING)} 个语言代码"
     raise ValueError(error_msg)
 
+
+def _read_positive_int_env(env_name: str, current_value: int) -> int:
+    """读取正整数环境变量，非法值时保留当前值。"""
+    raw_value = os.getenv(env_name)
+    if not raw_value:
+        return current_value
+
+    try:
+        parsed = int(raw_value)
+    except ValueError:
+        return current_value
+
+    return max(1, parsed)
+
 @dataclass
 class SubtitleConfig:
     """字幕处理配置类"""
@@ -131,12 +145,28 @@ class SubtitleConfig:
         self.split_model = os.getenv('SPLIT_MODEL', self.llm_model)
         self.translation_model = os.getenv('TRANSLATION_MODEL', self.llm_model)
 
-        env_thread_num = os.getenv('THREAD_NUM')
-        if env_thread_num:
-            try:
-                self.thread_num = max(1, int(env_thread_num))
-            except ValueError:
-                pass
+        self.thread_num = _read_positive_int_env('THREAD_NUM', self.thread_num)
+        self.max_word_count_english = _read_positive_int_env(
+            'MAX_WORD_COUNT_ENGLISH', self.max_word_count_english
+        )
+        self.min_batch_sentences = _read_positive_int_env(
+            'MIN_BATCH_SENTENCES', self.min_batch_sentences
+        )
+        self.max_batch_sentences = _read_positive_int_env(
+            'MAX_BATCH_SENTENCES', self.max_batch_sentences
+        )
+        self.target_batch_sentences = _read_positive_int_env(
+            'TARGET_BATCH_SENTENCES', self.target_batch_sentences
+        )
+
+        if self.min_batch_sentences > self.max_batch_sentences:
+            self.min_batch_sentences = self.max_batch_sentences
+
+        if not (self.min_batch_sentences <= self.target_batch_sentences <= self.max_batch_sentences):
+            self.target_batch_sentences = min(
+                max(self.target_batch_sentences, self.min_batch_sentences),
+                self.max_batch_sentences,
+            )
 
         env_lm_studio_ttl = os.getenv('LM_STUDIO_TTL')
         if env_lm_studio_ttl:

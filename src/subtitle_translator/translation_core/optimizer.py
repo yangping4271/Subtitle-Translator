@@ -11,9 +11,38 @@ from .llm_client import LLMClient
 from .prompts import TRANSLATE_PROMPT
 from .translation_retry import TranslationExecutor, _is_translation_failed
 from .utils.api import validate_api_response
-from .utils.response_parser import parse_xml_response
+from .utils.response_parser import parse_translation_response
 
 logger = setup_logger("subtitle_optimizer")
+
+
+TRANSLATION_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "subtitle_translation_batch",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "subtitles": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "optimized": {"type": "string"},
+                            "translation": {"type": "string"},
+                        },
+                        "required": ["id", "optimized", "translation"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["subtitles"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+}
 
 
 def _is_format_change_only(original: str, optimized: str) -> bool:
@@ -124,19 +153,25 @@ class SubtitleOptimizer:
             translate_fn=self._translate,
         )
 
-    def translate_batch_directly(self, asr_data, context_info: str) -> List[Dict]:
-        """直接翻译单个批次（用于流水线模式）。"""
-        subtitle_json = {str(k): v["original_subtitle"]
-                        for k, v in asr_data.to_json().items()}
+    def translate_subtitles(self, asr_data, context_info: str) -> List[Dict]:
+        """翻译完整字幕数据，内部自行分批并并发处理。"""
+        subtitle_json = {
+            str(k): v["original_subtitle"]
+            for k, v in asr_data.to_json().items()
+        }
+        batch_result = self._batch_translate(subtitle_json, context_info)
 
-        results = self._translate(subtitle_json, context_info, batch_num=1, total_batches=1)
+        results = []
+        for subtitle_id, original in subtitle_json.items():
+            key = str(subtitle_id)
+            results.append({
+                "id": int(key),
+                "original": original,
+                "optimized": batch_result["optimized_subtitles"].get(key, original),
+                "translation": batch_result["translated_subtitles"].get(key, ""),
+            })
 
-        failed_items = {r['id']: r['original'] for r in results
-                        if _is_translation_failed(r.get('translation', ''))}
-
-        if failed_items:
-            results = self._executor_obj.retry_failed_translations(failed_items, context_info, results)
-
+        results.sort(key=lambda item: item["id"])
         return results
 
     def stop(self):
@@ -286,6 +321,25 @@ class SubtitleOptimizer:
             {"role": "user", "content": input_content}
         ]
 
+    def _create_chat_completion_with_fallback(self, message):
+        """优先使用结构化输出，失败时回退到普通聊天补全。"""
+        kwargs = {
+            "model": self.config.translation_model,
+            "stream": False,
+            "messages": message,
+            "temperature": 0.7,
+            "timeout": 80,
+        }
+
+        try:
+            return self.llm.create_chat_completion(
+                **kwargs,
+                response_format=TRANSLATION_RESPONSE_FORMAT,
+            )
+        except Exception as exc:
+            logger.warning(f"⚠️ 结构化翻译输出失败，回退到普通模式: {exc}")
+            return self.llm.create_chat_completion(**kwargs)
+
     def _print_all_batch_logs(self):
         """统一打印所有批次的日志。"""
         if not self.batch_logs:
@@ -340,17 +394,11 @@ class SubtitleOptimizer:
                 logger.info(f"📤 {batch_info} 提交给LLM的字幕数据 (共{len(original_subtitle)}条):")
                 logger.info(f"   输入JSON: {json.dumps(original_subtitle, ensure_ascii=False)}")
 
-                response = self.llm.create_chat_completion(
-                    model=self.config.translation_model,
-                    stream=False,
-                    messages=message,
-                    temperature=0.7,
-                    timeout=80
-                )
+                response = self._create_chat_completion_with_fallback(message)
                 raw_response = validate_api_response(response, batch_info)
                 logger.info(f"{batch_info} LLM原始返回数据:\n{raw_response}")
 
-                response_content = parse_xml_response(raw_response)
+                response_content = parse_translation_response(raw_response)
 
                 response_content = self._normalize_response_format(response_content, batch_info)
 

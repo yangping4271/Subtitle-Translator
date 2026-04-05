@@ -2,24 +2,25 @@
 
 import json
 import re
-from typing import Dict
+from typing import Dict, Any
 
 from ...logger import setup_logger
 
 logger = setup_logger("response_parser")
 
 
-def parse_xml_response(response: str) -> Dict[str, Dict[str, str]]:
-    """解析 LLM 返回的 XML 响应。
-
-    Returns:
-        解析后的字典，格式为 {subtitle_id: {optimized_subtitle, translation}}
-        解析失败返回空字典
-    """
+def parse_translation_response(response: str) -> Dict[str, Dict[str, str]]:
+    """解析翻译响应，优先 JSON，其次 XML。"""
     if not response:
         return {}
 
     cleaned = _clean_response(response)
+    if not cleaned:
+        return {}
+
+    json_result = _parse_translation_json(cleaned)
+    if json_result:
+        return json_result
 
     if _is_json_format(cleaned):
         return _parse_json_fallback(cleaned)
@@ -47,6 +48,40 @@ def _parse_json_fallback(text: str) -> Dict[str, Dict[str, str]]:
     except Exception as exc:
         logger.warning(f"JSON 回退解析失败: {exc}")
         return {}
+
+
+def _parse_translation_json(text: str) -> Dict[str, Dict[str, str]]:
+    """解析结构化翻译 JSON。"""
+    try:
+        parsed: Any = json.loads(text)
+    except Exception:
+        return {}
+
+    if not isinstance(parsed, dict):
+        return {}
+
+    subtitles = parsed.get("subtitles")
+    if not isinstance(subtitles, list):
+        return {}
+
+    results: Dict[str, Dict[str, str]] = {}
+    for item in subtitles:
+        if not isinstance(item, dict):
+            continue
+
+        subtitle_id = item.get("id")
+        optimized = item.get("optimized", "")
+        translation = item.get("translation", "")
+
+        if subtitle_id is None:
+            continue
+
+        results[str(subtitle_id)] = {
+            "optimized_subtitle": optimized.strip() if isinstance(optimized, str) else "",
+            "translation": translation.strip() if isinstance(translation, str) else "",
+        }
+
+    return results
 
 
 def _parse_xml_format(text: str) -> Dict[str, Dict[str, str]]:

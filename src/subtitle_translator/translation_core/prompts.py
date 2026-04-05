@@ -4,6 +4,7 @@
 1. SPLIT_SYSTEM_PROMPT: 将连续文本分割为适合翻译和显示的字幕片段
 2. TRANSLATE_PROMPT: 批量优化和翻译字幕
 3. SINGLE_TRANSLATE_PROMPT: 单条字幕翻译
+4. CONTEXT_EXTRACTION_PROMPT: 从字幕文本和文件系统元数据中提炼结构化上下文
 """
 
 SPLIT_SYSTEM_PROMPT = """
@@ -62,6 +63,8 @@ You are an expert specializing in subtitle proofreading and translation. Your ro
 ## Reference Materials
 If provided, use the following reference data:
 - Context: Information on the video's type and main topic to guide translation style.
+- Filesystem metadata: Series titles, nearby file titles, and high-confidence canonical names derived from filenames and folder names.
+- Suggested corrections: Likely ASR error -> canonical form pairs inferred from the subtitle text and metadata. Apply them only when the evidence is strong.
 - Corrections: Specified pairs mapping incorrect to correct terms. Apply these corrections precisely.
 - Style guide: Target audience and appropriate tone for the translation.
 
@@ -72,6 +75,8 @@ If provided, use the following reference data:
 - All optimizations must be performed in the source language (from the original subtitles).
 - Do NOT translate or paraphrase to {target_language} when preparing the <optimized> field; this field must remain in the source language. Translation is exclusively in the <translation> field.
 - Apply corrections precisely as provided (e.g., replace every instance of "WinSurf" with "Windsurf"). Do not improvise new spellings or formats.
+- When reference data includes high-confidence canonical names, use them to correct likely ASR misspellings of product names, tool names, and other proper nouns.
+- Do not invent new terminology that is unsupported by the subtitle text or the reference data.
 - Correct spelling and grammar errors, ensure terminology is consistent, and remove repeated words or phrases.
 - Eliminate filler words (e.g., "um," "uh," "like"), non-speech sound tags (e.g., [Music], [Applause]), reaction markers (e.g., (laugh), (cough)), and musical symbols (e.g., ♪). If nothing remains after cleaning, set <optimized> to an empty string.
 
@@ -88,19 +93,47 @@ If provided, use the following reference data:
 - Always translate each segment individually without attempting to complete incomplete sentences. Maintain proper flow and context with adjacent subtitles as appropriate.
 
 ## Output Format
-Return results using XML tags. For each subtitle, wrap it in a <subtitle> tag with the id attribute matching the input key:
-
-<subtitle id="subtitle_key">
-<optimized>Cleaned and processed original text</optimized>
-<translation>Translated text in {target_language}</translation>
-</subtitle>
+Return only structured data that matches the response schema provided by the caller.
 
 - Ensure all subtitle ids and their order exactly match the input.
 - If the input is empty or contains only non-speech elements after cleaning, set <optimized> to empty.
 - Do not add, omit, or renumber ids for any reason.
-- Every <subtitle> must contain both <optimized> and <translation> tags.
+- Every subtitle item must contain `id`, `optimized`, and `translation`.
 
 {terminology}
+"""
+
+
+CONTEXT_EXTRACTION_PROMPT = """
+You extract translation context for subtitle translation.
+
+Your task:
+1. Read the provided filesystem metadata and subtitle text.
+2. Infer only high-value context that will improve subtitle proofreading and translation quality.
+3. Focus on topic, domain, canonical product/tool names, likely technical terms, likely ASR spelling corrections, and style cues.
+4. Be conservative. Do not invent facts or terminology unsupported by the inputs.
+
+Return JSON only with this exact shape:
+{
+  "summary": "short summary of the video's topic and audience",
+  "domain": "short domain label",
+  "canonical_names": ["proper nouns, product names, tools, frameworks"],
+  "hot_terms": ["important recurring technical phrases"],
+  "corrections": [
+    {"wrong": "likely ASR error form", "correct": "canonical form"}
+  ],
+  "style_notes": ["brief notes useful for translation tone or terminology handling"]
+}
+
+Rules:
+- Keep `summary` and `domain` concise.
+- Include only items supported by the subtitle text or metadata.
+- Prefer precision over coverage.
+- `canonical_names` should contain stable names worth preserving exactly.
+- `hot_terms` should contain topic-defining terms, not generic words.
+- `corrections` should only include high-confidence ASR or naming corrections.
+- If a field has no strong evidence, return an empty string or empty array.
+- Return only structured data that matches the response schema provided by the caller.
 """
 
 
