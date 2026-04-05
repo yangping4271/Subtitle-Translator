@@ -340,7 +340,7 @@ class SubtitleOptimizer:
                 logger.info(f"📤 {batch_info} 提交给LLM的字幕数据 (共{len(original_subtitle)}条):")
                 logger.info(f"   输入JSON: {json.dumps(original_subtitle, ensure_ascii=False)}")
 
-                response = self.client.chat.completions.create(
+                response = self.llm.create_chat_completion(
                     model=self.config.translation_model,
                     stream=False,
                     messages=message,

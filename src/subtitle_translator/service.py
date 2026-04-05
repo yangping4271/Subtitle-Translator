@@ -1,10 +1,12 @@
 """
 字幕翻译服务模块 - 核心翻译服务类
 """
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 from rich import print
 
@@ -66,6 +68,37 @@ class SubtitleTranslatorService:
 
         elapsed_time = time.time() - start_time
         log_section_end(self.logger, "翻译环境初始化", elapsed_time, "✅")
+
+    def unload_local_models_if_needed(self) -> None:
+        """在批量任务完成后主动卸载本次使用的本地 LM Studio 模型。"""
+        if not self.config.lm_studio_unload_on_complete:
+            return
+
+        parsed = urlparse(self.config.openai_base_url)
+        if parsed.hostname not in {"127.0.0.1", "localhost"}:
+            self.logger.info("跳过主动卸载：当前 OpenAI-compatible 服务不是本机 LM Studio")
+            return
+
+        model_ids = {
+            model_name
+            for model_name in (self.config.split_model, self.config.translation_model)
+            if model_name
+        }
+        if not model_ids:
+            return
+
+        for model_id in sorted(model_ids):
+            result = subprocess.run(
+                ["lms", "unload", model_id],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            output = (result.stdout or result.stderr).strip()
+            if result.returncode == 0:
+                self.logger.info(f"🧹 已主动卸载模型: {model_id}")
+            else:
+                self.logger.warning(f"主动卸载模型失败: {model_id} {output}")
 
     def _save_subtitle_files(
         self,

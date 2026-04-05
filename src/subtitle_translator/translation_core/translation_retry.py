@@ -9,6 +9,7 @@ import retry
 
 from ..logger import setup_logger
 from .config import SubtitleConfig
+from .llm_client import LLMClient
 from .prompts import SINGLE_TRANSLATE_PROMPT
 from .utils.api import validate_api_response
 
@@ -240,7 +241,7 @@ class TranslationExecutor:
             {"role": "user", "content": value},
         ]
 
-        response = self.client.chat.completions.create(
+        response = LLMClient.get_instance(self.config).create_chat_completion(
             model=self.config.translation_model,
             stream=False,
             messages=message,

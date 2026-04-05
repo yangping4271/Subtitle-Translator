@@ -108,8 +108,6 @@ def split_by_llm(text: str,
         model = config.split_model
 
     llm = LLMClient.get_instance(config)
-    client = llm.client
-    
     # 使用系统提示词
     system_prompt = SPLIT_SYSTEM_PROMPT.format(max_word_count_english=max_word_count_english)
     
@@ -118,7 +116,7 @@ def split_by_llm(text: str,
 
     try:
         # 调用API
-        response = client.chat.completions.create(
+        response = llm.create_chat_completion(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},

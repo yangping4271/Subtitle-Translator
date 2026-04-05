@@ -27,6 +27,7 @@ def process_batch(
     """批量处理文件"""
     count = 0
     generated_ass_files = []
+    translator_service = None
 
     try:
         translator_service = SubtitleTranslatorService()
@@ -80,6 +81,9 @@ def process_batch(
         print()
 
     show_results(count, generated_ass_files, output_dir, is_batch_mode)
+
+    if translator_service is not None:
+        translator_service.unload_local_models_if_needed()
 
 
 def _handle_translation_error(e: Exception, logger) -> None:
