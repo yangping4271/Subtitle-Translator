@@ -23,6 +23,7 @@ def test_build_context_info_with_context_file(tmp_path):
 
     result = build_context_info(srt_file.resolve())
     assert "A show about science." in result
+    assert "Terminology hints:" in result
     assert "episode 01" in result
 
 
@@ -31,5 +32,8 @@ def test_build_context_info_without_context_file(tmp_path):
     srt_file.touch()
 
     result = build_context_info(srt_file.resolve())
+    assert "Terminology hints:" in result
     assert "my film" in result
     assert "context.txt" not in result
+    assert "Filename:" not in result
+    assert "Folder path:" not in result

@@ -5,19 +5,18 @@ from pathlib import Path
 
 
 def build_context_info(input_file: Path) -> str:
-    """构建完整的上下文信息：外部文件 + 文件名/路径"""
+    """构建完整的上下文信息：外部文件 + 文件系统术语参考"""
     context_parts = []
 
     external_context = read_external_context(input_file.parent)
     if external_context:
         context_parts.append(external_context)
 
-    folder_path = extract_folder_path(input_file.parent)
-    if folder_path:
-        context_parts.append(f"Folder path: {folder_path}")
-
-    readable_filename = input_file.stem.replace('_', ' ').replace('-', ' ')
-    context_parts.append(f"Filename: {readable_filename}")
+    terminology_hints = extract_terminology_hints(input_file)
+    if terminology_hints:
+        hint_lines = ["Terminology hints:"]
+        hint_lines.extend(f"- {hint}" for hint in terminology_hints)
+        context_parts.append("\n".join(hint_lines))
 
     return "\n\n".join(context_parts)
 
@@ -49,3 +48,25 @@ def extract_folder_path(parent_dir: Path, max_depth: int = 3) -> str:
         current_path = current_path.parent
 
     return ' / '.join(reversed(parent_names))
+
+
+def extract_terminology_hints(input_file: Path, max_depth: int = 3) -> list[str]:
+    """提取文件名和上层目录名，作为术语参考。"""
+    hints = []
+
+    readable_filename = input_file.stem.replace('_', ' ').replace('-', ' ').strip()
+    if readable_filename:
+        hints.append(readable_filename)
+
+    current_path = input_file.parent
+    parent_names = []
+    for _ in range(max_depth):
+        if not current_path.name or current_path.name in ['/', '.', '..']:
+            break
+        folder_name = current_path.name.replace('_', ' ').replace('-', ' ').strip()
+        if folder_name:
+            parent_names.append(folder_name)
+        current_path = current_path.parent
+
+    hints.extend(parent_names)
+    return hints
