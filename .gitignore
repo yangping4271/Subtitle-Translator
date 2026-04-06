@@ -45,6 +45,7 @@ ENV/
 # Logs
 *.log
 logs/
+*.pid
 
 # OS generated files
 Thumbs.db
@@ -78,6 +79,11 @@ dmypy.json
 
 # Claude Code configuration
 CLAUDE.md
+
+# Local agent state
+.agents/
+skills-lock.json
+screenshots/
 
 # TODO and development notes
 docs/development/

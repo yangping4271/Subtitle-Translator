@@ -64,14 +64,5 @@ class LLMClient:
         return self._client
 
     def create_chat_completion(self, **kwargs):
-        """统一创建聊天补全请求。
-
-        对 LM Studio 这类本地 OpenAI-compatible 服务，按需附加 TTL，
-        让模型在空闲一段时间后自动卸载。
-        """
-        extra_body = kwargs.pop("extra_body", None) or {}
-        if self.config.lm_studio_ttl:
-            extra_body.setdefault("ttl", self.config.lm_studio_ttl)
-        if extra_body:
-            kwargs["extra_body"] = extra_body
+        """统一创建聊天补全请求。"""
         return self._client.chat.completions.create(**kwargs)
