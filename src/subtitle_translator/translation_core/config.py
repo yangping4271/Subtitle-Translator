@@ -129,6 +129,11 @@ class SubtitleConfig:
         """设置目标语言"""
         self.target_language = get_target_language(lang_code)
 
+    def is_local_openai_compatible(self) -> bool:
+        """判断当前端点是否为本机 OpenAI-compatible 服务。"""
+        parsed = urlparse(self.openai_base_url)
+        return (parsed.hostname or "").lower() in {"127.0.0.1", "localhost"}
+
     def __post_init__(self):
         """验证配置并重新读取环境变量"""
         if self._skip_env_load:

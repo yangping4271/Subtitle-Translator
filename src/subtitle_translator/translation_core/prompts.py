@@ -91,9 +91,10 @@ If provided, use the following reference data:
 Return only structured data that matches the response schema provided by the caller.
 
 - Ensure all subtitle ids and their order exactly match the input.
-- If the input is empty or contains only non-speech elements after cleaning, set <optimized> to empty.
+- If the input is empty or contains only non-speech elements after cleaning, return empty strings for all non-id fields required by the schema.
 - Do not add, omit, or renumber ids for any reason.
-- Every subtitle item must contain `id`, `optimized`, and `translation`.
+- Every subtitle item must contain {required_fields}.
+- Only include fields defined by the caller's response schema.
 
 {terminology}
 """

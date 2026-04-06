@@ -34,3 +34,17 @@ def test_config_uses_local_and_remote_default_thread_counts(monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     remote_config = SubtitleConfig()
     assert remote_config.thread_num == 18
+
+
+def test_config_detects_local_openai_compatible_endpoint():
+    local_config = SubtitleConfig(
+        openai_base_url="http://127.0.0.1:1234/v1",
+        _skip_env_load=True,
+    )
+    remote_config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        _skip_env_load=True,
+    )
+
+    assert local_config.is_local_openai_compatible() is True
+    assert remote_config.is_local_openai_compatible() is False

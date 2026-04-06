@@ -44,6 +44,33 @@ TRANSLATION_RESPONSE_FORMAT = {
     },
 }
 
+TRANSLATION_ONLY_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "subtitle_translation_batch_translation_only",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "subtitles": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "translation": {"type": "string"},
+                        },
+                        "required": ["id", "translation"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["subtitles"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+}
+
 
 def _is_format_change_only(original: str, optimized: str) -> bool:
     """判断是否只有格式变化（大小写和标点符号）。"""
@@ -307,13 +334,30 @@ class SubtitleOptimizer:
 
         prompt = TRANSLATE_PROMPT.format(
             target_language=self.config.target_language,
-            terminology=self._executor_obj._format_terminology()
+            terminology=self._executor_obj._format_terminology(),
+            required_fields=self._get_required_response_fields(),
         )
 
         return [
             {"role": "system", "content": prompt},
             {"role": "user", "content": input_content}
         ]
+
+    def _should_use_translation_only_schema(self) -> bool:
+        """本机 OpenAI-compatible 模型只返回翻译文本，减少输出压力。"""
+        return self.config.is_local_openai_compatible()
+
+    def _get_required_response_fields(self) -> str:
+        """返回当前响应格式要求的字段说明。"""
+        if self._should_use_translation_only_schema():
+            return "`id` and `translation`"
+        return "`id`, `optimized`, and `translation`"
+
+    def _get_translation_response_format(self) -> dict:
+        """按模型部署环境选择响应 schema。"""
+        if self._should_use_translation_only_schema():
+            return TRANSLATION_ONLY_RESPONSE_FORMAT
+        return TRANSLATION_RESPONSE_FORMAT
 
     def _create_chat_completion_with_fallback(self, message):
         """优先使用结构化输出，失败时回退到普通聊天补全。"""
@@ -328,7 +372,7 @@ class SubtitleOptimizer:
         try:
             return self.llm.create_chat_completion(
                 **kwargs,
-                response_format=TRANSLATION_RESPONSE_FORMAT,
+                response_format=self._get_translation_response_format(),
             )
         except Exception as exc:
             logger.warning(f"⚠️ 结构化翻译输出失败，回退到普通模式: {exc}")

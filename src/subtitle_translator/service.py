@@ -6,7 +6,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional, Tuple
-from urllib.parse import urlparse
 
 from rich import print
 
@@ -74,8 +73,7 @@ class SubtitleTranslatorService:
         if not self.config.lm_studio_unload_on_complete:
             return
 
-        parsed = urlparse(self.config.openai_base_url)
-        if parsed.hostname not in {"127.0.0.1", "localhost"}:
+        if not self.config.is_local_openai_compatible():
             self.logger.info("跳过主动卸载：当前 OpenAI-compatible 服务不是本机 LM Studio")
             return
 
