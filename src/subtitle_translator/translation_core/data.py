@@ -26,8 +26,12 @@ class PreSplitSentence:
     end_time: int
 
 def normalize_chinese_punctuation(text: str) -> str:
-    """按 Netflix 规范处理中文标点：保留 ？ ！ …… · ' "，删除 ， 。 ； ："""
-    return re.sub(r'[，。；：]', '', text)
+    """保留中文句内标点，删除行尾弱标点，并补齐中英文/数字间空格。"""
+    text = re.sub(r'\s+', ' ', text).strip()
+    text = re.sub(r'([\u4e00-\u9fff])([A-Za-z0-9])', r'\1 \2', text)
+    text = re.sub(r'([A-Za-z0-9])([\u4e00-\u9fff])', r'\1 \2', text)
+    text = re.sub(r'[，,、。．.；;：:]+$', '', text)
+    return text
 
 def normalize_english_punctuation(text: str) -> str:
     """按 Netflix 规范处理英文标点：保留 ? ! ... ' "，删除 . , ; :"""

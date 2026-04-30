@@ -82,9 +82,6 @@ def process_batch(
 
     show_results(count, generated_ass_files, output_dir, is_batch_mode)
 
-    if translator_service is not None:
-        translator_service.unload_local_models_if_needed()
-
 
 def _handle_translation_error(e: Exception, logger) -> None:
     """统一处理翻译相关异常"""

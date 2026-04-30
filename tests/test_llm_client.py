@@ -69,6 +69,28 @@ def test_openrouter_disables_reasoning_by_default():
     )
 
 
+def test_openrouter_proxy_disables_reasoning_by_default():
+    config = SubtitleConfig(
+        openai_base_url="https://ai-proxy.chatwise.app/openrouter/api/v1",
+        openai_api_key="test-key",
+        _skip_env_load=True,
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="qwen/qwen3.6-27b",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="qwen/qwen3.6-27b",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={"reasoning": {"effort": "none"}},
+    )
+
+
 def test_openai_gpt_5_1_uses_reasoning_effort_none():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",

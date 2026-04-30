@@ -116,9 +116,6 @@ class SubtitleConfig:
     tolerance_multiplier: float = 1.2
     warning_multiplier: float = 1.5
     max_multiplier: float = 2.0
-    lm_studio_ttl: Optional[int] = 300
-    lm_studio_unload_on_complete: bool = True
-
     need_reflect: bool = False
     disable_thinking: bool = True
 
@@ -139,9 +136,14 @@ class SubtitleConfig:
         """根据 OpenAI-compatible Base URL 推断供应商类型。"""
         parsed = urlparse(self.openai_base_url)
         hostname = (parsed.hostname or "").lower()
+        path_parts = {
+            part.strip().lower()
+            for part in parsed.path.split("/")
+            if part.strip()
+        }
         if hostname.endswith("deepseek.com"):
             return "deepseek"
-        if hostname.endswith("openrouter.ai"):
+        if hostname.endswith("openrouter.ai") or "openrouter" in path_parts:
             return "openrouter"
         if hostname == "api.openai.com":
             return "openai"
@@ -167,19 +169,6 @@ class SubtitleConfig:
                 self.thread_num = max(1, int(env_thread_num))
             except ValueError:
                 pass
-
-        env_lm_studio_ttl = os.getenv('LM_STUDIO_TTL')
-        if env_lm_studio_ttl:
-            try:
-                self.lm_studio_ttl = max(1, int(env_lm_studio_ttl))
-            except ValueError:
-                pass
-
-        env_unload_on_complete = os.getenv('LM_STUDIO_UNLOAD_ON_COMPLETE')
-        if env_unload_on_complete:
-            self.lm_studio_unload_on_complete = env_unload_on_complete.strip().lower() in {
-                "1", "true", "yes", "on"
-            }
 
         env_disable_thinking = os.getenv('DISABLE_THINKING')
         if env_disable_thinking:

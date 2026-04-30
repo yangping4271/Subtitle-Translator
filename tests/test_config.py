@@ -69,6 +69,10 @@ def test_config_detects_provider_type_from_base_url():
         _skip_env_load=True,
     ).provider_type() == "openrouter"
     assert SubtitleConfig(
+        openai_base_url="https://ai-proxy.chatwise.app/openrouter/api/v1",
+        _skip_env_load=True,
+    ).provider_type() == "openrouter"
+    assert SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         _skip_env_load=True,
     ).provider_type() == "openai"
