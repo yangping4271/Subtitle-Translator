@@ -4,6 +4,7 @@ from subtitle_translator.translation_core.optimizer import (
     TRANSLATION_JSON_OBJECT_RESPONSE_FORMAT,
     TRANSLATION_ONLY_RESPONSE_FORMAT,
     TRANSLATION_RESPONSE_FORMAT,
+    _is_suspicious_optimized_shift,
 )
 
 
@@ -134,3 +135,37 @@ def test_translate_batch_directly_skips_retry_for_discarded_items():
 
     assert result[0]["discarded"] is True
     assert "retry" not in captured
+
+
+def test_suspicious_optimized_shift_allows_term_corrections():
+    assert _is_suspicious_optimized_shift(
+        "using a database, land chain, and an LM-powered pipeline",
+        "using a database, LangChain, and an LM-powered pipeline",
+    ) is False
+
+
+def test_suspicious_optimized_shift_detects_cross_id_move():
+    assert _is_suspicious_optimized_shift(
+        "extraction, and tool retrieval.",
+        "With these, you learn how memory-first architectures address the problem of agents failing at long horizon tasks.",
+    ) is True
+
+
+def test_fill_missing_fields_reverts_suspicious_optimized_shift():
+    optimizer = _build_optimizer("https://api.openai.com/v1")
+    response_content = {
+        "14": {
+            "optimized_subtitle": (
+                "With these, you learn how memory-first architectures address "
+                "the problem of agents failing at long horizon tasks."
+            ),
+            "translation": "通过这些技术，您将了解记忆优先架构如何解决问题。",
+            "discarded": False,
+        }
+    }
+    original_subtitle = {"14": "extraction, and tool retrieval."}
+
+    filled = optimizer._fill_missing_fields(response_content, original_subtitle)
+
+    assert filled["14"]["optimized_subtitle"] == "extraction, and tool retrieval."
+    assert filled["14"]["translation"] == "通过这些技术，您将了解记忆优先架构如何解决问题。"

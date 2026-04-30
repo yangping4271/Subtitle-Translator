@@ -105,6 +105,36 @@ def _is_wrong_replacement(original: str, optimized: str) -> bool:
     return False
 
 
+def _tokenize_for_similarity(text: str) -> List[str]:
+    """提取用于比较 optimized 是否仍对应原字幕的词。"""
+    return re.findall(r"[A-Za-z0-9]+", text.lower())
+
+
+def _is_suspicious_optimized_shift(original: str, optimized: str) -> bool:
+    """判断 optimized 是否疑似搬移了其他字幕内容。"""
+    if not original.strip() or not optimized.strip():
+        return False
+    if _is_format_change_only(original, optimized):
+        return False
+
+    original_tokens = _tokenize_for_similarity(original)
+    optimized_tokens = _tokenize_for_similarity(optimized)
+    if not original_tokens or not optimized_tokens:
+        return False
+
+    original_set = set(original_tokens)
+    optimized_set = set(optimized_tokens)
+    original_coverage = len(original_set & optimized_set) / len(original_set)
+    optimized_extra_ratio = len(optimized_set - original_set) / len(optimized_set)
+    length_ratio = len(optimized_tokens) / max(len(original_tokens), 1)
+
+    if original_coverage < 0.45:
+        return True
+    if length_ratio > 1.8 and optimized_extra_ratio > 0.35:
+        return True
+    return False
+
+
 def is_sentence_complete(text: str) -> bool:
     """检查句子是否完整。"""
     sentence_end_markers = ['.', '!', '?', '。', '！', '？', '…']
@@ -537,6 +567,14 @@ class SubtitleOptimizer:
 
                 optimized = current_result.get("optimized_subtitle")
                 if not isinstance(optimized, str) or not optimized.strip():
+                    current_result["optimized_subtitle"] = original_subtitle[subtitle_id]
+                elif _is_suspicious_optimized_shift(original_subtitle[subtitle_id], optimized):
+                    logger.warning(
+                        "⚠️ 字幕ID %s 的 optimized 疑似跨 ID 错位，回退为原文: %s -> %s",
+                        subtitle_id,
+                        original_subtitle[subtitle_id],
+                        optimized,
+                    )
                     current_result["optimized_subtitle"] = original_subtitle[subtitle_id]
 
                 translation = current_result.get("translation")
