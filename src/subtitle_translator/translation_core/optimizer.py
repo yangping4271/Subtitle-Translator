@@ -358,7 +358,9 @@ class SubtitleOptimizer:
 
         prompt = TRANSLATE_PROMPT.format(
             target_language=self.config.target_language,
-            terminology=self._executor_obj._format_terminology(),
+            terminology=self._executor_obj._format_terminology(
+                json.dumps(original_subtitle, ensure_ascii=False)
+            ),
             required_fields=self._get_required_response_fields(),
         )
 

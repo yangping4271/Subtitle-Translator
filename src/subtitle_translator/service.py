@@ -12,14 +12,19 @@ from .exceptions import OpenAIAPIError, EmptySubtitleError, TranslationError, Sm
 from .logger import log_section_end, log_section_start, log_stats
 from .translation_core.config import SubtitleConfig
 from .translation_core.data import SubtitleData, load_subtitle
+from .translation_core.external_glossary import load_external_terminology
 from .translation_core.optimizer import SubtitleOptimizer, format_diff, _is_format_change_only, _is_wrong_replacement
+from .translation_core.terminology import (
+    get_terminology_aliases,
+    get_terminology_translation,
+    load_terminology,
+)
 from .translation_core.splitter import (
     batch_by_sentence_count,
     merge_segments_within_batch,
     preprocess_segments,
     presplit_by_punctuation,
 )
-from .translation_core.terminology import load_terminology
 from .context_loader import build_context_info
 from .console_views import show_api_config, show_model_config, show_time_stats
 
@@ -164,10 +169,28 @@ class SubtitleTranslatorService:
             # 打印加载的术语表
             if self.config.terminology:
                 self.logger.info(f"📚 已加载术语表: {len(self.config.terminology)} 条术语")
-                for term, translation in self.config.terminology.items():
-                    self.logger.info(f"   {term} → {translation}")
+                for term, entry in self.config.terminology.items():
+                    translation = get_terminology_translation(entry)
+                    aliases = get_terminology_aliases(entry)
+                    alias_text = f" (aliases: {', '.join(aliases)})" if aliases else ""
+                    self.logger.info(f"   {term} → {translation}{alias_text}")
             else:
                 self.logger.info("📚 未加载任何术语表")
+
+            self.config.external_terminology = {}
+            if self.config.external_glossary_enabled:
+                self.config.external_terminology = load_external_terminology(
+                    self.config.target_language,
+                    self.config.external_glossary_domains,
+                )
+                if self.config.external_terminology:
+                    domains = ", ".join(self.config.external_glossary_domains)
+                    self.logger.info(
+                        f"📚 已加载外部术语库: {len(self.config.external_terminology)} 条术语 "
+                        f"(domains: {domains}, dynamic max: {self.config.external_glossary_max_terms})"
+                    )
+                else:
+                    self.logger.info("📚 未加载外部术语库")
 
             # 只在需要时初始化翻译环境
             if not skip_env_init:

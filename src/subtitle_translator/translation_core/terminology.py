@@ -5,10 +5,50 @@
 从外部文件加载术语表，支持全局和局部术语表合并。
 """
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def parse_terminology_entry(value: str) -> dict:
+    """解析术语翻译和可选 ASR alias。
+
+    支持旧格式：
+        LLM = 大语言模型 (LLM)
+
+    支持带 alias 的新格式：
+        LangChain = LangChain | aliases: land chain, lang chain
+    """
+    parts = [part.strip() for part in value.split("|")]
+    translation = parts[0].strip()
+    aliases = []
+
+    for part in parts[1:]:
+        key, separator, raw_aliases = part.partition(":")
+        if separator and key.strip().lower() in {"alias", "aliases", "asr", "asr aliases"}:
+            aliases.extend(
+                alias.strip()
+                for alias in raw_aliases.replace("，", ",").split(",")
+                if alias.strip()
+            )
+
+    return {"translation": translation, "aliases": aliases}
+
+
+def get_terminology_translation(value: Any) -> str:
+    """兼容旧字符串格式和新结构化术语格式。"""
+    if isinstance(value, dict):
+        return str(value.get("translation") or "").strip()
+    return str(value or "").strip()
+
+
+def get_terminology_aliases(value: Any) -> list[str]:
+    """返回术语的 ASR alias 列表。"""
+    if not isinstance(value, dict):
+        return []
+    aliases = value.get("aliases") or []
+    return [str(alias).strip() for alias in aliases if str(alias).strip()]
 
 
 def load_terminology_file(file_path: Path) -> dict:
@@ -56,7 +96,7 @@ def load_terminology_file(file_path: Path) -> dict:
             term = term.strip()
             translation = translation.strip()
             if term and translation:
-                result[current_language][term] = translation
+                result[current_language][term] = parse_terminology_entry(translation)
 
     return result
 
@@ -91,4 +131,3 @@ def load_terminology(target_language: str, input_file_path: Optional[Path] = Non
             terminology.update(local_terms.get(target_language, {}))
 
     return terminology
-

@@ -120,6 +120,10 @@ class SubtitleConfig:
     disable_thinking: bool = True
 
     terminology: Optional[dict] = None
+    external_terminology: Optional[dict] = None
+    external_glossary_enabled: bool = True
+    external_glossary_domains: tuple[str, ...] = ("programming", "tech", "education")
+    external_glossary_max_terms: int = 40
 
     _skip_env_load: bool = field(default=False, repr=False)
 
@@ -175,6 +179,29 @@ class SubtitleConfig:
             self.disable_thinking = env_disable_thinking.strip().lower() in {
                 "1", "true", "yes", "on"
             }
+
+        env_external_glossary_enabled = os.getenv('EXTERNAL_GLOSSARY_ENABLED')
+        if env_external_glossary_enabled:
+            self.external_glossary_enabled = env_external_glossary_enabled.strip().lower() in {
+                "1", "true", "yes", "on"
+            }
+
+        env_external_glossary_domains = os.getenv('EXTERNAL_GLOSSARY_DOMAINS')
+        if env_external_glossary_domains:
+            domains = tuple(
+                domain.strip()
+                for domain in env_external_glossary_domains.split(",")
+                if domain.strip()
+            )
+            if domains:
+                self.external_glossary_domains = domains
+
+        env_external_glossary_max_terms = os.getenv('EXTERNAL_GLOSSARY_MAX_TERMS')
+        if env_external_glossary_max_terms:
+            try:
+                self.external_glossary_max_terms = max(0, int(env_external_glossary_max_terms))
+            except ValueError:
+                pass
 
         env_target_lang = os.getenv('TARGET_LANGUAGE')
         if env_target_lang:

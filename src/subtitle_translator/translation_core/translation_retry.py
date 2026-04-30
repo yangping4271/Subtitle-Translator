@@ -9,8 +9,10 @@ import retry
 
 from ..logger import setup_logger
 from .config import SubtitleConfig
+from .external_glossary import select_relevant_external_terms
 from .llm_client import LLMClient
 from .prompts import SINGLE_TRANSLATE_PROMPT
+from .terminology import get_terminology_aliases, get_terminology_translation
 from .utils.api import validate_api_response
 
 logger = setup_logger("translation_executor")
@@ -258,7 +260,7 @@ class TranslationExecutor:
                 "role": "system",
                 "content": SINGLE_TRANSLATE_PROMPT.format(
                     target_language=self.config.target_language,
-                    terminology=self._format_terminology(),
+                    terminology=self._format_terminology(value),
                 ),
             },
             {"role": "user", "content": value},
@@ -276,11 +278,44 @@ class TranslationExecutor:
         logger.info(f"✓ 字幕ID {key} 翻译成功")
         return {"optimized": value, "translation": translate}
 
-    def _format_terminology(self) -> str:
+    def _format_terminology(self, source_text: str = "") -> str:
         """格式化术语表为 prompt 文本。"""
-        if not self.config.terminology:
+        user_terms = self.config.terminology or {}
+        external_terms = select_relevant_external_terms(
+            source_text,
+            self.config.external_terminology or {},
+            self.config.external_glossary_max_terms,
+        )
+        if not user_terms and not external_terms:
             return ""
-        lines = ["## Standard Terminology"]
-        for term, translation in self.config.terminology.items():
-            lines.append(f"- {term} → {translation}")
+        lines = [
+            "## Standard Terminology",
+            "Use these canonical terms/translations exactly:",
+        ]
+        correction_lines = []
+        for term, entry in user_terms.items():
+            translation = get_terminology_translation(entry)
+            if translation:
+                lines.append(f"- {term} → {translation}")
+            for alias in get_terminology_aliases(entry):
+                correction_lines.append(f"- {alias} → {term}")
+
+        if external_terms:
+            lines.extend([
+                "",
+                "## Relevant External Terminology",
+                "These domain terms were found in the current subtitles. Use them when applicable:",
+            ])
+            for term, entry in external_terms.items():
+                translation = get_terminology_translation(entry)
+                if translation:
+                    lines.append(f"- {term} → {translation}")
+
+        if correction_lines:
+            lines.extend([
+                "",
+                "## Possible ASR Corrections",
+                "When these speech-recognition variants appear, correct them before translation:",
+            ])
+            lines.extend(correction_lines)
         return "\n".join(lines)

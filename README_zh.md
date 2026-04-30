@@ -95,9 +95,20 @@ LLM_MODEL=your-local-default-model
 [简体中文]
 LLM = 大语言模型 (Large Language Model)
 AGI = 通用人工智能 (AGI)
+LangChain = LangChain | aliases: land chain, lang chain
 ```
 
+`aliases` 用于提示模型修正常见语音识别错误。上例会把 `land chain`、`lang chain` 作为可能的 ASR 错误，优先纠正为 `LangChain` 后再翻译。
+
 局部术语表会在全局术语表之上覆盖同名术语。
+
+默认还会为简体中文启用外部术语库缓存，领域为 `programming,tech,education`。外部术语不会全量注入 prompt，只会在当前字幕批次命中时动态加入。可通过环境变量调整：
+
+```bash
+EXTERNAL_GLOSSARY_ENABLED=true
+EXTERNAL_GLOSSARY_DOMAINS=programming,tech,education
+EXTERNAL_GLOSSARY_MAX_TERMS=40
+```
 
 ## CLI
 

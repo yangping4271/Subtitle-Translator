@@ -95,9 +95,25 @@ Basic format:
 [简体中文]
 LLM = 大语言模型 (Large Language Model)
 AGI = 通用人工智能 (AGI)
+LangChain = LangChain | aliases: land chain, lang chain
 ```
 
+Use `aliases` to hint common speech-recognition mistakes. In the example above,
+`land chain` and `lang chain` are treated as likely ASR variants and corrected to
+`LangChain` before translation.
+
 Local terminology is merged on top of the global file.
+
+For Simplified Chinese, the tool also enables a local external glossary cache by
+default for `programming,tech,education`. External terms are not injected in
+full; only terms found in the current subtitle batch are added to the prompt.
+You can tune this behavior with:
+
+```bash
+EXTERNAL_GLOSSARY_ENABLED=true
+EXTERNAL_GLOSSARY_DOMAINS=programming,tech,education
+EXTERNAL_GLOSSARY_MAX_TERMS=40
+```
 
 ## CLI
 

@@ -91,7 +91,7 @@ def test_create_translate_message_explicitly_requests_json_output():
 
     class DummyExecutor:
         @staticmethod
-        def _format_terminology():
+        def _format_terminology(source_text=""):
             return ""
 
     optimizer._executor_obj = DummyExecutor()
