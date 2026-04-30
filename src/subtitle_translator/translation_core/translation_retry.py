@@ -21,6 +21,8 @@ def _is_translation_failed(value) -> bool:
     if isinstance(value, str):
         return not value.strip()
     if isinstance(value, dict):
+        if value.get("discarded") is True:
+            return False
         return not value.get("translation", "").strip()
     return False
 
@@ -78,7 +80,7 @@ class TranslationExecutor:
         """批次整体重试。"""
         retry_result = self._translate(chunk, context_info, batch_num, total_batches)
         retry_map = {r['id']: r for r in retry_result
-                     if not _is_translation_failed(r.get('translation', ''))}
+                     if not _is_translation_failed(r)}
 
         for i, item in enumerate(result):
             if item['id'] in retry_map:
@@ -101,6 +103,7 @@ class TranslationExecutor:
                     success_count += 1
                 result[i]['translation'] = new_translation
                 result[i]['optimized'] = single_result['optimized_subtitles'][str(item['id'])]
+                result[i]['discarded'] = False
 
         logger.info(f"✅ {batch_info} 单条并发成功 {success_count}/{len(still_failed)} 条")
         return result
@@ -108,29 +111,48 @@ class TranslationExecutor:
     def _extract_failed_items(self, result: list) -> dict:
         """提取失败的翻译项。"""
         return {item['id']: item['original'] for item in result
-                if _is_translation_failed(item.get('translation', ''))}
+                if _is_translation_failed(item)}
 
     # ── 批次失败重试（translate_batch_directly 使用）────────────────────────
 
-    def retry_failed_translations(self, failed_items: dict, context_info: str, results: list) -> list:
+    def retry_failed_translations(
+        self,
+        failed_items: dict,
+        context_info: str,
+        results: list,
+        batch_num: Optional[int] = None,
+        total_batches: Optional[int] = None,
+    ) -> list:
         """重试失败的翻译（批量重试 → 单条并发）。"""
-        logger.info(f"发现 {len(failed_items)} 条翻译失败，批量重试")
+        batch_info = (
+            f"[批次{batch_num}/{total_batches}] "
+            if batch_num is not None and total_batches is not None
+            else ""
+        )
+        logger.info(f"🔄 {batch_info}发现 {len(failed_items)} 条翻译失败，批量重试")
         try:
-            retry_results = self._translate({str(k): v for k, v in failed_items.items()}, context_info)
+            retry_results = self._translate(
+                {str(k): v for k, v in failed_items.items()},
+                context_info,
+                batch_num=batch_num,
+                total_batches=total_batches,
+            )
 
             retry_map, still_failed = self._categorize_retry_results(retry_results)
-            logger.info(f"批量重试成功 {len(retry_map)}/{len(failed_items)} 条")
+            logger.info(f"📊 {batch_info}批量重试成功 {len(retry_map)}/{len(failed_items)} 条")
 
             if still_failed:
-                logger.info(f"⚡ 批量重试后还有{len(still_failed)}条失败，降级到单条并发翻译")
+                logger.info(
+                    f"⚡ {batch_info}批量重试后还有{len(still_failed)}条失败，降级到单条并发翻译"
+                )
                 single_result = self._translate_by_single(still_failed)
                 self._merge_single_results(single_result, retry_map)
 
             self._apply_retry_results(results, retry_map)
-            logger.info(f"✅ 总共重试成功 {len(retry_map)}/{len(failed_items)} 条")
+            logger.info(f"✅ {batch_info}总共重试成功 {len(retry_map)}/{len(failed_items)} 条")
 
         except Exception as e:
-            logger.warning(f"重试失败: {e}")
+            logger.warning(f"⚠️ {batch_info}重试失败: {e}")
         return results
 
     def _categorize_retry_results(self, retry_results: list) -> Tuple[dict, dict]:
@@ -138,7 +160,7 @@ class TranslationExecutor:
         retry_map = {}
         still_failed = {}
         for r in retry_results:
-            if not _is_translation_failed(r.get('translation', '')):
+            if not _is_translation_failed(r):
                 retry_map[r['id']] = r
             else:
                 still_failed[r['id']] = r['original']
@@ -159,6 +181,7 @@ class TranslationExecutor:
                     "original": single_result["optimized_subtitles"][k],
                     "optimized": single_result["optimized_subtitles"][k],
                     "translation": v,
+                    "discarded": False,
                 }
 
     # ── 单条并发翻译 ──────────────────────────────────────────────────────────

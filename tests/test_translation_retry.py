@@ -4,6 +4,7 @@ import pytest
 
 from subtitle_translator.translation_core.translation_retry import TranslationExecutor
 from subtitle_translator.translation_core.config import SubtitleConfig
+from subtitle_translator.translation_core.translation_retry import _is_translation_failed
 
 
 @pytest.fixture
@@ -73,3 +74,15 @@ def test_no_retry_returns_empty_on_fail(translation_executor, mock_client):
     assert result["translation"] == ""
     # 验证只被调用了 1 次（不重试）
     assert mock_llm.create_chat_completion.call_count == 1
+
+
+def test_discarded_result_is_not_treated_as_failure():
+    result = {
+        "id": 48,
+        "original": "Music.",
+        "optimized": "",
+        "translation": "",
+        "discarded": True,
+    }
+
+    assert _is_translation_failed(result) is False

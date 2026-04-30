@@ -7,8 +7,8 @@ def test_parse_translation_response_from_structured_json():
     response = """
     {
       "subtitles": [
-        {"id": 1, "optimized": "Hello world", "translation": "你好，世界"},
-        {"id": 2, "optimized": "Claude Code", "translation": "Claude Code"}
+        {"id": 1, "optimized": "Hello world", "translation": "你好，世界", "discarded": false},
+        {"id": 2, "optimized": "Claude Code", "translation": "Claude Code", "discarded": false}
       ]
     }
     """
@@ -16,8 +16,8 @@ def test_parse_translation_response_from_structured_json():
     result = parse_translation_response(response)
 
     assert result == {
-        "1": {"optimized_subtitle": "Hello world", "translation": "你好，世界"},
-        "2": {"optimized_subtitle": "Claude Code", "translation": "Claude Code"},
+        "1": {"optimized_subtitle": "Hello world", "translation": "你好，世界", "discarded": False},
+        "2": {"optimized_subtitle": "Claude Code", "translation": "Claude Code", "discarded": False},
     }
 
 
@@ -25,7 +25,7 @@ def test_parse_translation_response_from_translation_only_json():
     response = """
     {
       "subtitles": [
-        {"id": 1, "translation": "你好，世界"}
+        {"id": 1, "translation": "你好，世界", "discarded": false}
       ]
     }
     """
@@ -33,7 +33,23 @@ def test_parse_translation_response_from_translation_only_json():
     result = parse_translation_response(response)
 
     assert result == {
-        "1": {"optimized_subtitle": "", "translation": "你好，世界"},
+        "1": {"optimized_subtitle": "", "translation": "你好，世界", "discarded": False},
+    }
+
+
+def test_parse_translation_response_preserves_discarded_marker():
+    response = """
+    {
+      "subtitles": [
+        {"id": 48, "optimized": "", "translation": "", "discarded": true}
+      ]
+    }
+    """
+
+    result = parse_translation_response(response)
+
+    assert result == {
+        "48": {"optimized_subtitle": "", "translation": "", "discarded": True},
     }
 
 
@@ -48,5 +64,5 @@ def test_parse_translation_response_falls_back_to_xml():
     result = parse_translation_response(response)
 
     assert result == {
-        "1": {"optimized_subtitle": "Hello world", "translation": "你好，世界"},
+        "1": {"optimized_subtitle": "Hello world", "translation": "你好，世界", "discarded": False},
     }

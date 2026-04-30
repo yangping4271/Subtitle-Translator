@@ -93,9 +93,11 @@ def _parse_translation_json(text: str) -> Dict[str, Dict[str, str]]:
 
         optimized = item.get("optimized", "")
         translation = item.get("translation", "")
+        discarded = item.get("discarded", False)
         results[str(subtitle_id)] = {
             "optimized_subtitle": optimized.strip() if isinstance(optimized, str) else "",
             "translation": translation.strip() if isinstance(translation, str) else "",
+            "discarded": discarded is True,
         }
 
     return results
@@ -121,6 +123,7 @@ def _parse_xml_format(text: str) -> Dict[str, Dict[str, str]]:
         results[str(subtitle_id)] = {
             "optimized_subtitle": _extract_tag_content(block, "optimized"),
             "translation": _extract_tag_content(block, "translation"),
+            "discarded": _extract_tag_content(block, "discarded").lower() == "true",
         }
 
     return results

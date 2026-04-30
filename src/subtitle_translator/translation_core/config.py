@@ -120,6 +120,7 @@ class SubtitleConfig:
     lm_studio_unload_on_complete: bool = True
 
     need_reflect: bool = False
+    disable_thinking: bool = True
 
     terminology: Optional[dict] = None
 
@@ -133,6 +134,18 @@ class SubtitleConfig:
         """判断当前端点是否为本机 OpenAI-compatible 服务。"""
         parsed = urlparse(self.openai_base_url)
         return (parsed.hostname or "").lower() in {"127.0.0.1", "localhost"}
+
+    def provider_type(self) -> str:
+        """根据 OpenAI-compatible Base URL 推断供应商类型。"""
+        parsed = urlparse(self.openai_base_url)
+        hostname = (parsed.hostname or "").lower()
+        if hostname.endswith("deepseek.com"):
+            return "deepseek"
+        if hostname.endswith("openrouter.ai"):
+            return "openrouter"
+        if hostname == "api.openai.com":
+            return "openai"
+        return "custom"
 
     def __post_init__(self):
         """验证配置并重新读取环境变量"""
@@ -165,6 +178,12 @@ class SubtitleConfig:
         env_unload_on_complete = os.getenv('LM_STUDIO_UNLOAD_ON_COMPLETE')
         if env_unload_on_complete:
             self.lm_studio_unload_on_complete = env_unload_on_complete.strip().lower() in {
+                "1", "true", "yes", "on"
+            }
+
+        env_disable_thinking = os.getenv('DISABLE_THINKING')
+        if env_disable_thinking:
+            self.disable_thinking = env_disable_thinking.strip().lower() in {
                 "1", "true", "yes", "on"
             }
 

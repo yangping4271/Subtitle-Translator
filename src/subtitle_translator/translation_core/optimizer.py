@@ -31,8 +31,9 @@ TRANSLATION_RESPONSE_FORMAT = {
                             "id": {"type": "integer"},
                             "optimized": {"type": "string"},
                             "translation": {"type": "string"},
+                            "discarded": {"type": "boolean"},
                         },
-                        "required": ["id", "optimized", "translation"],
+                        "required": ["id", "optimized", "translation", "discarded"],
                         "additionalProperties": False,
                     },
                 }
@@ -58,8 +59,9 @@ TRANSLATION_ONLY_RESPONSE_FORMAT = {
                         "properties": {
                             "id": {"type": "integer"},
                             "translation": {"type": "string"},
+                            "discarded": {"type": "boolean"},
                         },
-                        "required": ["id", "translation"],
+                        "required": ["id", "translation", "discarded"],
                         "additionalProperties": False,
                     },
                 }
@@ -70,6 +72,8 @@ TRANSLATION_ONLY_RESPONSE_FORMAT = {
         "strict": True,
     },
 }
+
+TRANSLATION_JSON_OBJECT_RESPONSE_FORMAT = {"type": "json_object"}
 
 
 def _is_format_change_only(original: str, optimized: str) -> bool:
@@ -180,18 +184,35 @@ class SubtitleOptimizer:
             translate_fn=self._translate,
         )
 
-    def translate_batch_directly(self, asr_data, context_info: str) -> List[Dict]:
+    def translate_batch_directly(
+        self,
+        asr_data,
+        context_info: str,
+        batch_num: int = 1,
+        total_batches: int = 1,
+    ) -> List[Dict]:
         """直接翻译单个批次（用于流水线模式）。"""
         subtitle_json = {str(k): v["original_subtitle"]
                         for k, v in asr_data.to_json().items()}
 
-        results = self._translate(subtitle_json, context_info, batch_num=1, total_batches=1)
+        results = self._translate(
+            subtitle_json,
+            context_info,
+            batch_num=batch_num,
+            total_batches=total_batches,
+        )
 
         failed_items = {r['id']: r['original'] for r in results
-                        if _is_translation_failed(r.get('translation', ''))}
+                        if _is_translation_failed(r)}
 
         if failed_items:
-            results = self._executor_obj.retry_failed_translations(failed_items, context_info, results)
+            results = self._executor_obj.retry_failed_translations(
+                failed_items,
+                context_info,
+                results,
+                batch_num=batch_num,
+                total_batches=total_batches,
+            )
 
         return results
 
@@ -326,8 +347,11 @@ class SubtitleOptimizer:
     def _create_translate_message(self, original_subtitle: Dict[str, str],
                                 context_info: Optional[str]):
         """创建翻译提示消息。"""
-        input_content = (f"Correct and translate the following subtitles into {self.config.target_language}:\n"
-                        f"<subtitles>{json.dumps(original_subtitle, ensure_ascii=False)}</subtitles>")
+        input_content = (
+            f"Correct and translate the following subtitles into {self.config.target_language}.\n"
+            "Return a single valid JSON object only, with no markdown or code fences.\n"
+            f"<subtitles>{json.dumps(original_subtitle, ensure_ascii=False)}</subtitles>"
+        )
 
         if context_info:
             input_content += f"\n\n<reference>\n{context_info}\n</reference>"
@@ -350,11 +374,13 @@ class SubtitleOptimizer:
     def _get_required_response_fields(self) -> str:
         """返回当前响应格式要求的字段说明。"""
         if self._should_use_translation_only_schema():
-            return "`id` and `translation`"
-        return "`id`, `optimized`, and `translation`"
+            return "`id`, `translation`, and `discarded`"
+        return "`id`, `optimized`, `translation`, and `discarded`"
 
     def _get_translation_response_format(self) -> dict:
-        """按模型部署环境选择响应 schema。"""
+        """按供应商和部署环境选择结构化输出格式。"""
+        if self.config.provider_type() == "deepseek":
+            return TRANSLATION_JSON_OBJECT_RESPONSE_FORMAT
         if self._should_use_translation_only_schema():
             return TRANSLATION_ONLY_RESPONSE_FORMAT
         return TRANSLATION_RESPONSE_FORMAT
@@ -501,7 +527,8 @@ class SubtitleOptimizer:
             if subtitle_id not in response_content:
                 response_content[str(k)] = {
                     "optimized_subtitle": original_subtitle[str(k)],
-                    "translation": ""
+                    "translation": "",
+                    "discarded": False,
                 }
             else:
                 current_result = response_content[subtitle_id]
@@ -513,6 +540,10 @@ class SubtitleOptimizer:
                 translation = current_result.get("translation")
                 if translation is None or not isinstance(translation, str):
                     current_result["translation"] = ""
+
+                discarded = current_result.get("discarded")
+                if not isinstance(discarded, bool):
+                    current_result["discarded"] = False
         return response_content
 
     def _build_translation_results(self, response_content: dict, original_subtitle: dict) -> list:
@@ -526,7 +557,8 @@ class SubtitleOptimizer:
                 "id": k,
                 "original": original_subtitle[subtitle_id],
                 "optimized": v["optimized_subtitle"],
-                "translation": v.get("translation", "") if isinstance(v.get("translation", ""), str) else ""
+                "translation": v.get("translation", "") if isinstance(v.get("translation", ""), str) else "",
+                "discarded": v.get("discarded", False) is True,
             }
             translated_subtitle.append(translated_text)
 
@@ -546,5 +578,6 @@ class SubtitleOptimizer:
             "id": int(k),
             "original": v,
             "optimized": v,
-            "translation": ""
+            "translation": "",
+            "discarded": False,
         } for k, v in original_subtitle.items()]

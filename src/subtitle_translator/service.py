@@ -3,7 +3,7 @@
 """
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -295,12 +295,14 @@ class SubtitleTranslatorService:
         )
         total_batches = len(batches)
         self.logger.info(f"📦 分为 {total_batches} 批处理 {len(word_segments)} 个单词")
+        print(f"📦 [bold cyan]批次总数:[/bold cyan] [cyan]{total_batches}[/cyan]")
 
         # 5. 并发处理
         concurrency = self.config.thread_num
         all_translated_results = []
         all_segments = []
         batch_logs_all = []
+        completed_batches = 0
 
         def process_batch_task(args):
             """每个批次的完整任务：断句 + 翻译"""
@@ -313,23 +315,42 @@ class SubtitleTranslatorService:
 
             batch_asr_data = SubtitleData(batch_segments)
             translator = SubtitleOptimizer(config=self.config)
-            batch_translate_result = translator.translate_batch_directly(batch_asr_data, context_info)
+            batch_translate_result = translator.translate_batch_directly(
+                batch_asr_data,
+                context_info,
+                batch_num=batch_index + 1,
+                total_batches=total_batches,
+            )
 
-            return (batch_segments, batch_translate_result, translator.batch_logs)
+            return (batch_index, batch_segments, batch_translate_result, translator.batch_logs)
 
         batch_tasks = list(enumerate(batches))
 
         for i in range(0, len(batch_tasks), concurrency):
             chunk = batch_tasks[i:i + concurrency]
             with ThreadPoolExecutor(max_workers=min(len(chunk), concurrency)) as executor:
-                processed_chunks = list(executor.map(process_batch_task, chunk))
-                for segments, translate_result, batch_logs in processed_chunks:
+                future_to_batch_index = {
+                    executor.submit(process_batch_task, batch_task): batch_task[0]
+                    for batch_task in chunk
+                }
+                chunk_results = {}
+
+                for future in as_completed(future_to_batch_index):
+                    batch_index, segments, translate_result, batch_logs = future.result()
+                    chunk_results[batch_index] = (segments, translate_result, batch_logs)
+                    completed_batches += 1
+                    self.logger.info(f"📈 流水线进度: {completed_batches}/{len(batch_tasks)}")
+                    print(
+                        "📈 [bold cyan]批次进度:[/bold cyan] "
+                        f"[cyan]{completed_batches}/{len(batch_tasks)}[/cyan] "
+                        f"(当前完成: 第 {batch_index + 1} 批)"
+                    )
+
+                for batch_index in sorted(chunk_results):
+                    segments, translate_result, batch_logs = chunk_results[batch_index]
                     all_segments.extend(segments)
                     all_translated_results.extend(translate_result)
                     batch_logs_all.extend(batch_logs)
-
-                progress = min(i + concurrency, len(batch_tasks))
-                self.logger.info(f"📈 流水线进度: {progress}/{len(batch_tasks)}")
 
         # 6. 按时间排序
         all_segments.sort(key=lambda seg: seg.start_time)

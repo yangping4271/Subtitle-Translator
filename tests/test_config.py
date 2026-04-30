@@ -48,3 +48,31 @@ def test_config_detects_local_openai_compatible_endpoint():
 
     assert local_config.is_local_openai_compatible() is True
     assert remote_config.is_local_openai_compatible() is False
+
+
+def test_disable_thinking_env_override(monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com")
+    monkeypatch.setenv("DISABLE_THINKING", "false")
+
+    config = SubtitleConfig()
+
+    assert config.disable_thinking is False
+
+
+def test_config_detects_provider_type_from_base_url():
+    assert SubtitleConfig(
+        openai_base_url="https://api.deepseek.com/v1",
+        _skip_env_load=True,
+    ).provider_type() == "deepseek"
+    assert SubtitleConfig(
+        openai_base_url="https://openrouter.ai/api/v1",
+        _skip_env_load=True,
+    ).provider_type() == "openrouter"
+    assert SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        _skip_env_load=True,
+    ).provider_type() == "openai"
+    assert SubtitleConfig(
+        openai_base_url="http://127.0.0.1:1234/v1",
+        _skip_env_load=True,
+    ).provider_type() == "custom"
