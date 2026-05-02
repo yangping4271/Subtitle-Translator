@@ -121,13 +121,13 @@ Use `translate --help` for the full option list.
 
 ## Codex Skill
 
-This repo also bundles a Codex skill under [`subtitle-translator/`](./subtitle-translator/).
+This repo also bundles a Codex skill under [`skills/subtitle-translator/`](./skills/subtitle-translator/).
 
 Install it into your Codex skills directory:
 
 ```bash
 mkdir -p ~/.codex/skills
-cp -R subtitle-translator ~/.codex/skills/subtitle-translator
+cp -R skills/subtitle-translator ~/.codex/skills/subtitle-translator
 ```
 
 Then restart Codex. After restart, you can invoke it with `$subtitle-translator`.
