@@ -1,0 +1,7 @@
+interface:
+  display_name: "Subtitle Translator"
+  short_description: "Translate SRT subtitles and maintain terminology."
+  default_prompt: "Use $subtitle-translator to translate subtitles, repair terminology aliases, or set up the translate CLI."
+
+policy:
+  allow_implicit_invocation: true

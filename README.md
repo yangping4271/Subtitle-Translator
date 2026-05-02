@@ -119,6 +119,26 @@ EXTERNAL_GLOSSARY_MAX_TERMS=40
 
 Use `translate --help` for the full option list.
 
+## Codex Skill
+
+This repo also bundles a Codex skill under [`subtitle-translator/`](./subtitle-translator/).
+
+Install it into your Codex skills directory:
+
+```bash
+mkdir -p ~/.codex/skills
+cp -R subtitle-translator ~/.codex/skills/subtitle-translator
+```
+
+Then restart Codex. After restart, you can invoke it with `$subtitle-translator`.
+
+The skill can:
+
+- discover or install the `translate` CLI when needed
+- translate one `.srt` file or a whole directory
+- update `terminology.txt` entries and ASR `aliases`
+- add or refine `context.txt` / `ctx.txt` before rerunning a translation
+
 ## Development
 
 ```bash

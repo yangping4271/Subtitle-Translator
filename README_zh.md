@@ -114,6 +114,26 @@ EXTERNAL_GLOSSARY_MAX_TERMS=40
 
 完整参数请看 `translate --help`。
 
+## Codex Skill
+
+这个仓库也内置了一个 Codex skill，目录在 [`subtitle-translator/`](./subtitle-translator/)。
+
+安装到本地 Codex skills 目录：
+
+```bash
+mkdir -p ~/.codex/skills
+cp -R subtitle-translator ~/.codex/skills/subtitle-translator
+```
+
+然后重启 Codex。重启后可以通过 `$subtitle-translator` 调用。
+
+这个 skill 可以：
+
+- 在需要时发现或安装 `translate` CLI
+- 翻译单个 `.srt` 文件或整个目录
+- 更新 `terminology.txt` 术语和 ASR `aliases`
+- 在重跑翻译前补充或修正 `context.txt` / `ctx.txt`
+
 ## 开发
 
 ```bash
