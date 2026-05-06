@@ -177,24 +177,110 @@ def presplit_by_punctuation(word_segments: List[SubtitleSegment]) -> List[PreSpl
     return pre_split_sentences
 
 
+def _build_pre_split_sentence_from_word_range(
+    word_segments: List[SubtitleSegment],
+    word_start_index: int,
+    word_end_index: int,
+) -> PreSplitSentence:
+    """根据单词索引范围构造预分句。"""
+    batch_word_segments = word_segments[word_start_index:word_end_index]
+    text = ' '.join(seg.text for seg in batch_word_segments)
+    start_time = batch_word_segments[0].start_time if batch_word_segments else 0
+    end_time = batch_word_segments[-1].end_time if batch_word_segments else 0
+    return PreSplitSentence(
+        text=text,
+        word_start_index=word_start_index,
+        word_end_index=word_end_index,
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+
+def hard_split_long_pre_split_sentences(
+    sentences: List[PreSplitSentence],
+    word_segments: List[SubtitleSegment],
+    max_words: int,
+) -> List[PreSplitSentence]:
+    """
+    对超长预分句按词数硬切，避免单个预分句撑爆整个批次。
+    """
+    if max_words <= 0:
+        return sentences
+
+    split_sentences: List[PreSplitSentence] = []
+    for sentence in sentences:
+        sentence_word_count = sentence.word_end_index - sentence.word_start_index
+        if sentence_word_count <= max_words:
+            split_sentences.append(sentence)
+            continue
+
+        logger.warning(
+            "⚠️ 预分句过长，按词数硬切: %s词 -> 每段≤%s词",
+            sentence_word_count,
+            max_words,
+        )
+
+        start_index = sentence.word_start_index
+        while start_index < sentence.word_end_index:
+            end_index = min(start_index + max_words, sentence.word_end_index)
+            split_sentences.append(
+                _build_pre_split_sentence_from_word_range(
+                    word_segments,
+                    start_index,
+                    end_index,
+                )
+            )
+            start_index = end_index
+
+    return split_sentences
+
+
 def batch_by_sentence_count(
     sentences: List[PreSplitSentence],
     min_size: int = 15,
-    max_size: int = 25
+    max_size: int = 25,
+    max_words: Optional[int] = None,
 ) -> List[List[PreSplitSentence]]:
     """
-    按句子数分批（移植自 youtube-subtitle，移除首批特殊处理）
+    按句子数分批；若配置了 max_words，则同时限制每批总词数。
 
     Args:
         sentences: 预分句列表
         min_size: 最小批次大小
         max_size: 最大批次大小
+        max_words: 每批最大词数限制
 
     Returns:
         批次列表，每个批次是 PreSplitSentence 列表
     """
     if not sentences:
         return []
+
+    if max_words is not None and max_words > 0:
+        batches: List[List[PreSplitSentence]] = []
+        current_batch: List[PreSplitSentence] = []
+        current_words = 0
+
+        for sentence in sentences:
+            sentence_words = sentence.word_end_index - sentence.word_start_index
+            should_flush = (
+                current_batch and (
+                    len(current_batch) >= max_size or
+                    current_words + sentence_words > max_words
+                )
+            )
+            if should_flush:
+                batches.append(current_batch)
+                current_batch = []
+                current_words = 0
+
+            current_batch.append(sentence)
+            current_words += sentence_words
+
+        if current_batch:
+            batches.append(current_batch)
+
+        return batches
 
     # 计算批次大小（不使用首批特殊处理）
     target_size = (min_size + max_size) // 2

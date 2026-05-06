@@ -21,6 +21,7 @@ from .translation_core.terminology import (
 )
 from .translation_core.splitter import (
     batch_by_sentence_count,
+    hard_split_long_pre_split_sentences,
     merge_segments_within_batch,
     preprocess_segments,
     presplit_by_punctuation,
@@ -278,12 +279,18 @@ class SubtitleTranslatorService:
 
         # 3. 预分句
         pre_split_sentences = presplit_by_punctuation(word_segments)
+        pre_split_sentences = hard_split_long_pre_split_sentences(
+            pre_split_sentences,
+            word_segments,
+            self.config.max_batch_words,
+        )
 
         # 4. 分批
         batches = batch_by_sentence_count(
             pre_split_sentences,
             min_size=self.config.min_batch_sentences,
-            max_size=self.config.max_batch_sentences
+            max_size=self.config.max_batch_sentences,
+            max_words=self.config.max_batch_words,
         )
         total_batches = len(batches)
         self.logger.info(f"📦 分为 {total_batches} 批处理 {len(word_segments)} 个单词")

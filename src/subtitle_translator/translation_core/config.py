@@ -112,6 +112,7 @@ class SubtitleConfig:
     min_batch_sentences: int = 15
     max_batch_sentences: int = 25
     target_batch_sentences: int = 20
+    max_batch_words: int = 500
 
     tolerance_multiplier: float = 1.2
     warning_multiplier: float = 1.5
@@ -171,6 +172,13 @@ class SubtitleConfig:
         if env_thread_num:
             try:
                 self.thread_num = max(1, int(env_thread_num))
+            except ValueError:
+                pass
+
+        env_max_batch_words = os.getenv('MAX_BATCH_WORDS')
+        if env_max_batch_words:
+            try:
+                self.max_batch_words = max(1, int(env_max_batch_words))
             except ValueError:
                 pass
 
