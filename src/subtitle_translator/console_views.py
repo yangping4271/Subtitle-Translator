@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich import box
 
 from .file_discovery import get_file_type_info, format_file_size
+from .translation_core.llm_client import get_reasoning_effort
 
 
 def show_api_config(base_url: str, api_key: str) -> None:
@@ -24,8 +25,18 @@ def show_api_config(base_url: str, api_key: str) -> None:
 def show_model_config(split_model: str, translation_model: str) -> None:
     """显示模型配置信息"""
     print("[bold blue]🤖 模型配置:[/bold blue]")
-    print(f"   断句: [cyan]{split_model}[/cyan]")
-    print(f"   翻译: [cyan]{translation_model}[/cyan]")
+    split_effort = get_reasoning_effort(split_model)
+    translation_effort = get_reasoning_effort(translation_model)
+    split_reasoning = (
+        f" [dim](推理强度: {split_effort})[/dim]" if split_effort else ""
+    )
+    translation_reasoning = (
+        f" [dim](推理强度: {translation_effort})[/dim]"
+        if translation_effort
+        else ""
+    )
+    print(f"   断句: [cyan]{split_model}[/cyan]{split_reasoning}")
+    print(f"   翻译: [cyan]{translation_model}[/cyan]{translation_reasoning}")
 
 
 def show_time_stats(stages: dict, total_time: float) -> None:

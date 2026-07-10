@@ -11,6 +11,24 @@ from .config import SubtitleConfig
 logger = setup_logger("llm_client")
 
 
+def get_reasoning_effort(model: str) -> Optional[str]:
+    """返回模型在字幕任务中使用的推理强度。"""
+    normalized_model = model.lower().rsplit("/", 1)[-1]
+    model_version = (
+        normalized_model.removeprefix("gpt-")
+        .split(".", 1)[0]
+        .split("-", 1)[0]
+    )
+    if (
+        normalized_model.startswith("gpt-")
+        and model_version.isdigit()
+        and int(model_version) >= 5
+        and "pro" not in normalized_model
+    ):
+        return "low"
+    return None
+
+
 class LLMClient:
     """LLM 客户端封装类
 
@@ -67,17 +85,9 @@ class LLMClient:
         """
         return self._client
 
-    def _get_openai_reasoning_effort(self, model: str) -> Optional[str]:
-        """OpenAI reasoning 模型在翻译任务中尽量关闭或降低推理。"""
-        if not self.config.disable_thinking or self._provider_type != "openai":
-            return None
-
-        normalized_model = model.lower()
-        if normalized_model.startswith(("gpt-5.1", "gpt-5.2")):
-            return "none"
-        if normalized_model.startswith("gpt-5") and "pro" not in normalized_model:
-            return "minimal"
-        return None
+    def _get_reasoning_effort(self, model: str) -> Optional[str]:
+        """GPT-5 及后续主版本在字幕任务中统一使用低推理强度。"""
+        return get_reasoning_effort(model)
 
     def _build_extra_body(self, kwargs: dict) -> dict:
         """构建供应商扩展参数，不覆盖调用方显式传入的 extra_body。"""
@@ -95,7 +105,11 @@ class LLMClient:
         ):
             extra_body["thinking"] = {"type": "disabled"}
 
-        if self._provider_type == "openrouter" and "reasoning" not in extra_body:
+        if (
+            self._provider_type == "openrouter"
+            and not self._get_reasoning_effort(model)
+            and "reasoning" not in extra_body
+        ):
             extra_body["reasoning"] = {"effort": "none"}
 
         return extra_body
@@ -109,7 +123,7 @@ class LLMClient:
         if extra_body:
             request["extra_body"] = extra_body
 
-        reasoning_effort = self._get_openai_reasoning_effort(model)
+        reasoning_effort = self._get_reasoning_effort(model)
         if reasoning_effort and "reasoning_effort" not in request:
             request["reasoning_effort"] = reasoning_effort
 

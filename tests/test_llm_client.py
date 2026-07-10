@@ -91,7 +91,7 @@ def test_openrouter_proxy_disables_reasoning_by_default():
     )
 
 
-def test_openai_gpt_5_1_uses_reasoning_effort_none():
+def test_openai_gpt_5_1_uses_reasoning_effort_low():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         openai_api_key="test-key",
@@ -109,7 +109,95 @@ def test_openai_gpt_5_1_uses_reasoning_effort_none():
     create_mock.assert_called_once_with(
         model="gpt-5.1",
         messages=[{"role": "user", "content": "hello"}],
-        reasoning_effort="none",
+        reasoning_effort="low",
+    )
+
+
+def test_openai_gpt_5_6_luna_uses_reasoning_effort_low():
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="test-key",
+        disable_thinking=False,
+        _skip_env_load=True,
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="gpt-5.6-luna",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="gpt-5.6-luna",
+        messages=[{"role": "user", "content": "hello"}],
+        reasoning_effort="low",
+    )
+
+
+def test_openrouter_gpt_5_6_luna_uses_reasoning_effort_low():
+    config = SubtitleConfig(
+        openai_base_url="https://openrouter.ai/api/v1",
+        openai_api_key="test-key",
+        _skip_env_load=True,
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="openai/gpt-5.6-luna",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="openai/gpt-5.6-luna",
+        messages=[{"role": "user", "content": "hello"}],
+        reasoning_effort="low",
+    )
+
+
+def test_future_gpt_major_version_uses_reasoning_effort_low():
+    config = SubtitleConfig(
+        openai_base_url="https://example.com/v1",
+        openai_api_key="test-key",
+        _skip_env_load=True,
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="openai/gpt-6",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="openai/gpt-6",
+        messages=[{"role": "user", "content": "hello"}],
+        reasoning_effort="low",
+    )
+
+
+def test_gpt_4_model_does_not_receive_reasoning_effort():
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="test-key",
+        _skip_env_load=True,
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "hello"}],
     )
 
 
