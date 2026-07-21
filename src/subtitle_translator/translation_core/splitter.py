@@ -1,24 +1,81 @@
 import difflib
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional
 
 from ..logger import setup_logger
 from .batch_utils import calculate_batch_sizes
-from .config import get_default_config
-from .data import PreSplitSentence, SubtitleSegment
+from .config import SubtitleConfig
+from .data import PreSplitSentence, SubtitleData, SubtitleSegment
+from .llm_client import ModelAdapter
+from .segmentation_rules import count_words, split_by_end_marks
 from .split_by_llm import split_by_llm
 
 logger = setup_logger("subtitle_merger")
 
 # 常量定义
 MAX_GAP = 1500  # 允许每个词语之间的最大时间间隔 ms
-MIN_SENTENCE_WORDS = 3  # 分句的最小单词数
-MIN_LAST_SEGMENT_WORDS = 2  # 最后一段的最小单词数
 SIMILARITY_THRESHOLD = 0.5  # 相似度阈值
 MAX_SHIFT = 30  # 滑动窗口的最大偏移量
 MAX_UNMATCHED_SENTENCES = 5  # 允许的最大未匹配句子数量
 SHORT_SEGMENT_TIME_GAP = 300  # 短分段合并的时间间隔阈值（毫秒）
 SHORT_SEGMENT_MIN_WORDS = 5  # 短分段的最小单词数
+
+
+class SubtitleSegmenter:
+    """将 Source subtitle 转换为按 Translation batch 分组的 Sentence segment。"""
+
+    def __init__(self, config: SubtitleConfig, llm: ModelAdapter):
+        self.config = config
+        self.llm = llm
+
+    def segment(self, source_subtitle: SubtitleData) -> List[SubtitleData]:
+        """完成预处理、分批、断句与 Timeline alignment。"""
+        source_segments = preprocess_segments(list(source_subtitle.segments))
+        prepared_subtitle = SubtitleData(source_segments)
+        if not prepared_subtitle.is_word_timestamp():
+            prepared_subtitle = prepared_subtitle.split_to_word_segments()
+
+        word_segments = prepared_subtitle.segments
+        pre_split_sentences = presplit_by_punctuation(word_segments)
+        pre_split_sentences = hard_split_long_pre_split_sentences(
+            pre_split_sentences,
+            word_segments,
+            self.config.max_batch_words,
+        )
+        batches = batch_by_sentence_count(
+            pre_split_sentences,
+            min_size=self.config.min_batch_sentences,
+            max_size=self.config.max_batch_sentences,
+            max_words=self.config.max_batch_words,
+        )
+
+        if not batches:
+            return []
+
+        def segment_batch(batch_index: int, batch) -> SubtitleData:
+            return SubtitleData(
+                merge_segments_within_batch(
+                    batch,
+                    word_segments,
+                    config=self.config,
+                    llm=self.llm,
+                    batch_index=batch_index + 1,
+                )
+            )
+
+        results = {}
+        with ThreadPoolExecutor(
+            max_workers=min(len(batches), self.config.thread_num)
+        ) as executor:
+            future_indexes = {
+                executor.submit(segment_batch, batch_index, batch): batch_index
+                for batch_index, batch in enumerate(batches)
+            }
+            for future in as_completed(future_indexes):
+                results[future_indexes[future]] = future.result()
+
+        return [results[index] for index in range(len(batches))]
 
 def is_pure_punctuation(s: str) -> bool:
     """
@@ -27,107 +84,11 @@ def is_pure_punctuation(s: str) -> bool:
     return not re.search(r'\w', s, flags=re.UNICODE)
 
 
-def count_words(text: str) -> int:
-    """
-    统计多语言文本中的字符/单词数
-    """
-    # 定义各种语言的Unicode范围
-    patterns = [
-        r'[\u4e00-\u9fff]',           # 中日韩统一表意文字
-        r'[\u3040-\u309f]',           # 平假名
-        r'[\u30a0-\u30ff]',           # 片假名
-        r'[\uac00-\ud7af]',           # 韩文音节
-        r'[\u0e00-\u0e7f]',           # 泰文
-        r'[\u0600-\u06ff]',           # 阿拉伯文
-        r'[\u0400-\u04ff]',           # 西里尔字母（俄文等）
-        r'[\u0590-\u05ff]',           # 希伯来文
-        r'[\u1e00-\u1eff]',           # 越南文
-        r'[\u3130-\u318f]',           # 韩文兼容字母
-    ]
-    
-    # 统计所有非英文字符
-    non_english_chars = 0
-    remaining_text = text
-    
-    for pattern in patterns:
-        # 计算当前语言的字符数
-        chars = len(re.findall(pattern, remaining_text))
-        non_english_chars += chars
-        # 从文本中移除已计数的字符
-        remaining_text = re.sub(pattern, ' ', remaining_text)
-    
-    # 计算英文单词数（处理剩余的文本）
-    english_words = len(remaining_text.strip().split())
-    
-    return non_english_chars + english_words
-
-
 def preprocess_text(s: str) -> str:
     """
     通过规范化空格来标准化文本
     """
     return ' '.join(s.split())
-
-
-def split_by_end_marks(sentence: str) -> List[str]:
-    """
-    按句子结束标记拆分句子（移植自 youtube-subtitle）
-
-    规则：
-    - 按 '. ' '! ' '? ' '.' '!' '?' 分句
-    - 跳过小数点（检测前一个字符是否为数字）
-    - 每段至少 MIN_SENTENCE_WORDS 个单词才分割
-    - 最后一段少于 MIN_LAST_SEGMENT_WORDS 个单词时，合并到前一段
-
-    Args:
-        sentence: 输入文本
-
-    Returns:
-        拆分后的句子列表
-    """
-    end_marks = ['. ', '! ', '? ', '.', '!', '?']
-    positions = []
-
-    for mark in end_marks:
-        start = 0
-        while True:
-            pos = sentence.find(mark, start)
-            if pos == -1:
-                break
-
-            if _is_decimal_point(sentence, pos, mark):
-                start = pos + 1
-                continue
-
-            positions.append(pos + len(mark))
-            start = pos + 1
-
-    if not positions:
-        return [sentence]
-
-    unique_positions = sorted(set(positions))
-    segments = []
-    start = 0
-
-    for pos in unique_positions:
-        segment = sentence[start:pos].strip()
-        if segment and count_words(segment) >= MIN_SENTENCE_WORDS:
-            segments.append(segment)
-            start = pos
-
-    last_segment = sentence[start:].strip()
-    if last_segment:
-        if segments and count_words(last_segment) < MIN_LAST_SEGMENT_WORDS:
-            segments[-1] = segments[-1] + ' ' + last_segment
-        else:
-            segments.append(last_segment)
-
-    return segments if len(segments) > 1 else [sentence]
-
-
-def _is_decimal_point(sentence: str, pos: int, mark: str) -> bool:
-    """检查是否为小数点"""
-    return (mark == '. ' or mark == '.') and pos > 0 and sentence[pos - 1].isdigit()
 
 
 def presplit_by_punctuation(word_segments: List[SubtitleSegment]) -> List[PreSplitSentence]:
@@ -299,6 +260,8 @@ def batch_by_sentence_count(
 def merge_segments_within_batch(
     pre_split_sentences: List[PreSplitSentence],
     word_segments: List[SubtitleSegment],
+    config: SubtitleConfig,
+    llm: ModelAdapter,
     model: Optional[str] = None,
     batch_index: Optional[int] = None
 ) -> List[SubtitleSegment]:
@@ -317,7 +280,6 @@ def merge_segments_within_batch(
     if not pre_split_sentences:
         return []
 
-    config = get_default_config()
     if model is None:
         model = config.split_model
 
@@ -337,6 +299,8 @@ def merge_segments_within_batch(
     # LLM 断句
     llm_sentences = split_by_llm(
         batch_text,
+        config=config,
+        llm=llm,
         model=model,
         max_word_count_english=config.max_word_count_english,
         batch_index=batch_index
@@ -347,7 +311,7 @@ def merge_segments_within_batch(
     aligned_segments = merge_segments_based_on_sentences(batch_word_segments, llm_sentences)
 
     # 合并过短的分段
-    merge_short_segment(aligned_segments)
+    merge_short_segment(aligned_segments, config.max_word_count_english)
 
     return aligned_segments
 
@@ -462,15 +426,15 @@ def _should_merge_segments(current_seg, next_seg, max_word_count: int) -> bool:
             not has_sentence_end)
 
 
-def merge_short_segment(segments: List[SubtitleSegment]) -> None:
+def merge_short_segment(
+    segments: List[SubtitleSegment],
+    max_word_count: int,
+) -> None:
     """
     合并过短的分段
     """
     if not segments:
         return
-
-    config = get_default_config()
-    max_word_count = config.max_word_count_english
 
     i = 0
     while i < len(segments) - 1:

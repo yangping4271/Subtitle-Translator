@@ -226,8 +226,3 @@ class SubtitleConfig:
                 f"缺少必需的环境变量: {', '.join(missing)}。"
                 f"请运行 'translate init' 初始化配置。"
             )
-
-# 延迟创建默认配置实例
-def get_default_config() -> SubtitleConfig:
-    """获取默认配置实例"""
-    return SubtitleConfig() 

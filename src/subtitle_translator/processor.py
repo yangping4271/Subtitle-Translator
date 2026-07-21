@@ -29,56 +29,62 @@ def process_batch(
     generated_ass_files = []
     translator_service = None
 
-    try:
-        translator_service = SubtitleTranslatorService()
-        translator_service.init_translation_env(
-            llm_model=llm_model,
-            split_model=split_model,
-            translation_model=translation_model,
-            show_config=True,
-        )
-        print()
-    except Exception as init_error:
-        print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
-        raise
-
     is_batch_mode = len(files_to_process) > 1
-
-    for i, current_input_file in enumerate(files_to_process):
-        print()
-        logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
-        if is_batch_mode:
-            print(f"🎯 [bold cyan]开始处理第 {i+1}/{len(files_to_process)} 个文件...[/bold cyan]")
-        else:
-            print("[bold cyan]🎯 开始处理文件...[/bold cyan]")
-
+    try:
         try:
-            process_single_file(
-                current_input_file, target_lang, output_dir,
-                llm_model,
-                translator_service=translator_service,
-                preserve_intermediate=preserve_intermediate,
+            translator_service = SubtitleTranslatorService()
+            translator_service.init_translation_env(
+                llm_model=llm_model,
+                split_model=split_model,
+                translation_model=translation_model,
+                show_config=True,
             )
-            count += 1
+            print()
+        except Exception as init_error:
+            print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
+            raise
 
-            ass_file = output_dir / f"{current_input_file.stem}.ass"
-            if ass_file.exists():
-                generated_ass_files.append(ass_file)
-                logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
-                print("[cyan]📺 双语ASS文件已生成[/cyan]")
-
-            logger.info(f"✅ {current_input_file.stem} 处理完成！")
-            print("[bold green]✅ 处理完成！[/bold green]")
-
-        except Exception as e:
-            from .exceptions import SmartSplitError, TranslationError, SubtitleProcessError
-            if isinstance(e, (SmartSplitError, TranslationError, SubtitleProcessError)):
-                logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
+        for i, current_input_file in enumerate(files_to_process):
+            print()
+            logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
+            if is_batch_mode:
+                print(f"🎯 [bold cyan]开始处理第 {i+1}/{len(files_to_process)} 个文件...[/bold cyan]")
             else:
-                logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
-                print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
+                print("[bold cyan]🎯 开始处理文件...[/bold cyan]")
 
-        print()
+            try:
+                process_single_file(
+                    current_input_file,
+                    target_lang,
+                    output_dir,
+                    llm_model,
+                    translator_service=translator_service,
+                    preserve_intermediate=preserve_intermediate,
+                )
+                count += 1
+
+                ass_file = output_dir / f"{current_input_file.stem}.ass"
+                if ass_file.exists():
+                    generated_ass_files.append(ass_file)
+                    logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
+                    print("[cyan]📺 双语ASS文件已生成[/cyan]")
+
+                logger.info(f"✅ {current_input_file.stem} 处理完成！")
+                print("[bold green]✅ 处理完成！[/bold green]")
+
+            except Exception as e:
+                from .exceptions import SmartSplitError, TranslationError, SubtitleProcessError
+
+                if isinstance(e, (SmartSplitError, TranslationError, SubtitleProcessError)):
+                    logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
+                else:
+                    logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
+                    print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
+
+            print()
+    finally:
+        if translator_service is not None:
+            translator_service.close()
 
     show_results(count, generated_ass_files, output_dir, is_batch_mode)
 
@@ -145,6 +151,8 @@ def process_single_file(
             translator_service.init_translation_env(llm_model, show_config=True)
         except Exception as init_error:
             print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
+            if translator_service is not None:
+                translator_service.close()
             raise
     # 批量模式下，翻译服务已经初始化完成，直接使用
     try:
@@ -201,3 +209,6 @@ def process_single_file(
 
             if cleaned_files > 0:
                 print(f"🧹 已清理 {cleaned_files} 个中间文件") 
+
+        if not service_was_passed and translator_service is not None:
+            translator_service.close()

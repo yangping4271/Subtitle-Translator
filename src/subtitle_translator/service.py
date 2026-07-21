@@ -9,23 +9,23 @@ from typing import Optional, Tuple
 from rich import print
 
 from .exceptions import OpenAIAPIError, EmptySubtitleError, TranslationError, SmartSplitError
-from .logger import log_section_end, log_section_start, log_stats
+from .logger import log_section_end, log_section_start, log_stats, setup_logger
 from .translation_core.config import SubtitleConfig
 from .translation_core.data import SubtitleData, load_subtitle
 from .translation_core.external_glossary import load_external_terminology
-from .translation_core.optimizer import SubtitleOptimizer, format_diff, _is_format_change_only, _is_wrong_replacement
+from .translation_core.llm_client import LLMClient, ModelAdapter
+from .translation_core.translation_execution import (
+    TranslationEngine,
+    _is_format_change_only,
+    _is_wrong_replacement,
+    format_diff,
+)
 from .translation_core.terminology import (
     get_terminology_aliases,
     get_terminology_translation,
     load_terminology,
 )
-from .translation_core.splitter import (
-    batch_by_sentence_count,
-    hard_split_long_pre_split_sentences,
-    merge_segments_within_batch,
-    preprocess_segments,
-    presplit_by_punctuation,
-)
+from .translation_core.splitter import SubtitleSegmenter
 from .context_loader import build_context_info
 from .console_views import show_api_config, show_model_config, show_time_stats
 
@@ -33,10 +33,22 @@ from .console_views import show_api_config, show_model_config, show_time_stats
 class SubtitleTranslatorService:
     """字幕翻译服务类"""
     
-    def __init__(self):
-        self.config = SubtitleConfig()
+    def __init__(
+        self,
+        config: Optional[SubtitleConfig] = None,
+        llm: Optional[ModelAdapter] = None,
+    ):
+        self.config = config or SubtitleConfig()
+        self._owns_llm = llm is None
+        self.llm = llm or LLMClient(self.config)
         from .env_setup import logger
-        self.logger = logger
+        self.logger = logger or setup_logger(__name__)
+
+    def close(self) -> None:
+        """释放由当前运行创建的 external adapter。"""
+        if self._owns_llm and isinstance(self.llm, LLMClient):
+            self.llm.close()
+            self._owns_llm = False
 
     def init_translation_env(
         self,
@@ -75,7 +87,7 @@ class SubtitleTranslatorService:
 
     def _save_subtitle_files(
         self,
-        asr_data: SubtitleData,
+        sentence_subtitle: SubtitleData,
         translate_result: list,
         input_srt_path: Path,
         output_dir: Path,
@@ -94,7 +106,7 @@ class SubtitleTranslatorService:
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        asr_data.save_translations_to_files(
+        sentence_subtitle.save_translations_to_files(
             translate_result,
             str(english_output_path),
             str(target_lang_output_path)
@@ -115,17 +127,17 @@ class SubtitleTranslatorService:
         """加载并验证字幕文件"""
         self.logger.info("📂 正在加载字幕文件...")
 
-        asr_data = load_subtitle(str(input_srt_path))
-        self.logger.info(f"📊 字幕统计: 共 {len(asr_data.segments)} 条字幕")
-        self.logger.info(f"字幕内容预览: {asr_data.to_txt()[:100]}...")
+        source_subtitle = load_subtitle(str(input_srt_path))
+        self.logger.info(f"📊 字幕统计: 共 {len(source_subtitle.segments)} 条字幕")
+        self.logger.info(f"字幕内容预览: {source_subtitle.to_txt()[:100]}...")
 
-        if len(asr_data.segments) == 0:
+        if len(source_subtitle.segments) == 0:
             self.logger.info("⚠️  SRT文件为空，跳过翻译处理")
             print("[yellow]⚠️  SRT文件为空，跳过翻译处理[/yellow]")
             raise EmptySubtitleError("SRT文件为空，无法进行翻译")
 
         print("📊 [bold blue]加载完成[/bold blue]")
-        return asr_data
+        return source_subtitle
 
     def _set_target_language(self, target_lang: str) -> None:
         """设置目标语言（带友好错误处理）"""
@@ -198,7 +210,7 @@ class SubtitleTranslatorService:
                 self.init_translation_env(llm_model)
 
             # 加载字幕文件
-            asr_data = self._load_subtitle_file(input_srt_path)
+            source_subtitle = self._load_subtitle_file(input_srt_path)
 
             preprocessing_start_time = time.time()
             log_section_start(self.logger, "并行预处理阶段", "⚡")
@@ -215,22 +227,29 @@ class SubtitleTranslatorService:
             else:
                 self.logger.info("📋 未加载任何上下文信息")
 
-            pipeline_start_time = time.time()
-            print("⚡ [bold cyan]启动流水线处理：断句 + 翻译并行...[/bold cyan]")
+            processing_start_time = time.time()
+            print("⚡ [bold cyan]启动字幕处理：并发断句 + 并发翻译...[/bold cyan]")
 
-            asr_data, translate_result = self._translate_with_pipeline(asr_data, context_info)
+            sentence_subtitle, translate_result = self._translate_segmented_batches(
+                source_subtitle,
+                context_info,
+            )
 
-            pipeline_time = time.time() - pipeline_start_time
-            stage_times["🚀 流水线处理"] = pipeline_time
+            processing_time = time.time() - processing_start_time
+            stage_times["🚀 字幕处理"] = processing_time
 
             preprocessing_time = time.time() - preprocessing_start_time
             log_section_end(self.logger, "并行预处理阶段", preprocessing_time, "🎉")
-            print(f"🎉 [bold green]流水线处理完成[/bold green] (总耗时: [cyan]{preprocessing_time:.1f}s[/cyan])")
+            print(f"🎉 [bold green]字幕处理完成[/bold green] (总耗时: [cyan]{preprocessing_time:.1f}s[/cyan])")
 
             stage_times["⚡ 并行预处理"] = preprocessing_time
 
             target_lang_output_path = self._save_subtitle_files(
-                asr_data, translate_result, input_srt_path, output_dir, target_lang
+                sentence_subtitle,
+                translate_result,
+                input_srt_path,
+                output_dir,
+                target_lang,
             )
 
             total_elapsed = time.time() - task_start_time
@@ -240,7 +259,7 @@ class SubtitleTranslatorService:
 
             final_stats = {
                 "输入文件": input_srt_path.name,
-                "字幕数量": len(asr_data.segments),
+                "字幕数量": len(sentence_subtitle.segments),
                 "目标语言": target_lang,
                 "总耗时": f"{total_elapsed:.1f}秒"
             }
@@ -261,99 +280,74 @@ class SubtitleTranslatorService:
             self.logger.debug("详细错误信息:", exc_info=True)
             raise
 
-    def _translate_with_pipeline(self, asr_data: SubtitleData, context_info: str) -> Tuple[SubtitleData, list]:
+    def _translate_segmented_batches(
+        self,
+        source_subtitle: SubtitleData,
+        context_info: str,
+    ) -> Tuple[SubtitleData, list]:
         """
-        流水线式翻译：每个批次断句后立即翻译
+        先完成 Subtitle segmentation，再并发执行 Translation batches。
 
         Returns:
-            (final_asr_data, translate_result)
+            (sentence_subtitle, translation_results)
         """
-        # 1. 预处理：移除纯标点符号
-        asr_data.segments = preprocess_segments(asr_data.segments)
-
-        # 2. 转换为单词级字幕（如果需要）
-        if not asr_data.is_word_timestamp():
-            asr_data = asr_data.split_to_word_segments()
-
-        word_segments = asr_data.segments
-
-        # 3. 预分句
-        pre_split_sentences = presplit_by_punctuation(word_segments)
-        pre_split_sentences = hard_split_long_pre_split_sentences(
-            pre_split_sentences,
-            word_segments,
-            self.config.max_batch_words,
-        )
-
-        # 4. 分批
-        batches = batch_by_sentence_count(
-            pre_split_sentences,
-            min_size=self.config.min_batch_sentences,
-            max_size=self.config.max_batch_sentences,
-            max_words=self.config.max_batch_words,
-        )
+        segmenter = SubtitleSegmenter(self.config, self.llm)
+        batches = segmenter.segment(source_subtitle)
         total_batches = len(batches)
-        self.logger.info(f"📦 分为 {total_batches} 批处理 {len(word_segments)} 个单词")
+        segment_count = sum(len(batch.segments) for batch in batches)
+        self.logger.info(f"📦 分为 {total_batches} 批处理 {segment_count} 个句段")
         print(f"📦 [bold cyan]批次总数:[/bold cyan] [cyan]{total_batches}[/cyan]")
 
-        # 5. 并发处理
         concurrency = self.config.thread_num
         all_translated_results = []
         all_segments = []
-        batch_logs_all = []
         completed_batches = 0
 
-        def process_batch_task(args):
-            """每个批次的完整任务：断句 + 翻译"""
-            batch_index, batch = args
-            batch_segments = merge_segments_within_batch(
-                batch, word_segments,
-                model=self.config.split_model,
-                batch_index=batch_index + 1
-            )
+        with TranslationEngine(self.config, self.llm) as translator:
+            def process_batch_task(args):
+                """翻译一个已完成 Subtitle segmentation 的 Translation batch。"""
+                batch_index, translation_batch = args
+                batch_translate_result = translator.translate_batch(
+                    translation_batch,
+                    context_info,
+                    batch_num=batch_index + 1,
+                    total_batches=total_batches,
+                )
 
-            batch_asr_data = SubtitleData(batch_segments)
-            translator = SubtitleOptimizer(config=self.config)
-            batch_translate_result = translator.translate_batch_directly(
-                batch_asr_data,
-                context_info,
-                batch_num=batch_index + 1,
-                total_batches=total_batches,
-            )
+                return batch_index, list(translation_batch.segments), batch_translate_result
 
-            return (batch_index, batch_segments, batch_translate_result, translator.batch_logs)
+            batch_tasks = list(enumerate(batches))
 
-        batch_tasks = list(enumerate(batches))
+            for i in range(0, len(batch_tasks), concurrency):
+                chunk = batch_tasks[i:i + concurrency]
+                with ThreadPoolExecutor(max_workers=min(len(chunk), concurrency)) as executor:
+                    future_to_batch_index = {
+                        executor.submit(process_batch_task, batch_task): batch_task[0]
+                        for batch_task in chunk
+                    }
+                    chunk_results = {}
 
-        for i in range(0, len(batch_tasks), concurrency):
-            chunk = batch_tasks[i:i + concurrency]
-            with ThreadPoolExecutor(max_workers=min(len(chunk), concurrency)) as executor:
-                future_to_batch_index = {
-                    executor.submit(process_batch_task, batch_task): batch_task[0]
-                    for batch_task in chunk
-                }
-                chunk_results = {}
+                    for future in as_completed(future_to_batch_index):
+                        batch_index, segments, translate_result = future.result()
+                        chunk_results[batch_index] = (segments, translate_result)
+                        completed_batches += 1
+                        self.logger.info(f"📈 翻译进度: {completed_batches}/{len(batch_tasks)}")
+                        print(
+                            "📈 [bold cyan]批次进度:[/bold cyan] "
+                            f"[cyan]{completed_batches}/{len(batch_tasks)}[/cyan] "
+                            f"(当前完成: 第 {batch_index + 1} 批)"
+                        )
 
-                for future in as_completed(future_to_batch_index):
-                    batch_index, segments, translate_result, batch_logs = future.result()
-                    chunk_results[batch_index] = (segments, translate_result, batch_logs)
-                    completed_batches += 1
-                    self.logger.info(f"📈 流水线进度: {completed_batches}/{len(batch_tasks)}")
-                    print(
-                        "📈 [bold cyan]批次进度:[/bold cyan] "
-                        f"[cyan]{completed_batches}/{len(batch_tasks)}[/cyan] "
-                        f"(当前完成: 第 {batch_index + 1} 批)"
-                    )
+                    for batch_index in sorted(chunk_results):
+                        segments, translate_result = chunk_results[batch_index]
+                        all_segments.extend(segments)
+                        all_translated_results.extend(translate_result)
 
-                for batch_index in sorted(chunk_results):
-                    segments, translate_result, batch_logs = chunk_results[batch_index]
-                    all_segments.extend(segments)
-                    all_translated_results.extend(translate_result)
-                    batch_logs_all.extend(batch_logs)
+            batch_logs_all = list(translator.batch_logs)
 
         # 6. 按时间排序
         all_segments.sort(key=lambda seg: seg.start_time)
-        final_asr_data = SubtitleData(all_segments)
+        sentence_subtitle = SubtitleData(all_segments)
 
         # 7. 重新编号翻译结果
         renumbered_results = []
@@ -378,9 +372,9 @@ class SubtitleTranslatorService:
                 print(f"   [yellow]可疑替换: {stats['wrong_changes']} 项[/yellow]")
             print(f"   总计: [cyan]{stats['total_changes']}[/cyan] 项优化")
 
-        self.logger.info(f"✅ 流水线处理完成！共 {len(all_segments)} 句")
+        self.logger.info(f"✅ 字幕处理完成！共 {len(all_segments)} 句")
 
-        return final_asr_data, renumbered_results
+        return sentence_subtitle, renumbered_results
 
     def _print_optimization_details(self, batch_logs: list) -> None:
         """打印详细的优化日志"""

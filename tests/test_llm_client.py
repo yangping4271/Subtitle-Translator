@@ -1,7 +1,23 @@
 from unittest.mock import Mock
 
 from subtitle_translator.translation_core.config import SubtitleConfig
+from subtitle_translator.translation_core import llm_client
 from subtitle_translator.translation_core.llm_client import LLMClient
+
+
+def test_close_releases_the_owned_openai_client(monkeypatch):
+    openai_client = Mock()
+    monkeypatch.setattr(llm_client, "OpenAI", Mock(return_value=openai_client))
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="test-key",
+        _skip_env_load=True,
+    )
+    client = LLMClient(config)
+
+    client.close()
+
+    openai_client.close.assert_called_once_with()
 
 
 def test_create_chat_completion_keeps_request_body_unchanged():

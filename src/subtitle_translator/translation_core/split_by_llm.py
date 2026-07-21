@@ -2,86 +2,55 @@ import re
 from typing import List, Optional
 
 from .prompts import SPLIT_SYSTEM_PROMPT
-from .config import SubtitleConfig, get_default_config
-from .llm_client import LLMClient
+from .config import SubtitleConfig
+from .llm_client import ModelAdapter
+from .segmentation_rules import count_words
 from .utils.errors import extract_error_message, get_error_suggestions
 from .utils.api import validate_api_response
 from ..logger import setup_logger
 
 logger = setup_logger("split_by_llm")
 
-def count_words(text: str) -> int:
-    """
-    统计文本中英文单词数
-    Args:
-        text: 输入文本，英文
-    Returns:
-        int: 英文单词数
-    """
-    english_text = re.sub(r'[\u4e00-\u9fff]', ' ', text)
-    english_words = english_text.strip().split()
-    return len(english_words)
 
-def split_by_end_marks(sentence: str) -> List[str]:
-    """
-    按明确的句子结束标记拆分句子（简化版）
-    
-    Args:
-        sentence: 需要拆分的句子
-        
-    Returns:
-        List[str]: 拆分后的句子列表
-    """
-    # 只处理明确的句子结束标记，避免过度分割
-    end_marks = [". ", "! ", "? "]
+def split_by_explicit_end_marks(sentence: str) -> List[str]:
+    """保留 LLM 后处理原有的显式句末标记策略。"""
     positions = []
-    
-    # 查找句子结束标记的位置
-    for mark in end_marks:
+    for mark in [". ", "! ", "? "]:
         start = 0
         while True:
             pos = sentence.find(mark, start)
             if pos == -1:
                 break
-            # 确保不是小数点
-            if mark == ". " and pos > 0 and sentence[pos-1].isdigit():
+            if mark == ". " and pos > 0 and sentence[pos - 1].isdigit():
                 start = pos + 1
                 continue
-            positions.append(pos + 1)  # 标点后的位置
+            positions.append(pos + 1)
             start = pos + 1
-    
-    # 如果没有找到结束标记，返回原句子
+
     if not positions:
         return [sentence]
-    
-    # 执行分割
-    positions.sort()
+
     segments = []
     start = 0
-    
-    for pos in positions:
+    for pos in sorted(positions):
         segment = sentence[start:pos].strip()
-        # 确保每段至少有3个单词才分割
         if segment and count_words(segment) >= 3:
             segments.append(segment)
             start = pos
-    
-    # 处理最后一段
+
     last_segment = sentence[start:].strip()
     if last_segment:
         if segments and count_words(last_segment) < 2:
-            # 最后一段太短，合并到前一段
             segments[-1] += " " + last_segment
         else:
             segments.append(last_segment)
-    
-    # 记录分割结果
-    if len(segments) > 1:
-        logger.info(f"✂️ 标点分割: {len(segments)}段")
-    
+
     return segments if len(segments) > 1 else [sentence]
 
+
 def split_by_llm(text: str,
+                config: SubtitleConfig,
+                llm: ModelAdapter,
                 model: Optional[str] = None,
                 max_word_count_english: int = 14,
                 max_retries: int = 3,
@@ -101,13 +70,10 @@ def split_by_llm(text: str,
     """
     logger.info(f"📝 处理文本: 共{count_words(text)}个单词")
     
-    # 初始化客户端
-    config = SubtitleConfig()
     # 如果没有指定模型，使用配置中的断句模型
     if model is None:
         model = config.split_model
 
-    llm = LLMClient.get_instance(config)
     # 使用系统提示词
     system_prompt = SPLIT_SYSTEM_PROMPT.format(max_word_count_english=max_word_count_english)
     
@@ -145,7 +111,6 @@ def split_by_llm(text: str,
 
         # 四层防护机制验证句子长度
         # 动态计算阈值（基于配置的倍数参数）
-        config = get_default_config()
         tolerance_threshold = int(max_word_count_english * config.tolerance_multiplier)      # 轻度容忍阈值
         warning_threshold = int(max_word_count_english * config.warning_multiplier)         # 警告阈值
         max_threshold = int(max_word_count_english * config.max_multiplier)                 # 最大阈值
@@ -161,7 +126,7 @@ def split_by_llm(text: str,
 
         for sentence in sentences:
             # 首先按结束标记拆分句子
-            segments = split_by_end_marks(sentence)
+            segments = split_by_explicit_end_marks(sentence)
 
             # 对每个分段进行四层验证
             for segment in segments:
@@ -242,7 +207,15 @@ def split_by_llm(text: str,
     except Exception as e:
         if max_retries > 0:
             logger.warning(f"API调用失败，第{4-max_retries}次重试: {extract_error_message(str(e))}")
-            return split_by_llm(text, model, max_word_count_english, max_retries-1, batch_index)
+            return split_by_llm(
+                text,
+                config,
+                llm,
+                model,
+                max_word_count_english,
+                max_retries - 1,
+                batch_index,
+            )
         else:
             error_msg = extract_error_message(str(e))
             logger.error(f"智能断句失败: {error_msg}")

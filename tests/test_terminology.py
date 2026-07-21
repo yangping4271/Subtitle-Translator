@@ -1,11 +1,52 @@
+import json
+from types import SimpleNamespace
+
 from subtitle_translator.translation_core.config import SubtitleConfig
+from subtitle_translator.translation_core.data import SubtitleData, SubtitleSegment
 from subtitle_translator.translation_core.terminology import (
     get_terminology_aliases,
     get_terminology_translation,
     load_terminology_file,
     parse_terminology_entry,
 )
-from subtitle_translator.translation_core.translation_retry import TranslationExecutor
+from subtitle_translator.translation_core.translation_execution import TranslationEngine
+
+
+class CapturingAdapter:
+    def __init__(self):
+        self.requests = []
+
+    def create_chat_completion(self, **kwargs):
+        self.requests.append(kwargs)
+        source = kwargs["messages"][-1]["content"].split("<subtitles>", 1)[1]
+        source = json.loads(source.split("</subtitles>", 1)[0])["1"]
+        content = json.dumps(
+            {
+                "subtitles": [
+                    {
+                        "id": 1,
+                        "optimized": source,
+                        "translation": "译文",
+                        "discarded": False,
+                    }
+                ]
+            }
+        )
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        )
+
+
+def _capture_translation_prompt(config: SubtitleConfig, source: str) -> str:
+    adapter = CapturingAdapter()
+    translation_batch = SubtitleData(
+        [SubtitleSegment(source, start_time=0, end_time=1000)]
+    )
+
+    with TranslationEngine(config, adapter) as engine:
+        engine.translate_batch(translation_batch, context_info="")
+
+    return adapter.requests[0]["messages"][0]["content"]
 
 
 def test_parse_terminology_entry_supports_aliases():
@@ -49,10 +90,7 @@ def test_format_terminology_includes_asr_corrections():
         },
         "LLM": "大语言模型 (LLM)",
     }
-    executor = object.__new__(TranslationExecutor)
-    executor.config = config
-
-    formatted = executor._format_terminology()
+    formatted = _capture_translation_prompt(config, "land chain and LLM")
 
     assert "LangChain → LangChain" in formatted
     assert "LLM → 大语言模型 (LLM)" in formatted
@@ -70,10 +108,10 @@ def test_format_terminology_includes_only_relevant_external_terms():
         "Cache": {"translation": "缓存", "aliases": []},
     }
     config.external_glossary_max_terms = 10
-    executor = object.__new__(TranslationExecutor)
-    executor.config = config
-
-    formatted = executor._format_terminology("We use a database in this course.")
+    formatted = _capture_translation_prompt(
+        config,
+        "We use a database in this course.",
+    )
 
     assert "Relevant External Terminology" in formatted
     assert "Database → 数据库" in formatted
