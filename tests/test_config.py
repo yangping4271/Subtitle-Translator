@@ -59,6 +59,18 @@ def test_disable_thinking_env_override(monkeypatch):
     assert config.disable_thinking is False
 
 
+def test_raw_payload_logging_is_disabled_by_default_and_can_be_enabled(monkeypatch):
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        _skip_env_load=True,
+    )
+    assert config.log_raw_payloads is False
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("LOG_RAW_PAYLOADS", "true")
+    assert SubtitleConfig().log_raw_payloads is True
+
+
 def test_config_detects_provider_type_from_base_url():
     assert SubtitleConfig(
         openai_base_url="https://api.deepseek.com/v1",
@@ -72,6 +84,21 @@ def test_config_detects_provider_type_from_base_url():
         openai_base_url="https://ai-proxy.chatwise.app/openrouter/api/v1",
         _skip_env_load=True,
     ).provider_type() == "openrouter"
+    assert SubtitleConfig(
+        openai_base_url="https://ai-proxy.example.com/deepseek/v1",
+        _skip_env_load=True,
+    ).provider_type() == "deepseek"
+    assert SubtitleConfig(
+        openai_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        _skip_env_load=True,
+    ).provider_type() == "dashscope"
+    assert SubtitleConfig(
+        openai_base_url=(
+            "https://workspace-id.ap-southeast-1.maas.aliyuncs.com/"
+            "compatible-mode/v1"
+        ),
+        _skip_env_load=True,
+    ).provider_type() == "dashscope"
     assert SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         _skip_env_load=True,

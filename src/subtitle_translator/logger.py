@@ -1,39 +1,34 @@
 import atexit
 import logging
 import logging.handlers
-from pathlib import Path
+import os
 import queue
-from typing import Optional
-
-
-def _find_project_root() -> Optional[Path]:
-    """
-    查找项目根目录（包含 pyproject.toml 和 src/subtitle_translator 的目录）
-
-    Returns:
-        项目根目录的 Path 对象，如果不在项目目录内则返回 None
-    """
-    try:
-        current = Path.cwd()
-        while current != current.parent:
-            if (current / "pyproject.toml").exists() and (current / "src" / "subtitle_translator").exists():
-                return current
-            current = current.parent
-    except Exception:
-        pass
-    return None
+from pathlib import Path
 
 
 def _get_log_path() -> Path:
-    """
-    智能选择日志路径：
-    - 开发模式（当前工作目录在项目内）: 使用项目目录
-    - 全局工具模式: 使用用户目录
-    """
-    project_root = _find_project_root()
-    if project_root:
-        return project_root / "logs"
+    """返回与当前工作目录无关的稳定日志目录。"""
+    configured_path = os.getenv("SUBTITLE_TRANSLATOR_LOG_DIR")
+    if configured_path:
+        return Path(configured_path).expanduser()
+    data_home = os.getenv("XDG_DATA_HOME")
+    if data_home:
+        return Path(data_home).expanduser() / "subtitle-translator" / "logs"
     return Path.home() / ".local" / "share" / "subtitle-translator" / "logs"
+
+
+def _prepare_log_file(log_file: Path) -> None:
+    """创建私有日志目录，并收紧已有日志文件权限。"""
+    log_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        log_file.parent.chmod(0o700)
+    except OSError:
+        pass
+    if log_file.exists():
+        try:
+            log_file.chmod(0o600)
+        except OSError:
+            pass
 
 
 LOG_PATH = _get_log_path()
@@ -144,12 +139,19 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
             
     def _create_handlers(self):
         # 只创建文件处理器，不创建控制台处理器以避免与print重复输出
-        Path(LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
-        self._file_handler = logging.FileHandler(
+        log_file = Path(LOG_FILE)
+        _prepare_log_file(log_file)
+        self._file_handler = logging.handlers.RotatingFileHandler(
             LOG_FILE,
-            mode='w',  # 使用覆盖模式，每个新任务覆盖旧日志
-            encoding='utf-8'
+            mode='a',
+            maxBytes=5 * 1024 * 1024,
+            backupCount=3,
+            encoding='utf-8',
         )
+        try:
+            log_file.chmod(0o600)
+        except OSError:
+            pass
         file_formatter = ColoredFormatter(use_color=False, use_emoji=True)
         self._file_handler.setFormatter(file_formatter)
         # 文件处理器使用 DEBUG 级别，记录所有详细信息
@@ -181,11 +183,14 @@ def setup_logger(name: str) -> logging.Logger:
         return logger
 
     # 创建或更新队列处理器
-    if queue_handler is None:
+    listener_created = queue_handler is None
+    if listener_created:
         queue_handler = QueueListenerHandler(log_queue, level)
         queue_handler.start_listener()
 
     logger.addHandler(queue_handler)
+    if listener_created:
+        logger.info("🆕 日志会话开始: pid=%s", os.getpid())
 
     # 设置特定库的日志级别为ERROR以减少日志噪音
     error_loggers = ["urllib3", "requests", "openai", "httpx", "httpcore", "ssl", "certifi"]

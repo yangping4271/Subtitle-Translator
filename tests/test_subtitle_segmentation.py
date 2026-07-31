@@ -4,9 +4,16 @@ import pytest
 
 from subtitle_translator.exceptions import SmartSplitError
 from subtitle_translator.translation_core.config import SubtitleConfig
-from subtitle_translator.translation_core.data import SubtitleData, SubtitleSegment
+from subtitle_translator.translation_core.data import (
+    PreSplitSentence,
+    SubtitleData,
+    SubtitleSegment,
+)
 from subtitle_translator.translation_core.split_by_llm import split_by_llm
-from subtitle_translator.translation_core.splitter import SubtitleSegmenter
+from subtitle_translator.translation_core.splitter import (
+    SubtitleSegmenter,
+    batch_by_sentence_count,
+)
 
 
 class StubModelAdapter:
@@ -32,6 +39,57 @@ class EchoModelAdapter:
 class FailingModelAdapter:
     def create_chat_completion(self, **kwargs):
         raise RuntimeError("model unavailable")
+
+
+def _pre_split_sentences(word_counts: list[int]) -> list[PreSplitSentence]:
+    sentences = []
+    start = 0
+    for index, word_count in enumerate(word_counts):
+        end = start + word_count
+        sentences.append(
+            PreSplitSentence(
+                text=f"sentence {index}",
+                word_start_index=start,
+                word_end_index=end,
+                start_time=index * 100,
+                end_time=(index + 1) * 100,
+            )
+        )
+        start = end
+    return sentences
+
+
+def test_word_limited_batches_balance_small_tail():
+    sentences = _pre_split_sentences([12] * 27)
+
+    batches = batch_by_sentence_count(
+        sentences,
+        min_size=15,
+        max_size=25,
+        target_size=20,
+        max_words=500,
+    )
+
+    assert sorted(len(batch) for batch in batches) == [13, 14]
+
+
+def test_balanced_batches_respect_word_and_sentence_limits():
+    sentences = _pre_split_sentences([20, 20, 20, 80, 20, 20, 20])
+
+    batches = batch_by_sentence_count(
+        sentences,
+        min_size=2,
+        max_size=4,
+        target_size=3,
+        max_words=100,
+    )
+
+    assert [sentence for batch in batches for sentence in batch] == sentences
+    assert all(len(batch) <= 4 for batch in batches)
+    assert all(
+        sum(s.word_end_index - s.word_start_index for s in batch) <= 100
+        for batch in batches
+    )
 
 
 def test_source_subtitle_becomes_time_aligned_sentence_segments():

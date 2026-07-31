@@ -1,5 +1,9 @@
 from pathlib import Path
-from subtitle_translator.context_loader import extract_folder_path, build_context_info
+from subtitle_translator.context_loader import (
+    build_context_info,
+    extract_folder_path,
+    extract_terminology_hints,
+)
 
 
 def test_extract_folder_path_max_depth():
@@ -37,3 +41,15 @@ def test_build_context_info_without_context_file(tmp_path):
     assert "context.txt" not in result
     assert "Filename:" not in result
     assert "Folder path:" not in result
+
+
+def test_terminology_hints_filter_generic_paths_and_video_id(monkeypatch):
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: Path("/Users/yangping")))
+    input_file = Path(
+        "/Users/yangping/Downloads/"
+        "Benchling cuts migration time - Cursor_f_iA2NtIxBU.srt"
+    )
+
+    hints = extract_terminology_hints(input_file)
+
+    assert hints == ["Benchling cuts migration time Cursor"]

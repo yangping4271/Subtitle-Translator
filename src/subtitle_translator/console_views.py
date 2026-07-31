@@ -22,19 +22,33 @@ def show_api_config(base_url: str, api_key: str) -> None:
     print(f"   密钥: [cyan]{masked_key}[/cyan]" if api_key else "   密钥: [red]未设置[/red]")
 
 
-def show_model_config(split_model: str, translation_model: str) -> None:
+def show_model_config(
+    split_model: str,
+    translation_model: str,
+    provider_type: Optional[str] = None,
+    disable_thinking: bool = True,
+) -> None:
     """显示模型配置信息"""
     print("[bold blue]🤖 模型配置:[/bold blue]")
     split_effort = get_reasoning_effort(split_model)
     translation_effort = get_reasoning_effort(translation_model)
-    split_reasoning = (
-        f" [dim](推理强度: {split_effort})[/dim]" if split_effort else ""
-    )
-    translation_reasoning = (
-        f" [dim](推理强度: {translation_effort})[/dim]"
-        if translation_effort
-        else ""
-    )
+
+    def format_reasoning(model: str, effort: Optional[str]) -> str:
+        provider_disables_thinking = (
+            provider_type in {"openrouter", "dashscope"}
+            or (
+                provider_type == "deepseek"
+                and model.lower().startswith("deepseek-v4-")
+            )
+        )
+        if disable_thinking and (effort == "none" or provider_disables_thinking):
+            return " [dim](思考模式: 已关闭)[/dim]"
+        if disable_thinking and effort:
+            return f" [dim](推理强度: {effort}，模型不支持关闭)[/dim]"
+        return ""
+
+    split_reasoning = format_reasoning(split_model, split_effort)
+    translation_reasoning = format_reasoning(translation_model, translation_effort)
     print(f"   断句: [cyan]{split_model}[/cyan]{split_reasoning}")
     print(f"   翻译: [cyan]{translation_model}[/cyan]{translation_reasoning}")
 
@@ -43,7 +57,7 @@ def show_time_stats(stages: dict, total_time: float) -> None:
     """格式化显示时间统计"""
     print("[bold blue]⏱️  耗时统计:[/bold blue]")
     for stage_name, elapsed_time in stages.items():
-        if elapsed_time > 0 and stage_name != "⚡ 并行预处理":
+        if elapsed_time > 0:
             percentage = (elapsed_time / total_time) * 100
             print(f"   {stage_name}: [cyan]{elapsed_time:.1f}s[/cyan] ([dim]{percentage:.0f}%[/dim])")
     print(f"   [bold]总计: [cyan]{total_time:.1f}s[/cyan][/bold]")

@@ -41,8 +41,7 @@ class SubtitleTranslatorService:
         self.config = config or SubtitleConfig()
         self._owns_llm = llm is None
         self.llm = llm or LLMClient(self.config)
-        from .env_setup import logger
-        self.logger = logger or setup_logger(__name__)
+        self.logger = setup_logger(__name__)
 
     def close(self) -> None:
         """释放由当前运行创建的 external adapter。"""
@@ -80,7 +79,12 @@ class SubtitleTranslatorService:
 
         if show_config:
             show_api_config(self.config.openai_base_url, self.config.openai_api_key)
-            show_model_config(self.config.split_model, self.config.translation_model)
+            show_model_config(
+                self.config.split_model,
+                self.config.translation_model,
+                provider_type=self.config.provider_type(),
+                disable_thinking=self.config.disable_thinking,
+            )
 
         elapsed_time = time.time() - start_time
         log_section_end(self.logger, "翻译环境初始化", elapsed_time, "✅")
@@ -128,8 +132,14 @@ class SubtitleTranslatorService:
         self.logger.info("📂 正在加载字幕文件...")
 
         source_subtitle = load_subtitle(str(input_srt_path))
-        self.logger.info(f"📊 字幕统计: 共 {len(source_subtitle.segments)} 条字幕")
-        self.logger.info(f"字幕内容预览: {source_subtitle.to_txt()[:100]}...")
+        timestamp_type = "词级时间戳" if source_subtitle.is_word_timestamp() else "句段时间戳"
+        self.logger.info(
+            "📊 输入字幕片段: %s 条（%s）",
+            len(source_subtitle.segments),
+            timestamp_type,
+        )
+        if self.config.log_raw_payloads:
+            self.logger.debug(f"字幕内容预览: {source_subtitle.to_txt()[:100]}...")
 
         if len(source_subtitle.segments) == 0:
             self.logger.info("⚠️  SRT文件为空，跳过翻译处理")
@@ -212,11 +222,12 @@ class SubtitleTranslatorService:
             # 加载字幕文件
             source_subtitle = self._load_subtitle_file(input_srt_path)
 
-            preprocessing_start_time = time.time()
-            log_section_start(self.logger, "并行预处理阶段", "⚡")
+            processing_start_time = time.time()
+            log_section_start(self.logger, "字幕处理阶段", "⚡")
 
+            context_start_time = time.time()
             context_info = build_context_info(input_srt_path.resolve())
-            stage_times["📋 上下文提取"] = 0.0  # 本地操作，耗时可忽略
+            stage_times["📋 上下文提取"] = time.time() - context_start_time
 
             # 打印加载的上下文信息
             if context_info:
@@ -227,23 +238,21 @@ class SubtitleTranslatorService:
             else:
                 self.logger.info("📋 未加载任何上下文信息")
 
-            processing_start_time = time.time()
-            print("⚡ [bold cyan]启动字幕处理：并发断句 + 并发翻译...[/bold cyan]")
+            print("⚡ [bold cyan]启动字幕处理：并发断句 → 并发翻译...[/bold cyan]")
 
-            sentence_subtitle, translate_result = self._translate_segmented_batches(
-                source_subtitle,
-                context_info,
+            sentence_subtitle, translate_result, processing_times = (
+                self._translate_segmented_batches(
+                    source_subtitle,
+                    context_info,
+                )
             )
+            stage_times.update(processing_times)
 
             processing_time = time.time() - processing_start_time
-            stage_times["🚀 字幕处理"] = processing_time
+            log_section_end(self.logger, "字幕处理阶段", processing_time, "🎉")
+            print(f"🎉 [bold green]字幕处理完成[/bold green] (总耗时: [cyan]{processing_time:.1f}s[/cyan])")
 
-            preprocessing_time = time.time() - preprocessing_start_time
-            log_section_end(self.logger, "并行预处理阶段", preprocessing_time, "🎉")
-            print(f"🎉 [bold green]字幕处理完成[/bold green] (总耗时: [cyan]{preprocessing_time:.1f}s[/cyan])")
-
-            stage_times["⚡ 并行预处理"] = preprocessing_time
-
+            save_start_time = time.time()
             target_lang_output_path = self._save_subtitle_files(
                 sentence_subtitle,
                 translate_result,
@@ -251,6 +260,7 @@ class SubtitleTranslatorService:
                 output_dir,
                 target_lang,
             )
+            stage_times["💾 保存字幕"] = time.time() - save_start_time
 
             total_elapsed = time.time() - task_start_time
 
@@ -259,7 +269,8 @@ class SubtitleTranslatorService:
 
             final_stats = {
                 "输入文件": input_srt_path.name,
-                "字幕数量": len(sentence_subtitle.segments),
+                "输入字幕片段": len(source_subtitle.segments),
+                "断句后句段": len(sentence_subtitle.segments),
                 "目标语言": target_lang,
                 "总耗时": f"{total_elapsed:.1f}秒"
             }
@@ -284,20 +295,29 @@ class SubtitleTranslatorService:
         self,
         source_subtitle: SubtitleData,
         context_info: str,
-    ) -> Tuple[SubtitleData, list]:
+    ) -> Tuple[SubtitleData, list, dict[str, float]]:
         """
         先完成 Subtitle segmentation，再并发执行 Translation batches。
 
         Returns:
-            (sentence_subtitle, translation_results)
+            (sentence_subtitle, translation_results, stage_times)
         """
+        segmentation_start = time.time()
         segmenter = SubtitleSegmenter(self.config, self.llm)
         batches = segmenter.segment(source_subtitle)
+        segmentation_time = time.time() - segmentation_start
         total_batches = len(batches)
         segment_count = sum(len(batch.segments) for batch in batches)
-        self.logger.info(f"📦 分为 {total_batches} 批处理 {segment_count} 个句段")
+        batch_sizes = [len(batch.segments) for batch in batches]
+        self.logger.info(
+            "📦 断句完成: %s 个句段，翻译批次=%s，批次大小=%s",
+            segment_count,
+            total_batches,
+            batch_sizes,
+        )
         print(f"📦 [bold cyan]批次总数:[/bold cyan] [cyan]{total_batches}[/cyan]")
 
+        translation_start = time.time()
         concurrency = self.config.thread_num
         all_translated_results = []
         all_segments = []
@@ -344,6 +364,7 @@ class SubtitleTranslatorService:
                         all_translated_results.extend(translate_result)
 
             batch_logs_all = list(translator.batch_logs)
+        translation_time = time.time() - translation_start
 
         # 6. 按时间排序
         all_segments.sort(key=lambda seg: seg.start_time)
@@ -358,9 +379,17 @@ class SubtitleTranslatorService:
 
         # 8. 显示优化统计
         stats = self._get_optimization_stats(batch_logs_all)
+        self.logger.info(
+            "📊 优化统计: 格式=%s, 内容=%s, 可疑=%s, 总计=%s",
+            stats["format_changes"],
+            stats["content_changes"],
+            stats["wrong_changes"],
+            stats["total_changes"],
+        )
         if stats['total_changes'] > 0:
             # 先显示详细的优化日志
-            self._print_optimization_details(batch_logs_all)
+            if self.config.log_raw_payloads:
+                self._print_optimization_details(batch_logs_all)
 
             # 再显示汇总统计
             print("📊 [bold blue]优化统计:[/bold blue]")
@@ -372,9 +401,12 @@ class SubtitleTranslatorService:
                 print(f"   [yellow]可疑替换: {stats['wrong_changes']} 项[/yellow]")
             print(f"   总计: [cyan]{stats['total_changes']}[/cyan] 项优化")
 
-        self.logger.info(f"✅ 字幕处理完成！共 {len(all_segments)} 句")
+        self.logger.info(f"✅ 字幕处理完成！共 {len(all_segments)} 个句段")
 
-        return sentence_subtitle, renumbered_results
+        return sentence_subtitle, renumbered_results, {
+            "✂️ 智能断句": segmentation_time,
+            "🌍 批量翻译": translation_time,
+        }
 
     def _print_optimization_details(self, batch_logs: list) -> None:
         """打印详细的优化日志"""

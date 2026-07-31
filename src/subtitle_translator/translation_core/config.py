@@ -119,6 +119,7 @@ class SubtitleConfig:
     max_multiplier: float = 2.0
     need_reflect: bool = False
     disable_thinking: bool = True
+    log_raw_payloads: bool = False
 
     terminology: Optional[dict] = None
     external_terminology: Optional[dict] = None
@@ -146,10 +147,14 @@ class SubtitleConfig:
             for part in parsed.path.split("/")
             if part.strip()
         }
-        if hostname.endswith("deepseek.com"):
+        if hostname.endswith("deepseek.com") or "deepseek" in path_parts:
             return "deepseek"
         if hostname.endswith("openrouter.ai") or "openrouter" in path_parts:
             return "openrouter"
+        if hostname.endswith("aliyuncs.com") and (
+            "dashscope" in hostname or "compatible-mode" in path_parts
+        ):
+            return "dashscope"
         if hostname == "api.openai.com":
             return "openai"
         return "custom"
@@ -185,6 +190,12 @@ class SubtitleConfig:
         env_disable_thinking = os.getenv('DISABLE_THINKING')
         if env_disable_thinking:
             self.disable_thinking = env_disable_thinking.strip().lower() in {
+                "1", "true", "yes", "on"
+            }
+
+        env_log_raw_payloads = os.getenv('LOG_RAW_PAYLOADS')
+        if env_log_raw_payloads:
+            self.log_raw_payloads = env_log_raw_payloads.strip().lower() in {
                 "1", "true", "yes", "on"
             }
 

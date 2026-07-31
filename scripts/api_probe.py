@@ -1,6 +1,8 @@
 import os
-import openai
 import ast
+
+from subtitle_translator.translation_core.config import SubtitleConfig
+from subtitle_translator.translation_core.llm_client import LLMClient
 
 
 def test_openai(base_url, api_key, model):
@@ -15,9 +17,17 @@ def test_openai(base_url, api_key, model):
     bool: 是否成功
     str: 错误信息或者AI助手的回复
     """
+    client = None
     try:
-        # 创建OpenAI客户端并发送请求到OpenAI API
-        response = openai.OpenAI(base_url=base_url, api_key=api_key, timeout=15).chat.completions.create(
+        # 复用项目统一客户端，确保探测请求也执行禁用思考策略。
+        config = SubtitleConfig(
+            openai_base_url=base_url,
+            openai_api_key=api_key,
+            disable_thinking=True,
+            _skip_env_load=True,
+        )
+        client = LLMClient(config)
+        response = client.create_chat_completion(
             model=model,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
@@ -39,18 +49,21 @@ def test_openai(base_url, api_key, model):
                     error_dict = ast.literal_eval(error_json)
                     if "error" in error_dict and "message" in error_dict["error"]:
                         return False, error_dict["error"]["message"]
-                except:
+                except Exception:
                     # 如果ast.literal_eval失败，尝试JSON解析
                     try:
                         import json
                         error_dict = json.loads(error_json)
                         if "error" in error_dict and "message" in error_dict["error"]:
                             return False, error_dict["error"]["message"]
-                    except:
+                    except Exception:
                         pass
-        except:
+        except Exception:
             pass
         return False, error_str
+    finally:
+        if client is not None:
+            client.close()
 
 
 if __name__ == "__main__":

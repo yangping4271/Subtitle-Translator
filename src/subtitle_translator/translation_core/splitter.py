@@ -1,4 +1,5 @@
 import difflib
+import math
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional
@@ -47,6 +48,7 @@ class SubtitleSegmenter:
             pre_split_sentences,
             min_size=self.config.min_batch_sentences,
             max_size=self.config.max_batch_sentences,
+            target_size=self.config.target_batch_sentences,
             max_words=self.config.max_batch_words,
         )
 
@@ -200,6 +202,7 @@ def batch_by_sentence_count(
     sentences: List[PreSplitSentence],
     min_size: int = 15,
     max_size: int = 25,
+    target_size: Optional[int] = None,
     max_words: Optional[int] = None,
 ) -> List[List[PreSplitSentence]]:
     """
@@ -209,6 +212,7 @@ def batch_by_sentence_count(
         sentences: 预分句列表
         min_size: 最小批次大小
         max_size: 最大批次大小
+        target_size: 目标批次大小
         max_words: 每批最大词数限制
 
     Returns:
@@ -217,34 +221,21 @@ def batch_by_sentence_count(
     if not sentences:
         return []
 
+    min_size = max(1, min(min_size, max_size))
+    max_size = max(1, max_size)
+    target_size = target_size or (min_size + max_size) // 2
+    target_size = max(1, min(target_size, max_size))
+
     if max_words is not None and max_words > 0:
-        batches: List[List[PreSplitSentence]] = []
-        current_batch: List[PreSplitSentence] = []
-        current_words = 0
-
-        for sentence in sentences:
-            sentence_words = sentence.word_end_index - sentence.word_start_index
-            should_flush = (
-                current_batch and (
-                    len(current_batch) >= max_size or
-                    current_words + sentence_words > max_words
-                )
-            )
-            if should_flush:
-                batches.append(current_batch)
-                current_batch = []
-                current_words = 0
-
-            current_batch.append(sentence)
-            current_words += sentence_words
-
-        if current_batch:
-            batches.append(current_batch)
-
-        return batches
+        return _balanced_batches_with_word_limit(
+            sentences,
+            min_size=min_size,
+            max_size=max_size,
+            target_size=target_size,
+            max_words=max_words,
+        )
 
     # 计算批次大小（不使用首批特殊处理）
-    target_size = (min_size + max_size) // 2
     batch_sizes = calculate_batch_sizes(len(sentences), target_size, min_size, max_size)
 
     # 按计算出的批次大小分批
@@ -254,6 +245,89 @@ def batch_by_sentence_count(
         batches.append(sentences[start_index:start_index + size])
         start_index += size
 
+    return batches
+
+
+def _balanced_batches_with_word_limit(
+    sentences: List[PreSplitSentence],
+    *,
+    min_size: int,
+    max_size: int,
+    target_size: int,
+    max_words: int,
+) -> List[List[PreSplitSentence]]:
+    """在句数和词数限制内，对连续预分句做尽量均衡的分区。"""
+    sentence_count = len(sentences)
+    word_counts = [
+        max(0, sentence.word_end_index - sentence.word_start_index)
+        for sentence in sentences
+    ]
+    prefix_words = [0]
+    for word_count in word_counts:
+        prefix_words.append(prefix_words[-1] + word_count)
+
+    minimum_batch_count = max(
+        math.ceil(sentence_count / target_size),
+        math.ceil(prefix_words[-1] / max_words),
+    )
+
+    def solve(batch_count: int) -> Optional[list[int]]:
+        ideal_sentences = sentence_count / batch_count
+        ideal_words = prefix_words[-1] / batch_count
+        states: dict[tuple[int, int], tuple[float, list[int]]] = {
+            (0, 0): (0.0, [])
+        }
+
+        for completed_batches in range(batch_count):
+            next_states: dict[tuple[int, int], tuple[float, list[int]]] = {}
+            for (_, start), (cost, sizes) in states.items():
+                batches_left = batch_count - completed_batches - 1
+                minimum_end = start + 1
+                maximum_end = min(start + max_size, sentence_count)
+
+                for end in range(minimum_end, maximum_end + 1):
+                    remaining = sentence_count - end
+                    if remaining < batches_left or remaining > batches_left * max_size:
+                        continue
+
+                    batch_words = prefix_words[end] - prefix_words[start]
+                    batch_size = end - start
+                    if batch_words > max_words and batch_size > 1:
+                        break
+
+                    sentence_delta = (batch_size - ideal_sentences) / target_size
+                    word_scale = max(ideal_words, 1)
+                    word_delta = (batch_words - ideal_words) / word_scale
+                    small_batch_penalty = max(0, min_size - batch_size)
+                    batch_cost = (
+                        sentence_delta ** 2
+                        + 0.35 * word_delta ** 2
+                        + 0.05 * small_batch_penalty ** 2
+                    )
+                    key = (completed_batches + 1, end)
+                    candidate = (cost + batch_cost, [*sizes, batch_size])
+                    previous = next_states.get(key)
+                    if previous is None or candidate[0] < previous[0]:
+                        next_states[key] = candidate
+            states = next_states
+
+        result = states.get((batch_count, sentence_count))
+        return result[1] if result else None
+
+    batch_sizes = None
+    for batch_count in range(minimum_batch_count, sentence_count + 1):
+        batch_sizes = solve(batch_count)
+        if batch_sizes is not None:
+            break
+
+    if batch_sizes is None:
+        return [[sentence] for sentence in sentences]
+
+    batches = []
+    start = 0
+    for size in batch_sizes:
+        batches.append(sentences[start:start + size])
+        start += size
     return batches
 
 

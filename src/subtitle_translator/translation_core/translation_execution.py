@@ -398,13 +398,25 @@ class TranslationEngine:
                 logger.info(
                     f"📤 {batch_info} 提交给LLM的字幕数据 (共{len(original_subtitle)}条):"
                 )
-                logger.info(
-                    f"   输入JSON: {json.dumps(original_subtitle, ensure_ascii=False)}"
-                )
+                input_json = json.dumps(original_subtitle, ensure_ascii=False)
+                if self.config.log_raw_payloads:
+                    logger.debug(f"   输入JSON: {input_json}")
+                else:
+                    logger.info(
+                        "   输入摘要: %s 字符（原文日志已关闭）",
+                        len(input_json),
+                    )
 
                 response = self._create_chat_completion_with_fallback(message)
                 raw_response = validate_api_response(response, batch_info)
-                logger.info(f"{batch_info} LLM原始返回数据:\n{raw_response}")
+                if self.config.log_raw_payloads:
+                    logger.debug(f"{batch_info} LLM原始返回数据:\n{raw_response}")
+                else:
+                    logger.info(
+                        "%s LLM返回摘要: %s 字符（原文日志已关闭）",
+                        batch_info,
+                        len(raw_response),
+                    )
 
                 response_content = parse_translation_response(raw_response)
 
@@ -505,12 +517,20 @@ class TranslationEngine:
                 elif _is_suspicious_optimized_shift(
                     original_subtitle[subtitle_id], optimized
                 ):
-                    logger.warning(
-                        "⚠️ 字幕ID %s 的 optimized 疑似跨 ID 错位，回退为原文: %s -> %s",
-                        subtitle_id,
-                        original_subtitle[subtitle_id],
-                        optimized,
-                    )
+                    if self.config.log_raw_payloads:
+                        logger.warning(
+                            "⚠️ 字幕ID %s 的 optimized 疑似跨 ID 错位，"
+                            "回退为原文: %s -> %s",
+                            subtitle_id,
+                            original_subtitle[subtitle_id],
+                            optimized,
+                        )
+                    else:
+                        logger.warning(
+                            "⚠️ 字幕ID %s 的 optimized 疑似跨 ID 错位，"
+                            "已回退为原文（内容日志已关闭）",
+                            subtitle_id,
+                        )
                     current_result["optimized_subtitle"] = original_subtitle[
                         subtitle_id
                     ]

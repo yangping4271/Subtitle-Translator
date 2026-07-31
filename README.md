@@ -68,7 +68,29 @@ OPENAI_API_KEY=your-api-key-here
 SPLIT_MODEL=your-split-model
 TRANSLATION_MODEL=your-translation-model
 LLM_MODEL=your-default-model
+DISABLE_THINKING=true
+LOG_RAW_PAYLOADS=false
 ```
+
+`DISABLE_THINKING` defaults to `true`. The project disables additional reasoning
+or thinking tokens whenever the provider supports it:
+
+- OpenAI GPT-5.1 and later non-Pro models receive `reasoning_effort=none`
+- OpenRouter receives `reasoning.effort=none`
+- DeepSeek V4 receives `thinking.type=disabled`
+- Alibaba Cloud Model Studio/DashScope receives `enable_thinking=false`
+  (MiniMax models receive `thinking.type=disabled`)
+- The original GPT-5 does not support fully disabling reasoning, so it uses the
+  lowest supported setting, `minimal`; use GPT-5.1 or a later non-Pro model when
+  reasoning must be completely disabled
+
+Some providers expose models with mandatory reasoning. Those models reject the
+disable parameter; select a model with a non-reasoning mode instead.
+
+Logs are stored in `~/.local/share/subtitle-translator/logs/app.log`, rotate
+automatically, and use private file permissions. Full subtitle requests and
+model responses are omitted by default; set `LOG_RAW_PAYLOADS=true` only when
+payload-level debugging is necessary.
 
 For LM Studio or other local OpenAI-compatible services:
 
@@ -78,6 +100,8 @@ OPENAI_API_KEY=
 SPLIT_MODEL=your-local-split-model
 TRANSLATION_MODEL=your-local-translation-model
 LLM_MODEL=your-local-default-model
+DISABLE_THINKING=true
+LOG_RAW_PAYLOADS=false
 ```
 
 ## Optional Context And Terminology

@@ -95,7 +95,10 @@ def split_by_llm(text: str,
         result = validate_api_response(response)
         if not result:
             raise Exception("API返回为空")
-        logger.info(f"API返回结果: \n\n{result}\n")
+        if config.log_raw_payloads:
+            logger.debug(f"API返回结果: \n\n{result}\n")
+        else:
+            logger.info("API返回结果: %s 字符（原文日志已关闭）", len(result))
 
         # 0. 首先移除<think>和</think>标签
         result = re.sub(r'<think>.*?</think>', '', result, flags=re.DOTALL)
