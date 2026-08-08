@@ -45,7 +45,6 @@ def test_close_releases_the_owned_openai_client(monkeypatch):
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
 
@@ -58,7 +57,6 @@ def test_create_chat_completion_keeps_request_body_unchanged():
     config = SubtitleConfig(
         openai_base_url="http://127.0.0.1:1234/v1",
         openai_api_key="",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -79,7 +77,6 @@ def test_deepseek_v4_disables_thinking_by_default():
     config = SubtitleConfig(
         openai_base_url="https://api.deepseek.com",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -101,7 +98,6 @@ def test_openrouter_disables_reasoning_by_default():
     config = SubtitleConfig(
         openai_base_url="https://openrouter.ai/api/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -123,7 +119,6 @@ def test_openrouter_proxy_disables_reasoning_by_default():
     config = SubtitleConfig(
         openai_base_url="https://ai-proxy.chatwise.app/openrouter/api/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -145,7 +140,6 @@ def test_dashscope_disables_thinking_by_default():
     config = SubtitleConfig(
         openai_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -167,7 +161,6 @@ def test_dashscope_minimax_disables_thinking_by_default():
     config = SubtitleConfig(
         openai_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -189,7 +182,6 @@ def test_openai_gpt_5_1_disables_reasoning():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -211,7 +203,6 @@ def test_openai_gpt_5_6_luna_disables_reasoning():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -233,7 +224,6 @@ def test_openrouter_gpt_5_6_luna_disables_reasoning():
     config = SubtitleConfig(
         openai_base_url="https://openrouter.ai/api/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -255,7 +245,6 @@ def test_future_gpt_major_version_disables_reasoning():
     config = SubtitleConfig(
         openai_base_url="https://example.com/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -277,7 +266,6 @@ def test_original_gpt_5_uses_lowest_supported_reasoning_effort():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -299,7 +287,6 @@ def test_disable_thinking_overrides_explicit_reasoning_options():
     config = SubtitleConfig(
         openai_base_url="https://openrouter.ai/api/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -323,7 +310,6 @@ def test_custom_openai_compatible_gpt_5_6_disables_reasoning():
     config = SubtitleConfig(
         openai_base_url="https://example.com/codex/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -345,7 +331,6 @@ def test_gpt_4_model_does_not_receive_reasoning_effort():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         openai_api_key="test-key",
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -367,7 +352,6 @@ def test_disable_thinking_false_keeps_request_body_unchanged():
         openai_base_url="https://api.deepseek.com",
         openai_api_key="test-key",
         disable_thinking=False,
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()
@@ -389,7 +373,6 @@ def test_disable_thinking_false_keeps_openai_request_body_unchanged():
         openai_base_url="https://api.openai.com/v1",
         openai_api_key="test-key",
         disable_thinking=False,
-        _skip_env_load=True,
     )
     client = LLMClient(config)
     create_mock = Mock()

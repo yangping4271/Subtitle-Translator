@@ -10,9 +10,9 @@ from rich import print
 
 from .exceptions import OpenAIAPIError, EmptySubtitleError, TranslationError, SmartSplitError
 from .logger import log_section_end, log_section_start, log_stats, setup_logger
+from .output_files import SubtitleOutputFiles, write_subtitle_outputs
 from .translation_core.config import SubtitleConfig
 from .translation_core.data import SubtitleData, load_subtitle
-from .translation_core.external_glossary import load_external_terminology
 from .translation_core.llm_client import LLMClient, ModelAdapter
 from .translation_core.translation_execution import (
     TranslationEngine,
@@ -23,8 +23,8 @@ from .translation_core.translation_execution import (
 from .translation_core.terminology import (
     get_terminology_aliases,
     get_terminology_translation,
-    load_terminology,
 )
+from .translation_core.translation_context import TranslationContext
 from .translation_core.splitter import SubtitleSegmenter
 from .context_loader import build_context_info
 from .console_views import show_api_config, show_model_config, show_time_stats
@@ -38,7 +38,7 @@ class SubtitleTranslatorService:
         config: Optional[SubtitleConfig] = None,
         llm: Optional[ModelAdapter] = None,
     ):
-        self.config = config or SubtitleConfig()
+        self.config = config or SubtitleConfig.from_env()
         self._owns_llm = llm is None
         self.llm = llm or LLMClient(self.config)
         self.logger = setup_logger(__name__)
@@ -89,44 +89,6 @@ class SubtitleTranslatorService:
         elapsed_time = time.time() - start_time
         log_section_end(self.logger, "翻译环境初始化", elapsed_time, "✅")
 
-    def _save_subtitle_files(
-        self,
-        sentence_subtitle: SubtitleData,
-        translate_result: list,
-        input_srt_path: Path,
-        output_dir: Path,
-        target_lang: str
-    ) -> Path:
-        """保存翻译结果到文件"""
-        self.logger.info("💾 正在保存翻译结果...")
-
-        base_name = input_srt_path.stem
-        target_lang_output_path = output_dir / f"{base_name}.{target_lang}.srt"
-        english_output_path = output_dir / f"{base_name}.en.srt"
-
-        self.logger.info(f"翻译文件将保存到目录: {output_dir}")
-        self.logger.info(f"目标语言文件: {target_lang_output_path}")
-        self.logger.info(f"英文文件: {english_output_path}")
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        sentence_subtitle.save_translations_to_files(
-            translate_result,
-            str(english_output_path),
-            str(target_lang_output_path)
-        )
-
-        if not target_lang_output_path.exists():
-            raise RuntimeError(f"目标语言翻译文件保存失败: {target_lang_output_path}")
-        if not english_output_path.exists():
-            raise RuntimeError(f"英文翻译文件保存失败: {english_output_path}")
-
-        self.logger.info("翻译文件已保存:")
-        self.logger.info(f"  - 目标语言: {target_lang_output_path}")
-        self.logger.info(f"  - 英文: {english_output_path}")
-
-        return target_lang_output_path
-
     def _load_subtitle_file(self, input_srt_path: Path) -> SubtitleData:
         """加载并验证字幕文件"""
         self.logger.info("📂 正在加载字幕文件...")
@@ -149,21 +111,63 @@ class SubtitleTranslatorService:
         print("📊 [bold blue]加载完成[/bold blue]")
         return source_subtitle
 
-    def _set_target_language(self, target_lang: str) -> None:
-        """设置目标语言（带友好错误处理）"""
+    def _load_translation_context(
+        self,
+        target_lang: str,
+        input_srt_path: Path,
+    ) -> TranslationContext:
+        """加载单个 Source subtitle 的目标语言与术语。"""
         self.logger.info(f"🌍 设置目标语言: {target_lang}")
-
         try:
-            self.config.set_target_language(target_lang)
-            self.logger.info(f"✅ 目标语言已设置为: {self.config.target_language}")
+            translation_context = TranslationContext.for_file(
+                self.config,
+                target_lang,
+                input_srt_path,
+            )
         except ValueError as e:
             self.logger.error(f"❌ 语言设置失败: {str(e)}")
             print("[bold red]❌ 语言设置失败![/bold red]")
             print(str(e))
             raise
 
-    def translate_srt(self, input_srt_path: Path, target_lang: str, output_dir: Path,
-                      llm_model: Optional[str] = None, skip_env_init: bool = False) -> Path:
+        self.logger.info(
+            "✅ 目标语言已设置为: %s",
+            translation_context.target_language,
+        )
+        if translation_context.terminology:
+            self.logger.info(
+                "📚 已加载术语表: %s 条术语",
+                len(translation_context.terminology),
+            )
+            for term, entry in translation_context.terminology.items():
+                translation = get_terminology_translation(entry)
+                aliases = get_terminology_aliases(entry)
+                alias_text = f" (aliases: {', '.join(aliases)})" if aliases else ""
+                self.logger.info(f"   {term} → {translation}{alias_text}")
+        else:
+            self.logger.info("📚 未加载任何术语表")
+
+        if translation_context.external_terminology:
+            domains = ", ".join(self.config.external_glossary_domains)
+            self.logger.info(
+                "📚 已加载外部术语库: %s 条术语 (domains: %s, dynamic max: %s)",
+                len(translation_context.external_terminology),
+                domains,
+                self.config.external_glossary_max_terms,
+            )
+        elif self.config.external_glossary_enabled:
+            self.logger.info("📚 未加载外部术语库")
+        return translation_context
+
+    def translate_srt(
+        self,
+        input_srt_path: Path,
+        target_lang: str,
+        output_dir: Path,
+        llm_model: Optional[str] = None,
+        skip_env_init: bool = False,
+        preserve_intermediate: bool = True,
+    ) -> SubtitleOutputFiles:
         """翻译字幕文件
 
         Args:
@@ -172,6 +176,7 @@ class SubtitleTranslatorService:
             output_dir: 输出目录
             llm_model: LLM 模型名称
             skip_env_init: 是否跳过环境初始化
+            preserve_intermediate: 是否保留英文和目标语言 SRT 中间文件
         """
         try:
             task_start_time = time.time()
@@ -180,40 +185,10 @@ class SubtitleTranslatorService:
             # 用于收集各阶段耗时的字典
             stage_times = {}
 
-            # 设置目标语言
-            self._set_target_language(target_lang)
-
-            # 加载术语表（全局 + 局部）
-            self.config.terminology = load_terminology(
-                self.config.target_language,
-                input_srt_path
+            translation_context = self._load_translation_context(
+                target_lang,
+                input_srt_path,
             )
-
-            # 打印加载的术语表
-            if self.config.terminology:
-                self.logger.info(f"📚 已加载术语表: {len(self.config.terminology)} 条术语")
-                for term, entry in self.config.terminology.items():
-                    translation = get_terminology_translation(entry)
-                    aliases = get_terminology_aliases(entry)
-                    alias_text = f" (aliases: {', '.join(aliases)})" if aliases else ""
-                    self.logger.info(f"   {term} → {translation}{alias_text}")
-            else:
-                self.logger.info("📚 未加载任何术语表")
-
-            self.config.external_terminology = {}
-            if self.config.external_glossary_enabled:
-                self.config.external_terminology = load_external_terminology(
-                    self.config.target_language,
-                    self.config.external_glossary_domains,
-                )
-                if self.config.external_terminology:
-                    domains = ", ".join(self.config.external_glossary_domains)
-                    self.logger.info(
-                        f"📚 已加载外部术语库: {len(self.config.external_terminology)} 条术语 "
-                        f"(domains: {domains}, dynamic max: {self.config.external_glossary_max_terms})"
-                    )
-                else:
-                    self.logger.info("📚 未加载外部术语库")
 
             # 只在需要时初始化翻译环境
             if not skip_env_init:
@@ -244,6 +219,7 @@ class SubtitleTranslatorService:
                 self._translate_segmented_batches(
                     source_subtitle,
                     context_info,
+                    translation_context,
                 )
             )
             stage_times.update(processing_times)
@@ -253,12 +229,14 @@ class SubtitleTranslatorService:
             print(f"🎉 [bold green]字幕处理完成[/bold green] (总耗时: [cyan]{processing_time:.1f}s[/cyan])")
 
             save_start_time = time.time()
-            target_lang_output_path = self._save_subtitle_files(
-                sentence_subtitle,
-                translate_result,
-                input_srt_path,
-                output_dir,
-                target_lang,
+            self.logger.info("💾 正在生成字幕输出文件...")
+            output_files = write_subtitle_outputs(
+                sentence_subtitle=sentence_subtitle,
+                translation_results=translate_result,
+                input_srt_path=input_srt_path,
+                output_dir=output_dir,
+                target_lang=target_lang,
+                preserve_intermediate=preserve_intermediate,
             )
             stage_times["💾 保存字幕"] = time.time() - save_start_time
 
@@ -277,7 +255,7 @@ class SubtitleTranslatorService:
             log_stats(self.logger, final_stats, "任务完成统计")
             log_section_end(self.logger, "字幕翻译任务", total_elapsed, "🎉")
 
-            return target_lang_output_path
+            return output_files
 
         except OpenAIAPIError as e:
             self.logger.error(f"🚨 API错误: {str(e)}")
@@ -295,6 +273,7 @@ class SubtitleTranslatorService:
         self,
         source_subtitle: SubtitleData,
         context_info: str,
+        translation_context: TranslationContext,
     ) -> Tuple[SubtitleData, list, dict[str, float]]:
         """
         先完成 Subtitle segmentation，再并发执行 Translation batches。
@@ -323,7 +302,11 @@ class SubtitleTranslatorService:
         all_segments = []
         completed_batches = 0
 
-        with TranslationEngine(self.config, self.llm) as translator:
+        with TranslationEngine(
+            self.config,
+            self.llm,
+            translation_context,
+        ) as translator:
             def process_batch_task(args):
                 """翻译一个已完成 Subtitle segmentation 的 Translation batch。"""
                 batch_index, translation_batch = args

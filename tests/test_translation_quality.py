@@ -9,6 +9,10 @@ from subtitle_translator.translation_core.translation_execution import (
     TRANSLATION_RESPONSE_FORMAT,
     TranslationEngine,
 )
+from subtitle_translator.translation_core.translation_context import TranslationContext
+
+
+DEFAULT_TRANSLATION_CONTEXT = TranslationContext(target_language="简体中文")
 
 
 class CapturingAdapter:
@@ -39,14 +43,13 @@ def _translate_once(base_url: str, optimized: str = "Music."):
     config = SubtitleConfig(
         openai_base_url=base_url,
         thread_num=1,
-        _skip_env_load=True,
     )
     adapter = CapturingAdapter(optimized)
     translation_batch = SubtitleData(
         [SubtitleSegment("Music.", start_time=0, end_time=1000)]
     )
 
-    with TranslationEngine(config, adapter) as engine:
+    with TranslationEngine(config, adapter, DEFAULT_TRANSLATION_CONTEXT) as engine:
         results = engine.translate_batch(translation_batch, context_info="course intro")
 
     return adapter.requests[0], results
@@ -87,7 +90,6 @@ def test_translation_engine_allows_term_corrections():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         thread_num=1,
-        _skip_env_load=True,
     )
     adapter = CapturingAdapter(
         "using a database, LangChain, and an LM-powered pipeline"
@@ -102,7 +104,7 @@ def test_translation_engine_allows_term_corrections():
         ]
     )
 
-    with TranslationEngine(config, adapter) as engine:
+    with TranslationEngine(config, adapter, DEFAULT_TRANSLATION_CONTEXT) as engine:
         results = engine.translate_batch(translation_batch, context_info="")
 
     assert results[0]["optimized"] == (
@@ -119,14 +121,13 @@ def test_translation_engine_reverts_cross_id_optimized_shift():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         thread_num=1,
-        _skip_env_load=True,
     )
     adapter = CapturingAdapter(shifted)
     translation_batch = SubtitleData(
         [SubtitleSegment(original, start_time=0, end_time=1000)]
     )
 
-    with TranslationEngine(config, adapter) as engine:
+    with TranslationEngine(config, adapter, DEFAULT_TRANSLATION_CONTEXT) as engine:
         results = engine.translate_batch(translation_batch, context_info="")
 
     assert results[0]["optimized"] == original

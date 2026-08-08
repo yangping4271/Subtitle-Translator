@@ -12,6 +12,7 @@ from .data import SubtitleData
 from .llm_client import ModelAdapter
 from .prompts import TRANSLATE_PROMPT
 from .translation_retry import _TranslationFallback, _is_translation_failed
+from .translation_context import TranslationContext
 from .utils.api import validate_api_response
 from .utils.response_parser import parse_translation_response
 
@@ -201,9 +202,15 @@ def format_diff(original: str, optimized: str) -> str:
 class TranslationEngine:
     """执行一个 Translation batch 的翻译、响应规范化和失败降级。"""
 
-    def __init__(self, config: SubtitleConfig, llm: ModelAdapter):
+    def __init__(
+        self,
+        config: SubtitleConfig,
+        llm: ModelAdapter,
+        translation_context: TranslationContext,
+    ):
         self.config = config
         self.llm = llm
+        self.translation_context = translation_context
         self.thread_num = self.config.thread_num
         self.executor: Optional[ThreadPoolExecutor] = ThreadPoolExecutor(
             max_workers=self.thread_num
@@ -212,6 +219,7 @@ class TranslationEngine:
         self._fallback = _TranslationFallback(
             config=self.config,
             llm=self.llm,
+            translation_context=self.translation_context,
             executor=self.executor,
             translate_fn=self._translate,
         )
@@ -277,7 +285,8 @@ class TranslationEngine:
     ):
         """创建翻译提示消息。"""
         input_content = (
-            f"Correct and translate the following subtitles into {self.config.target_language}.\n"
+            "Correct and translate the following subtitles into "
+            f"{self.translation_context.target_language}.\n"
             "Return a single valid JSON object only, with no markdown or code fences.\n"
             f"<subtitles>{json.dumps(original_subtitle, ensure_ascii=False)}</subtitles>"
         )
@@ -286,7 +295,7 @@ class TranslationEngine:
             input_content += f"\n\n<reference>\n{context_info}\n</reference>"
 
         prompt = TRANSLATE_PROMPT.format(
-            target_language=self.config.target_language,
+            target_language=self.translation_context.target_language,
             terminology=self._fallback._format_terminology(
                 json.dumps(original_subtitle, ensure_ascii=False)
             ),

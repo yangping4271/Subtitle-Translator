@@ -11,6 +11,7 @@ from .external_glossary import select_relevant_external_terms
 from .llm_client import ModelAdapter
 from .prompts import SINGLE_TRANSLATE_PROMPT
 from .terminology import get_terminology_aliases, get_terminology_translation
+from .translation_context import TranslationContext
 from .utils.api import validate_api_response
 
 logger = setup_logger("translation_executor")
@@ -34,11 +35,13 @@ class _TranslationFallback:
         self,
         config: SubtitleConfig,
         llm: ModelAdapter,
+        translation_context: TranslationContext,
         executor: ThreadPoolExecutor,
         translate_fn: Callable,
     ):
         self.config = config
         self.llm = llm
+        self.translation_context = translation_context
         self.thread_num = config.thread_num
         self.executor = executor
         self._translate = translate_fn
@@ -166,7 +169,7 @@ class _TranslationFallback:
             {
                 "role": "system",
                 "content": SINGLE_TRANSLATE_PROMPT.format(
-                    target_language=self.config.target_language,
+                    target_language=self.translation_context.target_language,
                     terminology=self._format_terminology(value),
                 ),
             },
@@ -187,10 +190,10 @@ class _TranslationFallback:
 
     def _format_terminology(self, source_text: str = "") -> str:
         """格式化术语表为 prompt 文本。"""
-        user_terms = self.config.terminology or {}
+        user_terms = self.translation_context.terminology
         external_terms = select_relevant_external_terms(
             source_text,
-            self.config.external_terminology or {},
+            self.translation_context.external_terminology,
             self.config.external_glossary_max_terms,
         )
         if not user_terms and not external_terms:

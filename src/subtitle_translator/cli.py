@@ -190,7 +190,6 @@ LLM_MODEL={split_model}
 # 可选配置
 # 默认禁止模型生成推理/思考 token
 DISABLE_THINKING=true
-# TARGET_LANGUAGE=zh  # 默认目标语言
 """
 
     # 创建目录并写入文件

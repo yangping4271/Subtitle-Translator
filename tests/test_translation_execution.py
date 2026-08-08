@@ -6,8 +6,12 @@ import pytest
 from subtitle_translator.translation_core.config import SubtitleConfig
 from subtitle_translator.translation_core.data import SubtitleData, SubtitleSegment
 from subtitle_translator.translation_core.translation_execution import TranslationEngine
+from subtitle_translator.translation_core.translation_context import TranslationContext
 from subtitle_translator import processor
 from subtitle_translator.service import SubtitleTranslatorService
+
+
+DEFAULT_TRANSLATION_CONTEXT = TranslationContext(target_language="简体中文")
 
 
 class StubModelAdapter:
@@ -39,13 +43,16 @@ def test_translation_batch_returns_structured_results_through_injected_model():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         thread_num=1,
-        _skip_env_load=True,
     )
     source_subtitle = SubtitleData(
         [SubtitleSegment("Hello world!", start_time=0, end_time=1000)]
     )
 
-    with TranslationEngine(config, StubModelAdapter([response])) as engine:
+    with TranslationEngine(
+        config,
+        StubModelAdapter([response]),
+        DEFAULT_TRANSLATION_CONTEXT,
+    ) as engine:
         results = engine.translate_batch(source_subtitle, context_info="")
 
     assert results == [
@@ -63,12 +70,15 @@ def test_closed_translation_engine_rejects_new_batches():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         thread_num=1,
-        _skip_env_load=True,
     )
     source_subtitle = SubtitleData(
         [SubtitleSegment("Hello world!", start_time=0, end_time=1000)]
     )
-    engine = TranslationEngine(config, StubModelAdapter([]))
+    engine = TranslationEngine(
+        config,
+        StubModelAdapter([]),
+        DEFAULT_TRANSLATION_CONTEXT,
+    )
     engine.close()
 
     with pytest.raises(RuntimeError, match="closed"):
@@ -91,13 +101,16 @@ def test_discarded_translation_result_does_not_trigger_fallback():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         thread_num=1,
-        _skip_env_load=True,
     )
     source_subtitle = SubtitleData(
         [SubtitleSegment("Music.", start_time=0, end_time=1000)]
     )
 
-    with TranslationEngine(config, StubModelAdapter([response])) as engine:
+    with TranslationEngine(
+        config,
+        StubModelAdapter([response]),
+        DEFAULT_TRANSLATION_CONTEXT,
+    ) as engine:
         results = engine.translate_batch(source_subtitle, context_info="")
 
     assert results == [
@@ -139,20 +152,66 @@ def test_translation_run_shares_one_model_adapter_across_segmentation_and_transl
         max_batch_sentences=1,
         max_batch_words=50,
         external_glossary_enabled=False,
-        _skip_env_load=True,
     )
     translator = SubtitleTranslatorService(config=config, llm=adapter)
+    original_config = dict(vars(config))
 
-    output_path = translator.translate_srt(
+    outputs = translator.translate_srt(
         input_srt_path=input_path,
         target_lang="zh",
         output_dir=tmp_path / "output",
         skip_env_init=True,
     )
 
-    assert output_path.read_text(encoding="utf-8") == (
+    assert outputs.target_srt.read_text(encoding="utf-8") == (
         "1\n00:00:00,000 --> 00:00:01,000\n你好，世界！\n"
     )
+    assert outputs.source_srt.exists()
+    assert outputs.bilingual_ass.exists()
+    assert outputs.intermediates_preserved is True
+    assert vars(config) == original_config
+
+
+def test_batch_run_uses_the_ass_path_returned_by_single_file(
+    monkeypatch,
+    tmp_path,
+):
+    class FakeService:
+        def init_translation_env(self, **kwargs):
+            pass
+
+        def close(self):
+            pass
+
+    returned_ass = tmp_path / "nonstandard-name.ass"
+    returned_ass.write_text("ass", encoding="utf-8")
+    output = SimpleNamespace(bilingual_ass=returned_ass)
+    shown_results = {}
+
+    monkeypatch.setattr(processor, "SubtitleTranslatorService", FakeService)
+    monkeypatch.setattr(processor, "process_single_file", lambda *args, **kwargs: output)
+    monkeypatch.setattr(
+        processor,
+        "show_results",
+        lambda count, files, output_dir, batch_mode: shown_results.update(
+            count=count,
+            files=files,
+            output_dir=output_dir,
+            batch_mode=batch_mode,
+        ),
+    )
+
+    processor.process_batch(
+        files_to_process=[tmp_path / "lesson.srt"],
+        target_lang="zh",
+        output_dir=tmp_path,
+        llm_model=None,
+        split_model=None,
+        translation_model=None,
+        preserve_intermediate=False,
+    )
+
+    assert shown_results["files"] == [returned_ass]
 
 
 def test_translation_batch_falls_back_to_a_retried_single_translation():
@@ -171,7 +230,6 @@ def test_translation_batch_falls_back_to_a_retried_single_translation():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         thread_num=1,
-        _skip_env_load=True,
     )
     source_subtitle = SubtitleData(
         [SubtitleSegment("Hello world!", start_time=0, end_time=1000)]
@@ -180,7 +238,7 @@ def test_translation_batch_falls_back_to_a_retried_single_translation():
         [failed_batch, failed_batch, RuntimeError("temporary failure"), "你好，世界！"]
     )
 
-    with TranslationEngine(config, adapter) as engine:
+    with TranslationEngine(config, adapter, DEFAULT_TRANSLATION_CONTEXT) as engine:
         results = engine.translate_batch(source_subtitle, context_info="")
 
     assert results[0]["translation"] == "你好，世界！"

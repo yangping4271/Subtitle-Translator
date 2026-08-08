@@ -10,6 +10,7 @@ from subtitle_translator.translation_core.terminology import (
     parse_terminology_entry,
 )
 from subtitle_translator.translation_core.translation_execution import TranslationEngine
+from subtitle_translator.translation_core.translation_context import TranslationContext
 
 
 class CapturingAdapter:
@@ -37,13 +38,17 @@ class CapturingAdapter:
         )
 
 
-def _capture_translation_prompt(config: SubtitleConfig, source: str) -> str:
+def _capture_translation_prompt(
+    config: SubtitleConfig,
+    translation_context: TranslationContext,
+    source: str,
+) -> str:
     adapter = CapturingAdapter()
     translation_batch = SubtitleData(
         [SubtitleSegment(source, start_time=0, end_time=1000)]
     )
 
-    with TranslationEngine(config, adapter) as engine:
+    with TranslationEngine(config, adapter, translation_context) as engine:
         engine.translate_batch(translation_batch, context_info="")
 
     return adapter.requests[0]["messages"][0]["content"]
@@ -82,15 +87,22 @@ def test_load_terminology_file_keeps_old_format_and_alias_format(tmp_path):
 
 
 def test_format_terminology_includes_asr_corrections():
-    config = SubtitleConfig(openai_base_url="https://api.openai.com/v1", _skip_env_load=True)
-    config.terminology = {
-        "LangChain": {
-            "translation": "LangChain",
-            "aliases": ["land chain", "lang chain"],
+    config = SubtitleConfig(openai_base_url="https://api.openai.com/v1")
+    translation_context = TranslationContext(
+        target_language="简体中文",
+        terminology={
+            "LangChain": {
+                "translation": "LangChain",
+                "aliases": ["land chain", "lang chain"],
+            },
+            "LLM": "大语言模型 (LLM)",
         },
-        "LLM": "大语言模型 (LLM)",
-    }
-    formatted = _capture_translation_prompt(config, "land chain and LLM")
+    )
+    formatted = _capture_translation_prompt(
+        config,
+        translation_context,
+        "land chain and LLM",
+    )
 
     assert "LangChain → LangChain" in formatted
     assert "LLM → 大语言模型 (LLM)" in formatted
@@ -100,16 +112,21 @@ def test_format_terminology_includes_asr_corrections():
 
 
 def test_format_terminology_includes_only_relevant_external_terms():
-    config = SubtitleConfig(openai_base_url="https://api.openai.com/v1", _skip_env_load=True)
-    config.terminology = {}
-    config.external_terminology = {
-        "Database": {"translation": "数据库", "aliases": []},
-        "Framework": {"translation": "框架", "aliases": []},
-        "Cache": {"translation": "缓存", "aliases": []},
-    }
-    config.external_glossary_max_terms = 10
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        external_glossary_max_terms=10,
+    )
+    translation_context = TranslationContext(
+        target_language="简体中文",
+        external_terminology={
+            "Database": {"translation": "数据库", "aliases": []},
+            "Framework": {"translation": "框架", "aliases": []},
+            "Cache": {"translation": "缓存", "aliases": []},
+        },
+    )
     formatted = _capture_translation_prompt(
         config,
+        translation_context,
         "We use a database in this course.",
     )
 

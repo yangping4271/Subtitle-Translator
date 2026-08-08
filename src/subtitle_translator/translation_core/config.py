@@ -1,6 +1,6 @@
 import os
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
+from typing import Mapping
 from urllib.parse import urlparse
 
 # 语言代码映射表
@@ -105,7 +105,6 @@ class SubtitleConfig:
     split_model: str = "gpt-4o-mini"
     translation_model: str = "gpt-4o"
 
-    target_language: str = "简体中文"
     max_word_count_english: int = 19
     thread_num: int = 18
 
@@ -121,17 +120,9 @@ class SubtitleConfig:
     disable_thinking: bool = True
     log_raw_payloads: bool = False
 
-    terminology: Optional[dict] = None
-    external_terminology: Optional[dict] = None
     external_glossary_enabled: bool = True
     external_glossary_domains: tuple[str, ...] = ("programming", "tech", "education")
     external_glossary_max_terms: int = 40
-
-    _skip_env_load: bool = field(default=False, repr=False)
-
-    def set_target_language(self, lang_code: str) -> None:
-        """设置目标语言"""
-        self.target_language = get_target_language(lang_code)
 
     def is_local_openai_compatible(self) -> bool:
         """判断当前端点是否为本机 OpenAI-compatible 服务。"""
@@ -159,81 +150,87 @@ class SubtitleConfig:
             return "openai"
         return "custom"
 
-    def __post_init__(self):
-        """验证配置并重新读取环境变量"""
-        if self._skip_env_load:
-            return
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> "SubtitleConfig":
+        """从环境变量创建并验证运行配置。"""
+        env = os.environ if environ is None else environ
+        defaults = cls()
+        openai_base_url = env.get("OPENAI_BASE_URL", "")
+        if not openai_base_url:
+            raise ValueError(
+                "缺少必需的环境变量: OPENAI_BASE_URL。"
+                "请运行 'translate init' 初始化配置。"
+            )
 
-        self.openai_base_url = os.getenv('OPENAI_BASE_URL', '')
-        self.openai_api_key = os.getenv('OPENAI_API_KEY', '')
-        self.llm_model = os.getenv('LLM_MODEL', self.llm_model)
-
-        self.split_model = os.getenv('SPLIT_MODEL', self.llm_model)
-        self.translation_model = os.getenv('TRANSLATION_MODEL', self.llm_model)
-
-        self.thread_num = _default_thread_num_for_base_url(self.openai_base_url)
-
-        env_thread_num = os.getenv('THREAD_NUM')
-        if env_thread_num:
+        llm_model = env.get("LLM_MODEL", defaults.llm_model)
+        thread_num = _default_thread_num_for_base_url(openai_base_url)
+        if env.get("THREAD_NUM"):
             try:
-                self.thread_num = max(1, int(env_thread_num))
+                thread_num = max(1, int(env["THREAD_NUM"]))
             except ValueError:
                 pass
 
-        env_max_batch_words = os.getenv('MAX_BATCH_WORDS')
-        if env_max_batch_words:
+        max_batch_words = defaults.max_batch_words
+        if env.get("MAX_BATCH_WORDS"):
             try:
-                self.max_batch_words = max(1, int(env_max_batch_words))
+                max_batch_words = max(1, int(env["MAX_BATCH_WORDS"]))
             except ValueError:
                 pass
 
-        env_disable_thinking = os.getenv('DISABLE_THINKING')
-        if env_disable_thinking:
-            self.disable_thinking = env_disable_thinking.strip().lower() in {
-                "1", "true", "yes", "on"
-            }
-
-        env_log_raw_payloads = os.getenv('LOG_RAW_PAYLOADS')
-        if env_log_raw_payloads:
-            self.log_raw_payloads = env_log_raw_payloads.strip().lower() in {
-                "1", "true", "yes", "on"
-            }
-
-        env_external_glossary_enabled = os.getenv('EXTERNAL_GLOSSARY_ENABLED')
-        if env_external_glossary_enabled:
-            self.external_glossary_enabled = env_external_glossary_enabled.strip().lower() in {
-                "1", "true", "yes", "on"
-            }
-
-        env_external_glossary_domains = os.getenv('EXTERNAL_GLOSSARY_DOMAINS')
-        if env_external_glossary_domains:
-            domains = tuple(
+        external_glossary_domains = defaults.external_glossary_domains
+        if env.get("EXTERNAL_GLOSSARY_DOMAINS"):
+            parsed_domains = tuple(
                 domain.strip()
-                for domain in env_external_glossary_domains.split(",")
+                for domain in env["EXTERNAL_GLOSSARY_DOMAINS"].split(",")
                 if domain.strip()
             )
-            if domains:
-                self.external_glossary_domains = domains
+            if parsed_domains:
+                external_glossary_domains = parsed_domains
 
-        env_external_glossary_max_terms = os.getenv('EXTERNAL_GLOSSARY_MAX_TERMS')
-        if env_external_glossary_max_terms:
+        external_glossary_max_terms = defaults.external_glossary_max_terms
+        if env.get("EXTERNAL_GLOSSARY_MAX_TERMS"):
             try:
-                self.external_glossary_max_terms = max(0, int(env_external_glossary_max_terms))
+                external_glossary_max_terms = max(
+                    0,
+                    int(env["EXTERNAL_GLOSSARY_MAX_TERMS"]),
+                )
             except ValueError:
                 pass
 
-        env_target_lang = os.getenv('TARGET_LANGUAGE')
-        if env_target_lang:
-            try:
-                self.set_target_language(env_target_lang)
-            except ValueError:
-                pass
+        return cls(
+            openai_base_url=openai_base_url,
+            openai_api_key=env.get("OPENAI_API_KEY", ""),
+            llm_model=llm_model,
+            split_model=env.get("SPLIT_MODEL", llm_model),
+            translation_model=env.get("TRANSLATION_MODEL", llm_model),
+            thread_num=thread_num,
+            max_batch_words=max_batch_words,
+            disable_thinking=_env_bool(
+                env,
+                "DISABLE_THINKING",
+                defaults.disable_thinking,
+            ),
+            log_raw_payloads=_env_bool(
+                env,
+                "LOG_RAW_PAYLOADS",
+                defaults.log_raw_payloads,
+            ),
+            external_glossary_enabled=_env_bool(
+                env,
+                "EXTERNAL_GLOSSARY_ENABLED",
+                defaults.external_glossary_enabled,
+            ),
+            external_glossary_domains=external_glossary_domains,
+            external_glossary_max_terms=external_glossary_max_terms,
+        )
 
-        if not self.openai_base_url:
-            missing = []
-            if not self.openai_base_url:
-                missing.append("OPENAI_BASE_URL")
-            raise ValueError(
-                f"缺少必需的环境变量: {', '.join(missing)}。"
-                f"请运行 'translate init' 初始化配置。"
-            )
+
+def _env_bool(
+    environ: Mapping[str, str],
+    name: str,
+    default: bool,
+) -> bool:
+    value = environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

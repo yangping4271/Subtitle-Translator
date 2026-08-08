@@ -99,7 +99,6 @@ def test_source_subtitle_becomes_time_aligned_sentence_segments():
         min_batch_sentences=1,
         max_batch_sentences=1,
         max_batch_words=50,
-        _skip_env_load=True,
     )
     source_subtitle = SubtitleData(
         [
@@ -126,7 +125,6 @@ def test_mixed_language_segments_share_one_counting_policy():
         max_batch_sentences=1,
         max_batch_words=50,
         max_word_count_english=1,
-        _skip_env_load=True,
     )
     source_subtitle = SubtitleData(
         [
@@ -149,7 +147,6 @@ def test_sentence_batches_keep_source_timeline_order():
         min_batch_sentences=1,
         max_batch_sentences=1,
         max_batch_words=50,
-        _skip_env_load=True,
     )
     source_subtitle = SubtitleData(
         [
@@ -178,7 +175,6 @@ def test_segmentation_raises_smart_split_error_after_model_retries_fail():
         min_batch_sentences=1,
         max_batch_sentences=1,
         max_batch_words=50,
-        _skip_env_load=True,
     )
     source_subtitle = SubtitleData(
         [
@@ -195,7 +191,6 @@ def test_llm_postprocessing_keeps_original_explicit_end_mark_policy():
     text = "Alpha beta gamma.Delta epsilon zeta"
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
-        _skip_env_load=True,
     )
 
     sentences = split_by_llm(

@@ -1,7 +1,6 @@
 """
 文件处理模块 - 处理单个文件的核心逻辑
 """
-import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -9,6 +8,7 @@ from rich import print
 
 from .service import SubtitleTranslatorService
 from .logger import setup_logger
+from .output_files import SubtitleOutputFiles
 from .console_views import show_results
 
 # 初始化logger
@@ -53,7 +53,7 @@ def process_batch(
                 print("[bold cyan]🎯 开始处理文件...[/bold cyan]")
 
             try:
-                process_single_file(
+                output_files = process_single_file(
                     current_input_file,
                     target_lang,
                     output_dir,
@@ -63,7 +63,7 @@ def process_batch(
                 )
                 count += 1
 
-                ass_file = output_dir / f"{current_input_file.stem}.ass"
+                ass_file = output_files.bilingual_ass
                 if ass_file.exists():
                     generated_ass_files.append(ass_file)
                     logger.info(f"📺 双语ASS文件已生成: {ass_file.name}")
@@ -118,11 +118,13 @@ def _handle_translation_error(e: Exception, logger) -> None:
 
 
 def process_single_file(
-    input_file: Path, target_lang: str, output_dir: Path,
+    input_file: Path,
+    target_lang: str,
+    output_dir: Path,
     llm_model: Optional[str],
-    translator_service = None,
-    preserve_intermediate: bool = False
-):
+    translator_service: Optional[SubtitleTranslatorService] = None,
+    preserve_intermediate: bool = False,
+) -> SubtitleOutputFiles:
     """处理单个文件的核心逻辑"""
 
     # 只接受 SRT 文件
@@ -134,9 +136,6 @@ def process_single_file(
 
     print("[bold yellow]>>> 检测到SRT文件，开始翻译...[/bold yellow]")
     temp_srt_path = input_file
-
-    final_target_lang_path = None
-    final_english_path = None
 
     # --- 翻译阶段 ---
     logger.info(">>> 开始翻译...")
@@ -156,59 +155,25 @@ def process_single_file(
             raise
     # 批量模式下，翻译服务已经初始化完成，直接使用
     try:
-        final_target_lang_path = translator_service.translate_srt(
+        output_files = translator_service.translate_srt(
             input_srt_path=temp_srt_path,
             target_lang=target_lang,
             output_dir=output_dir,
             llm_model=llm_model,
-            skip_env_init=service_was_passed  # 如果服务是传入的（批量模式），跳过环境初始化
+            skip_env_init=service_was_passed,  # 如果服务是传入的（批量模式），跳过环境初始化
+            preserve_intermediate=preserve_intermediate,
         )
-        # 确保这里正确赋值
-        final_english_path = output_dir / f"{temp_srt_path.stem}.en.srt"
-
-        logger.info(f"翻译完成，目标语言翻译文件保存至: {final_target_lang_path}")
-        logger.info(f"英文翻译文件保存至: {final_english_path}")
-
-        # --- 转换为 ASS ---
-        print(">>> [bold green]生成双语ASS文件...[/bold green]")
-        logger.info(">>> 正在转换为 ASS 格式...")
-
-        # 提取 srt2ass.py 的核心逻辑
-        from .translation_core.utils.ass_converter import convert_srt_to_ass
-
-        final_ass_path = convert_srt_to_ass(final_target_lang_path, final_english_path, output_dir)
-        logger.info(f"ASS 文件生成成功: {final_ass_path}")
+        logger.info(f"ASS 文件生成成功: {output_files.bilingual_ass}")
+        if output_files.intermediates_preserved:
+            logger.info(f"目标语言翻译文件保存至: {output_files.target_srt}")
+            logger.info(f"英文翻译文件保存至: {output_files.source_srt}")
+            print("💾 [bold green]已保留中间字幕文件[/bold green]")
+        else:
+            print("🧹 已清理 2 个中间字幕文件")
+        return output_files
 
     except Exception as e:
         _handle_translation_error(e, logger)
     finally:
-        # 清理中间翻译文件
-        if preserve_intermediate:
-            logger.info(">>> 保留中间翻译文件...")
-            preserved_files = []
-            if final_target_lang_path and final_target_lang_path.exists():
-                preserved_files.append(f"{target_lang} SRT")
-                logger.info(f"保留中间文件: {final_target_lang_path}")
-            if final_english_path and final_english_path.exists():
-                preserved_files.append("英文 SRT")
-                logger.info(f"保留中间文件: {final_english_path}")
-
-            if preserved_files:
-                print(f"💾 [bold green]已保留中间文件:[/bold green] {', '.join(preserved_files)}")
-        else:
-            logger.info(">>> 正在清理中间翻译文件...")
-            cleaned_files = 0
-            if final_target_lang_path and final_target_lang_path.exists():
-                os.remove(final_target_lang_path)
-                logger.info(f"已删除中间文件: {final_target_lang_path}")
-                cleaned_files += 1
-            if final_english_path and final_english_path.exists():
-                os.remove(final_english_path)
-                logger.info(f"已删除中间文件: {final_english_path}")
-                cleaned_files += 1
-
-            if cleaned_files > 0:
-                print(f"🧹 已清理 {cleaned_files} 个中间文件") 
-
         if not service_was_passed and translator_service is not None:
             translator_service.close()
