@@ -162,7 +162,17 @@ def init():
         "API Base URL",
         default="https://api.openai.com/v1"
     )
-    api_key = Prompt.ask("API Key (可留空，本地服务通常不需要)", password=True, default="")
+    api_key = Prompt.ask("API Key", password=True)
+    while not api_key.strip():
+        print("[red]❌ API Key 不能为空[/red]")
+        api_key = Prompt.ask("API Key", password=True)
+
+    from .translation_core.config import validate_api_configuration
+    try:
+        validate_api_configuration(api_base, api_key)
+    except ValueError as exc:
+        print(f"[red]❌ 配置无效:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
 
     print("\n[bold]2. 模型配置[/bold]")
     split_model = Prompt.ask(

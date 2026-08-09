@@ -4,6 +4,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from subtitle_translator.cli import app
+from subtitle_translator import env_setup
 
 runner = CliRunner()
 
@@ -39,15 +40,40 @@ def test_missing_config(tmp_path, monkeypatch):
     assert result.exit_code == 1
 
 
-def test_dry_run_allows_empty_api_key(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:1234/v1")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+def test_dry_run_allows_api_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     test_srt = tmp_path / "test.srt"
     test_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nTest subtitle\n")
 
     result = runner.invoke(app, ["--dry-run", "-i", str(test_srt)])
     assert result.exit_code == 0
+
+
+def test_dry_run_rejects_loopback_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr(env_setup, "_env_loaded", False)
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.2:1234/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    test_srt = tmp_path / "test.srt"
+    test_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nTest subtitle\n")
+
+    result = runner.invoke(app, ["--dry-run", "-i", str(test_srt)])
+    assert result.exit_code == 1
+    assert "不支持本地模型服务" in result.output
+
+
+def test_init_rejects_loopback_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    with patch(
+        "rich.prompt.Prompt.ask",
+        side_effect=["http://localhost:1234/v1", "test-key"],
+    ):
+        result = runner.invoke(app, ["init"])
+
+    assert result.exit_code == 1
+    assert "不支持本地模型服务" in result.output
 
 
 def test_dry_run_empty_dir(tmp_path):

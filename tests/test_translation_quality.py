@@ -5,7 +5,6 @@ from subtitle_translator.translation_core.config import SubtitleConfig
 from subtitle_translator.translation_core.data import SubtitleData, SubtitleSegment
 from subtitle_translator.translation_core.translation_execution import (
     TRANSLATION_JSON_OBJECT_RESPONSE_FORMAT,
-    TRANSLATION_ONLY_RESPONSE_FORMAT,
     TRANSLATION_RESPONSE_FORMAT,
     TranslationEngine,
 )
@@ -53,13 +52,6 @@ def _translate_once(base_url: str, optimized: str = "Music."):
         results = engine.translate_batch(translation_batch, context_info="course intro")
 
     return adapter.requests[0], results
-
-
-def test_translation_engine_uses_translation_only_schema_for_local_endpoint():
-    request, _ = _translate_once("http://127.0.0.1:1234/v1")
-
-    assert request["response_format"] == TRANSLATION_ONLY_RESPONSE_FORMAT
-    assert "`id`, `translation`, and `discarded`" in request["messages"][0]["content"]
 
 
 def test_translation_engine_uses_full_schema_for_remote_endpoint():

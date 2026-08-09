@@ -146,7 +146,7 @@ translate init
 
 ```text
 OPENAI_BASE_URL=
-OPENAI_API_KEY=
+OPENAI_API_KEY=your-api-key-here
 SPLIT_MODEL=
 TRANSLATION_MODEL=
 LLM_MODEL=

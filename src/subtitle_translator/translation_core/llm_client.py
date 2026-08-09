@@ -8,7 +8,7 @@ from typing import Any, Optional, Protocol
 from openai import OpenAI
 
 from ..logger import setup_logger
-from .config import SubtitleConfig
+from .config import SubtitleConfig, validate_api_configuration
 
 logger = setup_logger("llm_client")
 
@@ -99,6 +99,7 @@ class LLMClient:
         Args:
             config: 字幕翻译配置对象
         """
+        validate_api_configuration(config.openai_base_url, config.openai_api_key)
         self.config = config
         self._client = OpenAI(
             base_url=config.openai_base_url,

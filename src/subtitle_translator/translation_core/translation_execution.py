@@ -58,34 +58,6 @@ TRANSLATION_RESPONSE_FORMAT = {
     },
 }
 
-TRANSLATION_ONLY_RESPONSE_FORMAT = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "subtitle_translation_batch_translation_only",
-        "schema": {
-            "type": "object",
-            "properties": {
-                "subtitles": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "integer"},
-                            "translation": {"type": "string"},
-                            "discarded": {"type": "boolean"},
-                        },
-                        "required": ["id", "translation", "discarded"],
-                        "additionalProperties": False,
-                    },
-                }
-            },
-            "required": ["subtitles"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    },
-}
-
 TRANSLATION_JSON_OBJECT_RESPONSE_FORMAT = {"type": "json_object"}
 
 
@@ -307,22 +279,14 @@ class TranslationEngine:
             {"role": "user", "content": input_content},
         ]
 
-    def _should_use_translation_only_schema(self) -> bool:
-        """本机 OpenAI-compatible 模型只返回翻译文本，减少输出压力。"""
-        return self.config.is_local_openai_compatible()
-
     def _get_required_response_fields(self) -> str:
         """返回当前响应格式要求的字段说明。"""
-        if self._should_use_translation_only_schema():
-            return "`id`, `translation`, and `discarded`"
         return "`id`, `optimized`, `translation`, and `discarded`"
 
     def _get_translation_response_format(self) -> dict:
         """按供应商和部署环境选择结构化输出格式。"""
         if self.config.provider_type() == "deepseek":
             return TRANSLATION_JSON_OBJECT_RESPONSE_FORMAT
-        if self._should_use_translation_only_schema():
-            return TRANSLATION_ONLY_RESPONSE_FORMAT
         return TRANSLATION_RESPONSE_FORMAT
 
     def _create_chat_completion_with_fallback(self, message):

@@ -8,7 +8,7 @@ A command-line tool for translating English `.srt` subtitles into other language
 
 - Translate English subtitles into Chinese, Japanese, Korean, French, and more
 - Generate translated `.srt` and bilingual `.ass` output
-- Work with OpenAI-compatible APIs, including local services such as LM Studio
+- Work with remote OpenAI-compatible APIs
 - Support extra context via `context.txt` / `ctx.txt`
 - Support global and local terminology files for consistent translation
 
@@ -60,6 +60,10 @@ translate init
 
 This creates `~/.config/subtitle-translator/.env`.
 
+Only remote API endpoints are supported. `OPENAI_API_KEY` is required; existing
+local or unauthenticated endpoint configurations must be replaced with an
+authenticated remote API.
+
 Manual configuration also works:
 
 ```bash
@@ -91,18 +95,6 @@ Logs are stored in `~/.local/share/subtitle-translator/logs/app.log`, rotate
 automatically, and use private file permissions. Full subtitle requests and
 model responses are omitted by default; set `LOG_RAW_PAYLOADS=true` only when
 payload-level debugging is necessary.
-
-For LM Studio or other local OpenAI-compatible services:
-
-```bash
-OPENAI_BASE_URL=http://127.0.0.1:1234/v1
-OPENAI_API_KEY=
-SPLIT_MODEL=your-local-split-model
-TRANSLATION_MODEL=your-local-translation-model
-LLM_MODEL=your-local-default-model
-DISABLE_THINKING=true
-LOG_RAW_PAYLOADS=false
-```
 
 ## Optional Context And Terminology
 

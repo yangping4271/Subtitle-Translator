@@ -24,7 +24,6 @@ def test_openai(base_url, api_key, model):
             openai_base_url=base_url,
             openai_api_key=api_key,
             disable_thinking=True,
-            _skip_env_load=True,
         )
         client = LLMClient(config)
         response = client.create_chat_completion(

@@ -8,7 +8,7 @@
 
 - 把英文字幕翻译成中文、日文、韩文、法文等多种语言
 - 输出翻译后的 `.srt` 和双语 `.ass`
-- 支持 OpenAI-compatible API，也支持 LM Studio 这类本地服务
+- 支持远程 OpenAI-compatible API
 - 支持通过 `context.txt` / `ctx.txt` 提供额外上下文
 - 支持全局和局部术语表，保持术语翻译一致
 
@@ -60,6 +60,8 @@ translate init
 
 它会创建 `~/.config/subtitle-translator/.env`。
 
+项目只支持远程 API 端点，且 `OPENAI_API_KEY` 为必填项；已有的本地服务或无鉴权端点配置需要替换为带认证的远程 API。
+
 也可以手动配置：
 
 ```bash
@@ -83,18 +85,6 @@ LOG_RAW_PAYLOADS=false
 部分供应商的强制推理模型不接受关闭参数，此时 API 会拒绝请求；请改用支持非推理模式的模型。
 
 日志固定保存在 `~/.local/share/subtitle-translator/logs/app.log`，会自动轮转并使用私有文件权限。默认不记录完整字幕请求和模型原始响应；只有排查 payload 问题时才建议临时设置 `LOG_RAW_PAYLOADS=true`。
-
-如果你使用 LM Studio 或其他本地 OpenAI-compatible 服务：
-
-```bash
-OPENAI_BASE_URL=http://127.0.0.1:1234/v1
-OPENAI_API_KEY=
-SPLIT_MODEL=your-local-split-model
-TRANSLATION_MODEL=your-local-translation-model
-LLM_MODEL=your-local-default-model
-DISABLE_THINKING=true
-LOG_RAW_PAYLOADS=false
-```
 
 ## 可选：上下文与术语表
 

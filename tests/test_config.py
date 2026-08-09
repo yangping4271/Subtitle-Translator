@@ -26,7 +26,7 @@ def test_get_target_language_invalid():
 
 
 def test_direct_config_construction_does_not_read_environment(monkeypatch):
-    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:1234/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com/v1")
 
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
@@ -38,43 +38,44 @@ def test_direct_config_construction_does_not_read_environment(monkeypatch):
 
 
 def test_config_from_env_is_the_explicit_environment_seam(monkeypatch):
-    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:1234/v1")
-    monkeypatch.setenv("LLM_MODEL", "local-model")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
     monkeypatch.delenv("THREAD_NUM", raising=False)
 
     config = SubtitleConfig.from_env()
 
-    assert config.openai_base_url == "http://127.0.0.1:1234/v1"
-    assert config.split_model == "local-model"
-    assert config.translation_model == "local-model"
-    assert config.thread_num == 4
+    assert config.openai_base_url == "https://api.openai.com/v1"
+    assert config.split_model == "test-model"
+    assert config.translation_model == "test-model"
+    assert config.thread_num == 18
 
 
-def test_config_uses_local_and_remote_default_thread_counts(monkeypatch):
-    monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.1:1234/v1")
-    monkeypatch.delenv("THREAD_NUM", raising=False)
-    local_config = SubtitleConfig.from_env()
-    assert local_config.thread_num == 4
-
+def test_config_rejects_missing_api_key(monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    remote_config = SubtitleConfig.from_env()
-    assert remote_config.thread_num == 18
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        SubtitleConfig.from_env()
 
 
-def test_config_detects_local_openai_compatible_endpoint():
-    local_config = SubtitleConfig(
-        openai_base_url="http://127.0.0.1:1234/v1",
-    )
-    remote_config = SubtitleConfig(
-        openai_base_url="https://api.openai.com/v1",
-    )
-
-    assert local_config.is_local_openai_compatible() is True
-    assert remote_config.is_local_openai_compatible() is False
+@pytest.mark.parametrize("base_url", [
+    "http://127.0.0.1:1234/v1",
+    "http://127.0.0.2:1234/v1",
+    "http://localhost:1234/v1",
+    "http://localhost.:1234/v1",
+    "http://[::1]:1234/v1",
+    "http://[::ffff:127.0.0.1]:1234/v1",
+])
+def test_config_rejects_loopback_endpoint(monkeypatch, base_url):
+    monkeypatch.setenv("OPENAI_BASE_URL", base_url)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    with pytest.raises(ValueError, match="不支持本地模型服务"):
+        SubtitleConfig.from_env()
 
 
 def test_disable_thinking_env_override(monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("DISABLE_THINKING", "false")
 
     config = SubtitleConfig.from_env()
@@ -89,6 +90,7 @@ def test_raw_payload_logging_is_disabled_by_default_and_can_be_enabled(monkeypat
     assert config.log_raw_payloads is False
 
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("LOG_RAW_PAYLOADS", "true")
     assert SubtitleConfig.from_env().log_raw_payloads is True
 
@@ -119,5 +121,5 @@ def test_config_detects_provider_type_from_base_url():
         openai_base_url="https://api.openai.com/v1",
     ).provider_type() == "openai"
     assert SubtitleConfig(
-        openai_base_url="http://127.0.0.1:1234/v1",
+        openai_base_url="https://example.com/v1",
     ).provider_type() == "custom"

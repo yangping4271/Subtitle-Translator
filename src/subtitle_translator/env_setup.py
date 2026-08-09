@@ -6,6 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .exceptions import ConfigurationError
+from .translation_core.config import validate_api_configuration
 
 _env_loaded = False
 logger = None
@@ -31,7 +32,7 @@ def setup_environment(allow_missing_config=False):
     if _env_loaded:
         return
 
-    required_vars = ['OPENAI_BASE_URL']
+    required_vars = ['OPENAI_BASE_URL', 'OPENAI_API_KEY']
 
     # 先加载配置文件（不覆盖已有的环境变量）
     env_path = _get_config_path()
@@ -49,6 +50,7 @@ def setup_environment(allow_missing_config=False):
         if allow_missing_config:
             logger.warning(f"缺少必需的环境变量: {', '.join(missing_vars)}")
             logger.warning("程序将在配置模式下运行。")
+            return
         else:
             from rich import print as rprint
 
@@ -65,8 +67,19 @@ def setup_environment(allow_missing_config=False):
             rprint()
             rprint("   [bold]配置示例:[/bold]")
             rprint("      [dim]OPENAI_BASE_URL=https://api.openai.com/v1[/dim]")
-            rprint("      [dim]OPENAI_API_KEY=[/dim]")
+            rprint("      [dim]OPENAI_API_KEY=your-api-key-here[/dim]")
             rprint("      [dim]SPLIT_MODEL=gpt-4o-mini[/dim]")
             rprint("      [dim]TRANSLATION_MODEL=gpt-4o[/dim]")
             rprint()
             raise ConfigurationError("缺少必需的配置项，请运行 'translate init' 初始化配置")
+
+    try:
+        validate_api_configuration(
+            os.environ["OPENAI_BASE_URL"],
+            os.environ["OPENAI_API_KEY"],
+        )
+    except ValueError as exc:
+        from rich import print as rprint
+
+        rprint(f"[red]❌ 配置无效:[/red] {exc}")
+        raise ConfigurationError(str(exc)) from exc
