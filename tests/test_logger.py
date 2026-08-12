@@ -1,6 +1,14 @@
 from pathlib import Path
+import logging
+import queue
 
-from subtitle_translator.logger import _get_log_path, _prepare_log_file
+from subtitle_translator import logger as logger_module
+from subtitle_translator.logger import (
+    QueueListenerHandler,
+    _get_log_path,
+    _prepare_log_file,
+    clear_log_file,
+)
 
 
 def test_log_path_is_stable_and_honors_xdg_data_home(monkeypatch, tmp_path):
@@ -28,3 +36,38 @@ def test_prepare_log_file_restricts_permissions(tmp_path):
 
     assert log_file.stat().st_mode & 0o777 == 0o600
     assert Path(log_file.parent).stat().st_mode & 0o777 == 0o700
+
+
+def test_clear_log_file_truncates_existing_file(tmp_path):
+    log_file = tmp_path / "logs" / "app.log"
+    log_file.parent.mkdir()
+    log_file.write_text("previous task", encoding="utf-8")
+
+    clear_log_file(log_file)
+
+    assert log_file.read_text(encoding="utf-8") == ""
+    assert log_file.stat().st_mode & 0o777 == 0o600
+
+
+def test_queue_listener_clear_keeps_new_records(tmp_path, monkeypatch):
+    log_file = tmp_path / "logs" / "app.log"
+    monkeypatch.setattr(logger_module, "LOG_FILE", str(log_file))
+    handler = QueueListenerHandler(queue.Queue(), logging.DEBUG)
+    handler.start_listener()
+
+    try:
+        handler.handle(logging.LogRecord(
+            "test", logging.INFO, __file__, 1, "old record", (), None
+        ))
+        handler.queue.join()
+        handler.clear_file()
+        handler.handle(logging.LogRecord(
+            "test", logging.INFO, __file__, 2, "new record", (), None
+        ))
+        handler.queue.join()
+    finally:
+        handler._queue_listener.stop()
+        handler._file_handler.close()
+
+    assert log_file.read_text(encoding="utf-8").endswith("new record\n")
+    assert "old record" not in log_file.read_text(encoding="utf-8")

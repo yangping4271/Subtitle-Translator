@@ -31,6 +31,17 @@ def _prepare_log_file(log_file: Path) -> None:
             pass
 
 
+def clear_log_file(log_file: Path | str | None = None) -> None:
+    """清空日志文件，同时保留日志目录和文件权限设置。"""
+    target = Path(log_file) if log_file is not None else Path(LOG_FILE)
+    _prepare_log_file(target)
+    target.write_text("", encoding="utf-8")
+    try:
+        target.chmod(0o600)
+    except OSError:
+        pass
+
+
 LOG_PATH = _get_log_path()
 LOG_FILE = str(LOG_PATH / 'app.log')
 
@@ -159,6 +170,24 @@ class QueueListenerHandler(logging.handlers.QueueHandler):
 
         return [self._file_handler]
 
+    def clear_file(self):
+        """在队列排空后截断当前文件流，避免替换正在使用的处理器。"""
+        if self._file_handler is None:
+            clear_log_file()
+            return
+
+        self._file_handler.acquire()
+        try:
+            if self._file_handler.stream is None:
+                self._file_handler.stream = self._file_handler._open()
+            self._file_handler.flush()
+            self._file_handler.stream.seek(0)
+            self._file_handler.stream.truncate()
+            self._file_handler.stream.flush()
+        finally:
+            self._file_handler.release()
+
+
 def setup_logger(name: str) -> logging.Logger:
     """
     创建并配置一个日志记录器。
@@ -198,6 +227,17 @@ def setup_logger(name: str) -> logging.Logger:
         logging.getLogger(lib).setLevel(logging.ERROR)
 
     return logger
+
+
+def start_task_logging() -> None:
+    """为一次 CLI 任务准备全新的日志内容。"""
+    if queue_handler and queue_handler._queue_listener:
+        # QueueListener 异步写文件；先确保旧记录全部落盘，再执行截断。
+        log_queue.join()
+        queue_handler.clear_file()
+    else:
+        clear_log_file()
+
 
 def log_section_start(logger, section_name, emoji="🔧"):
     """记录节开始"""

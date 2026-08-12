@@ -26,6 +26,19 @@ def test_version_subcommand():
     assert result.exit_code == 0
 
 
+def test_translation_run_starts_a_new_log_task(tmp_path):
+    test_srt = tmp_path / "test.srt"
+    test_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nTest subtitle\n")
+
+    with patch("subtitle_translator.cli.setup_environment"), \
+         patch("subtitle_translator.cli.start_task_logging") as start_logging, \
+         patch("subtitle_translator.cli.process_batch"):
+        result = runner.invoke(app, ["-i", str(test_srt)])
+
+    assert result.exit_code == 0
+    start_logging.assert_called_once_with()
+
+
 def test_invalid_language():
     with patch("subtitle_translator.cli.setup_environment"):
         result = runner.invoke(app, ["-t", "xyz_not_a_lang"])

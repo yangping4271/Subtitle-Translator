@@ -10,7 +10,7 @@ from rich import print
 
 from .env_setup import setup_environment
 from .exceptions import ConfigurationError
-from .logger import setup_logger
+from .logger import setup_logger, start_task_logging
 from .file_discovery import get_batch_files
 from .console_views import show_dry_run_summary
 from .processor import process_batch
@@ -46,6 +46,9 @@ def main(
 
     if ctx.invoked_subcommand is not None:
         return
+
+    start_task_logging()
+    logger.info("🆕 翻译任务开始: pid=%s", os.getpid())
 
     try:
         setup_environment()
