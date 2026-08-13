@@ -1,10 +1,13 @@
 import json
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
+from subtitle_translator.exceptions import TranslationError
 from subtitle_translator.translation_core.config import SubtitleConfig
 from subtitle_translator.translation_core.data import SubtitleData, SubtitleSegment
+from subtitle_translator.translation_core.llm_client import LLMClient, RequestMetric
 from subtitle_translator.translation_core.translation_execution import TranslationEngine
 from subtitle_translator.translation_core.translation_context import TranslationContext
 from subtitle_translator import processor
@@ -189,7 +192,9 @@ def test_batch_run_uses_the_ass_path_returned_by_single_file(
     shown_results = {}
 
     monkeypatch.setattr(processor, "SubtitleTranslatorService", FakeService)
-    monkeypatch.setattr(processor, "process_single_file", lambda *args, **kwargs: output)
+    monkeypatch.setattr(
+        processor, "process_single_file", lambda *args, **kwargs: output
+    )
     monkeypatch.setattr(
         processor,
         "show_results",
@@ -212,6 +217,69 @@ def test_batch_run_uses_the_ass_path_returned_by_single_file(
     )
 
     assert shown_results["files"] == [returned_ass]
+
+
+def test_batch_progress_shows_one_translation_line_with_filename(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    class FakeService:
+        def init_translation_env(self, **kwargs):
+            pass
+
+        def close(self):
+            pass
+
+    output = SimpleNamespace(bilingual_ass=tmp_path / "lesson.ass")
+    monkeypatch.setattr(processor, "SubtitleTranslatorService", FakeService)
+    monkeypatch.setattr(
+        processor,
+        "process_single_file",
+        lambda *args, **kwargs: output,
+    )
+    monkeypatch.setattr(processor, "show_results", lambda *args, **kwargs: None)
+
+    processor.process_batch(
+        files_to_process=[tmp_path / "lesson.srt", tmp_path / "next.srt"],
+        target_lang="zh",
+        output_dir=tmp_path,
+        llm_model=None,
+        split_model=None,
+        translation_model=None,
+        preserve_intermediate=False,
+    )
+
+    console_output = capsys.readouterr().out
+    assert "🎯 开始翻译第 1/2 个文件: lesson.srt" in console_output
+    assert console_output.count("lesson.srt") == 1
+
+
+def test_single_file_processing_does_not_repeat_console_progress(
+    tmp_path,
+    capsys,
+):
+    class FakeService:
+        def translate_srt(self, **kwargs):
+            return SimpleNamespace(
+                bilingual_ass=tmp_path / "lesson.ass",
+                target_srt=tmp_path / "lesson.zh.srt",
+                source_srt=tmp_path / "lesson.en.srt",
+                intermediates_preserved=False,
+            )
+
+    processor.process_single_file(
+        input_file=tmp_path / "lesson.srt",
+        target_lang="zh",
+        output_dir=tmp_path,
+        llm_model=None,
+        translator_service=FakeService(),
+    )
+
+    output = capsys.readouterr().out
+    assert ">>> 检测到 SRT 文件" not in output
+    assert ">>> 开始翻译: lesson.srt" not in output
+    assert ">>> 开始翻译..." not in output
 
 
 def test_translation_batch_falls_back_to_a_retried_single_translation():
@@ -303,3 +371,254 @@ def test_single_file_closes_owned_service_when_initialization_fails(
         )
 
     assert service.closed is True
+
+
+def test_failed_translation_still_shows_api_metrics(tmp_path, capsys, monkeypatch):
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    service = SubtitleTranslatorService(config=config, llm=client)
+
+    def fail_after_metric(*args, **kwargs):
+        client._record_metric(
+            RequestMetric(
+                started_at=0.0,
+                ended_at=12.0,
+                latency=12.0,
+                success=False,
+                completion_tokens=None,
+                finish_reason=None,
+                content_chars=0,
+                error_type="APITimeoutError",
+            )
+        )
+        raise TranslationError("translation failed")
+
+    monkeypatch.setattr(service, "_load_translation_context", fail_after_metric)
+
+    with pytest.raises(TranslationError, match="translation failed"):
+        service.translate_srt(
+            input_srt_path=tmp_path / "lesson.srt",
+            target_lang="zh",
+            output_dir=tmp_path,
+            skip_env_init=True,
+        )
+
+    output = capsys.readouterr().out
+    assert "API 性能统计" in output
+    assert "请求: 1 次 (成功 0 / 失败 1)" in output
+
+
+def test_metrics_display_failure_does_not_mask_translation_error(
+    tmp_path,
+    monkeypatch,
+):
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    service = SubtitleTranslatorService(config=config, llm=client)
+    monkeypatch.setattr(
+        service,
+        "_load_translation_context",
+        Mock(side_effect=TranslationError("original boom")),
+    )
+    monkeypatch.setattr(
+        client,
+        "metrics_summary",
+        Mock(side_effect=RuntimeError("metrics boom")),
+    )
+
+    with pytest.raises(TranslationError, match="original boom"):
+        service.translate_srt(
+            input_srt_path=tmp_path / "lesson.srt",
+            target_lang="zh",
+            output_dir=tmp_path,
+            skip_env_init=True,
+        )
+
+
+def test_metrics_display_failure_does_not_fail_successful_translation(
+    tmp_path,
+    monkeypatch,
+):
+    input_path = tmp_path / "lesson.srt"
+    input_path.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\nHello world!\n",
+        encoding="utf-8",
+    )
+    translation_response = json.dumps(
+        {
+            "subtitles": [
+                {
+                    "id": 1,
+                    "optimized": "Hello world!",
+                    "translation": "你好，世界！",
+                    "discarded": False,
+                }
+            ]
+        }
+    )
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="test-key",
+        thread_num=1,
+        min_batch_sentences=1,
+        max_batch_sentences=1,
+        max_batch_words=50,
+        external_glossary_enabled=False,
+    )
+    client = LLMClient(config)
+    stub = StubModelAdapter(["Hello world!", translation_response])
+    client.create_chat_completion = stub.create_chat_completion
+    client._record_metric(
+        RequestMetric(
+            started_at=0.0,
+            ended_at=1.0,
+            latency=1.0,
+            success=True,
+            completion_tokens=8,
+            finish_reason="stop",
+            content_chars=12,
+            error_type=None,
+        )
+    )
+    service = SubtitleTranslatorService(config=config, llm=client)
+    monkeypatch.setattr(
+        client,
+        "metrics_summary",
+        Mock(side_effect=RuntimeError("metrics boom")),
+    )
+
+    outputs = service.translate_srt(
+        input_srt_path=input_path,
+        target_lang="zh",
+        output_dir=tmp_path / "output",
+        skip_env_init=True,
+    )
+
+    assert outputs.bilingual_ass.exists()
+
+
+def test_successful_translation_shows_api_metrics_once(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    input_path = tmp_path / "lesson.srt"
+    input_path.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\nHello world!\n",
+        encoding="utf-8",
+    )
+    translation_response = json.dumps(
+        {
+            "subtitles": [
+                {
+                    "id": 1,
+                    "optimized": "Hello world!",
+                    "translation": "你好，世界！",
+                    "discarded": False,
+                }
+            ]
+        }
+    )
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="test-key",
+        thread_num=1,
+        min_batch_sentences=1,
+        max_batch_sentences=1,
+        max_batch_words=50,
+        external_glossary_enabled=False,
+    )
+    client = LLMClient(config)
+    stub = StubModelAdapter(["Hello world!", translation_response])
+    client.create_chat_completion = stub.create_chat_completion
+    service = SubtitleTranslatorService(config=config, llm=client)
+
+    def record_then_translate(*args, **kwargs):
+        client._record_metric(
+            RequestMetric(
+                started_at=0.0,
+                ended_at=2.0,
+                latency=2.0,
+                success=True,
+                completion_tokens=8,
+                finish_reason="stop",
+                content_chars=12,
+                error_type=None,
+            )
+        )
+        return original_translate(*args, **kwargs)
+
+    original_translate = service._translate_segmented_batches
+    monkeypatch.setattr(service, "_translate_segmented_batches", record_then_translate)
+
+    service.translate_srt(
+        input_srt_path=input_path,
+        target_lang="zh",
+        output_dir=tmp_path / "output",
+        skip_env_init=True,
+    )
+
+    output = capsys.readouterr().out
+    assert output.count("API 性能统计") == 1
+
+
+def test_process_batch_does_not_repeat_start_filename_in_app_log(
+    monkeypatch,
+    tmp_path,
+):
+    class FakeService:
+        def init_translation_env(self, **kwargs):
+            pass
+
+        def close(self):
+            pass
+
+        def translate_srt(self, **kwargs):
+            return SimpleNamespace(
+                bilingual_ass=tmp_path / "lesson.ass",
+                target_srt=tmp_path / "lesson.zh.srt",
+                source_srt=tmp_path / "lesson.en.srt",
+                intermediates_preserved=False,
+            )
+
+    (tmp_path / "lesson.ass").write_text("ass", encoding="utf-8")
+    monkeypatch.setattr(processor, "SubtitleTranslatorService", FakeService)
+    monkeypatch.setattr(processor, "show_results", lambda *args, **kwargs: None)
+    log_messages = []
+    original_info = processor.logger.info
+
+    def capture_info(message, *args, **kwargs):
+        log_messages.append(str(message) % args if args else str(message))
+        return original_info(message, *args, **kwargs)
+
+    monkeypatch.setattr(processor.logger, "info", capture_info)
+
+    processor.process_batch(
+        files_to_process=[tmp_path / "lesson.srt"],
+        target_lang="zh",
+        output_dir=tmp_path,
+        llm_model=None,
+        split_model=None,
+        translation_model=None,
+        preserve_intermediate=False,
+    )
+
+    start_translation_logs = [
+        message
+        for message in log_messages
+        if "开始翻译" in message and "lesson.srt" in message
+    ]
+    start_progress_logs = [
+        message
+        for message in log_messages
+        if "处理文件" in message and "lesson.srt" in message
+    ]
+    assert start_translation_logs == []
+    assert len(start_progress_logs) == 1
+    assert not any(">>> 开始翻译" in message for message in log_messages)

@@ -1,6 +1,7 @@
 """
 字幕翻译服务模块 - 核心翻译服务类
 """
+
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -8,7 +9,12 @@ from typing import Optional, Tuple
 
 from rich import print
 
-from .exceptions import OpenAIAPIError, EmptySubtitleError, TranslationError, SmartSplitError
+from .exceptions import (
+    OpenAIAPIError,
+    EmptySubtitleError,
+    TranslationError,
+    SmartSplitError,
+)
 from .logger import log_section_end, log_section_start, log_stats, setup_logger
 from .output_files import SubtitleOutputFiles, write_subtitle_outputs
 from .translation_core.config import SubtitleConfig
@@ -27,12 +33,17 @@ from .translation_core.terminology import (
 from .translation_core.translation_context import TranslationContext
 from .translation_core.splitter import SubtitleSegmenter
 from .context_loader import build_context_info
-from .console_views import show_api_config, show_model_config, show_time_stats
+from .console_views import (
+    show_api_config,
+    show_api_performance_stats,
+    show_model_config,
+    show_time_stats,
+)
 
 
 class SubtitleTranslatorService:
     """字幕翻译服务类"""
-    
+
     def __init__(
         self,
         config: Optional[SubtitleConfig] = None,
@@ -54,7 +65,7 @@ class SubtitleTranslatorService:
         llm_model: Optional[str] = None,
         split_model: Optional[str] = None,
         translation_model: Optional[str] = None,
-        show_config: bool = True
+        show_config: bool = True,
     ) -> None:
         """初始化翻译环境配置"""
         start_time = time.time()
@@ -73,7 +84,7 @@ class SubtitleTranslatorService:
 
         model_config = {
             "断句模型": self.config.split_model,
-            "翻译模型": self.config.translation_model
+            "翻译模型": self.config.translation_model,
         }
         log_stats(self.logger, model_config, "模型配置")
 
@@ -94,7 +105,9 @@ class SubtitleTranslatorService:
         self.logger.info("📂 正在加载字幕文件...")
 
         source_subtitle = load_subtitle(str(input_srt_path))
-        timestamp_type = "词级时间戳" if source_subtitle.is_word_timestamp() else "句段时间戳"
+        timestamp_type = (
+            "词级时间戳" if source_subtitle.is_word_timestamp() else "句段时间戳"
+        )
         self.logger.info(
             "📊 输入字幕片段: %s 条（%s）",
             len(source_subtitle.segments),
@@ -178,8 +191,15 @@ class SubtitleTranslatorService:
             skip_env_init: 是否跳过环境初始化
             preserve_intermediate: 是否保留英文和目标语言 SRT 中间文件
         """
+        task_start_time = time.time()
+        metrics_checkpoint = None
         try:
-            task_start_time = time.time()
+            if isinstance(self.llm, LLMClient):
+                metrics_checkpoint = self.llm.metrics_checkpoint()
+        except Exception:
+            metrics_checkpoint = None
+        metrics_reported = False
+        try:
             log_section_start(self.logger, "字幕翻译任务", "🎬")
 
             # 用于收集各阶段耗时的字典
@@ -207,7 +227,7 @@ class SubtitleTranslatorService:
             # 打印加载的上下文信息
             if context_info:
                 self.logger.info("📋 已加载上下文信息:")
-                for line in context_info.split('\n'):
+                for line in context_info.split("\n"):
                     if line.strip():
                         self.logger.info(f"   {line}")
             else:
@@ -226,7 +246,9 @@ class SubtitleTranslatorService:
 
             processing_time = time.time() - processing_start_time
             log_section_end(self.logger, "字幕处理阶段", processing_time, "🎉")
-            print(f"🎉 [bold green]字幕处理完成[/bold green] (总耗时: [cyan]{processing_time:.1f}s[/cyan])")
+            print(
+                f"🎉 [bold green]字幕处理完成[/bold green] (总耗时: [cyan]{processing_time:.1f}s[/cyan])"
+            )
 
             save_start_time = time.time()
             self.logger.info("💾 正在生成字幕输出文件...")
@@ -244,13 +266,19 @@ class SubtitleTranslatorService:
 
             print()
             show_time_stats(stage_times, total_elapsed)
+            if metrics_checkpoint is not None:
+                try:
+                    self._show_api_metrics(metrics_checkpoint)
+                except Exception:
+                    pass
+                metrics_reported = True
 
             final_stats = {
                 "输入文件": input_srt_path.name,
                 "输入字幕片段": len(source_subtitle.segments),
                 "断句后句段": len(sentence_subtitle.segments),
                 "目标语言": target_lang,
-                "总耗时": f"{total_elapsed:.1f}秒"
+                "总耗时": f"{total_elapsed:.1f}秒",
             }
             log_stats(self.logger, final_stats, "任务完成统计")
             log_section_end(self.logger, "字幕翻译任务", total_elapsed, "🎉")
@@ -268,6 +296,61 @@ class SubtitleTranslatorService:
             self.logger.error(f"💥 处理过程中发生错误: {str(e)}")
             self.logger.debug("详细错误信息:", exc_info=True)
             raise
+        finally:
+            if metrics_checkpoint is not None and not metrics_reported:
+                try:
+                    self._show_api_metrics(metrics_checkpoint)
+                except Exception:
+                    pass
+
+    def _show_api_metrics(self, checkpoint: int) -> None:
+        """输出 checkpoint 之后的请求指标，失败任务也保留汇总。"""
+        try:
+            api_stats = self.llm.metrics_summary(checkpoint)
+            if api_stats["requests"] == 0:
+                return
+            print()
+            show_api_performance_stats(api_stats)
+            self.logger.info(
+                "📡 API性能统计: 请求=%s, 成功=%s, 失败=%s, "
+                "平均延迟=%s, P95=%s, 最大延迟=%s, 有效吞吐=%s, "
+                "吞吐覆盖请求=%s, usage缺失=%s, 慢请求=%s, 响应异常=%s",
+                api_stats["requests"],
+                api_stats["successful_requests"],
+                api_stats["failed_requests"],
+                (
+                    f"{api_stats['latency_avg']:.2f}s"
+                    if api_stats["latency_avg"] is not None
+                    else "unknown"
+                ),
+                (
+                    f"{api_stats['latency_p95']:.2f}s"
+                    if api_stats["latency_p95"] is not None
+                    else "unknown"
+                ),
+                (
+                    f"{api_stats['latency_max']:.2f}s"
+                    if api_stats["latency_max"] is not None
+                    else "unknown"
+                ),
+                (
+                    f"{api_stats['effective_tps']:.2f} token/s"
+                    if api_stats["effective_tps"] is not None
+                    else "unknown"
+                ),
+                api_stats["throughput_requests"],
+                api_stats["missing_usage"],
+                api_stats["slow_requests"],
+                api_stats["anomalies"],
+            )
+        except Exception as exc:
+            try:
+                self.logger.warning(
+                    "API性能统计输出失败，已保留原翻译结果: error_type=%s",
+                    type(exc).__name__,
+                )
+            except Exception:
+                pass
 
     def _translate_segmented_batches(
         self,
@@ -307,6 +390,7 @@ class SubtitleTranslatorService:
             self.llm,
             translation_context,
         ) as translator:
+
             def process_batch_task(args):
                 """翻译一个已完成 Subtitle segmentation 的 Translation batch。"""
                 batch_index, translation_batch = args
@@ -317,13 +401,19 @@ class SubtitleTranslatorService:
                     total_batches=total_batches,
                 )
 
-                return batch_index, list(translation_batch.segments), batch_translate_result
+                return (
+                    batch_index,
+                    list(translation_batch.segments),
+                    batch_translate_result,
+                )
 
             batch_tasks = list(enumerate(batches))
 
             for i in range(0, len(batch_tasks), concurrency):
-                chunk = batch_tasks[i:i + concurrency]
-                with ThreadPoolExecutor(max_workers=min(len(chunk), concurrency)) as executor:
+                chunk = batch_tasks[i : i + concurrency]
+                with ThreadPoolExecutor(
+                    max_workers=min(len(chunk), concurrency)
+                ) as executor:
                     future_to_batch_index = {
                         executor.submit(process_batch_task, batch_task): batch_task[0]
                         for batch_task in chunk
@@ -334,7 +424,9 @@ class SubtitleTranslatorService:
                         batch_index, segments, translate_result = future.result()
                         chunk_results[batch_index] = (segments, translate_result)
                         completed_batches += 1
-                        self.logger.info(f"📈 翻译进度: {completed_batches}/{len(batch_tasks)}")
+                        self.logger.info(
+                            f"📈 翻译进度: {completed_batches}/{len(batch_tasks)}"
+                        )
                         print(
                             "📈 [bold cyan]批次进度:[/bold cyan] "
                             f"[cyan]{completed_batches}/{len(batch_tasks)}[/cyan] "
@@ -357,7 +449,7 @@ class SubtitleTranslatorService:
         renumbered_results = []
         for idx, result in enumerate(all_translated_results, 1):
             result_copy = result.copy()
-            result_copy['id'] = idx
+            result_copy["id"] = idx
             renumbered_results.append(result_copy)
 
         # 8. 显示优化统计
@@ -369,27 +461,31 @@ class SubtitleTranslatorService:
             stats["wrong_changes"],
             stats["total_changes"],
         )
-        if stats['total_changes'] > 0:
+        if stats["total_changes"] > 0:
             # 先显示详细的优化日志
             if self.config.log_raw_payloads:
                 self._print_optimization_details(batch_logs_all)
 
             # 再显示汇总统计
             print("📊 [bold blue]优化统计:[/bold blue]")
-            if stats['format_changes'] > 0:
+            if stats["format_changes"] > 0:
                 print(f"   格式优化: [cyan]{stats['format_changes']}[/cyan] 项")
-            if stats['content_changes'] > 0:
+            if stats["content_changes"] > 0:
                 print(f"   内容修改: [cyan]{stats['content_changes']}[/cyan] 项")
-            if stats['wrong_changes'] > 0:
+            if stats["wrong_changes"] > 0:
                 print(f"   [yellow]可疑替换: {stats['wrong_changes']} 项[/yellow]")
             print(f"   总计: [cyan]{stats['total_changes']}[/cyan] 项优化")
 
         self.logger.info(f"✅ 字幕处理完成！共 {len(all_segments)} 个句段")
 
-        return sentence_subtitle, renumbered_results, {
-            "✂️ 智能断句": segmentation_time,
-            "🌍 批量翻译": translation_time,
-        }
+        return (
+            sentence_subtitle,
+            renumbered_results,
+            {
+                "✂️ 智能断句": segmentation_time,
+                "🌍 批量翻译": translation_time,
+            },
+        )
 
     def _print_optimization_details(self, batch_logs: list) -> None:
         """打印详细的优化日志"""
@@ -426,8 +522,8 @@ class SubtitleTranslatorService:
                     content_changes += 1
 
         return {
-            'format_changes': format_changes,
-            'content_changes': content_changes,
-            'wrong_changes': wrong_changes,
-            'total_changes': format_changes + content_changes + wrong_changes
+            "format_changes": format_changes,
+            "content_changes": content_changes,
+            "wrong_changes": wrong_changes,
+            "total_changes": format_changes + content_changes + wrong_changes,
         }

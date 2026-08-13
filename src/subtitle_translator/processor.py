@@ -1,6 +1,7 @@
 """
 文件处理模块 - 处理单个文件的核心逻辑
 """
+
 from pathlib import Path
 from typing import List, Optional
 
@@ -46,11 +47,19 @@ def process_batch(
 
         for i, current_input_file in enumerate(files_to_process):
             print()
-            logger.info(f"🎯 处理文件 ({i+1}/{len(files_to_process)}): {current_input_file.name}")
+            logger.info(
+                f"🎯 处理文件 ({i + 1}/{len(files_to_process)}): {current_input_file.name}"
+            )
             if is_batch_mode:
-                print(f"🎯 [bold cyan]开始处理第 {i+1}/{len(files_to_process)} 个文件...[/bold cyan]")
+                print(
+                    f"🎯 [bold cyan]开始翻译第 {i + 1}/{len(files_to_process)} 个文件: "
+                    f"[white]{current_input_file.name}[/white][/bold cyan]"
+                )
             else:
-                print("[bold cyan]🎯 开始处理文件...[/bold cyan]")
+                print(
+                    "[bold cyan]🎯 开始翻译: "
+                    f"[white]{current_input_file.name}[/white][/bold cyan]"
+                )
 
             try:
                 output_files = process_single_file(
@@ -73,13 +82,21 @@ def process_batch(
                 print("[bold green]✅ 处理完成！[/bold green]")
 
             except Exception as e:
-                from .exceptions import SmartSplitError, TranslationError, SubtitleProcessError
+                from .exceptions import (
+                    SmartSplitError,
+                    TranslationError,
+                    SubtitleProcessError,
+                )
 
-                if isinstance(e, (SmartSplitError, TranslationError, SubtitleProcessError)):
+                if isinstance(
+                    e, (SmartSplitError, TranslationError, SubtitleProcessError)
+                ):
                     logger.info(f"❌ {current_input_file.stem} 处理失败: {e}")
                 else:
                     logger.error(f"❌ {current_input_file.stem} 处理失败: {e}")
-                    print(f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]")
+                    print(
+                        f"[bold red]❌ {current_input_file.stem} 处理失败！{e}[/bold red]"
+                    )
 
             print()
     finally:
@@ -91,7 +108,12 @@ def process_batch(
 
 def _handle_translation_error(e: Exception, logger) -> None:
     """统一处理翻译相关异常"""
-    from .exceptions import SmartSplitError, TranslationError, EmptySubtitleError, SubtitleProcessError
+    from .exceptions import (
+        SmartSplitError,
+        TranslationError,
+        EmptySubtitleError,
+        SubtitleProcessError,
+    )
 
     error_types = {
         SmartSplitError: "智能断句失败",
@@ -103,10 +125,10 @@ def _handle_translation_error(e: Exception, logger) -> None:
     for error_type, error_name in error_types.items():
         if isinstance(e, error_type):
             logger.error(f"❌ {error_name}: {e.message}")
-            if hasattr(e, 'suggestion') and e.suggestion:
+            if hasattr(e, "suggestion") and e.suggestion:
                 logger.error(f"{e.suggestion}")
             print(f"[bold red]❌ {error_name}:[/bold red] {e.message}")
-            if hasattr(e, 'suggestion') and e.suggestion:
+            if hasattr(e, "suggestion") and e.suggestion:
                 print(f"[bold yellow]{e.suggestion}[/bold yellow]")
             raise
 
@@ -128,19 +150,14 @@ def process_single_file(
     """处理单个文件的核心逻辑"""
 
     # 只接受 SRT 文件
-    if input_file.suffix.lower() != '.srt':
+    if input_file.suffix.lower() != ".srt":
         logger.error(f"只支持 SRT 字幕文件，当前文件: {input_file.name}")
         print("[bold red]❌ 只支持 SRT 字幕文件![/bold red]")
         print(f"文件 [cyan]{input_file.name}[/cyan] 不是 SRT 格式。")
         raise RuntimeError(f"只支持 SRT 字幕文件，当前文件: {input_file.name}")
 
-    print("[bold yellow]>>> 检测到SRT文件，开始翻译...[/bold yellow]")
     temp_srt_path = input_file
 
-    # --- 翻译阶段 ---
-    logger.info(">>> 开始翻译...")
-    print("[bold green]>>> 开始翻译...[/bold green]")
-    
     # 使用传入的翻译服务或创建新的服务
     service_was_passed = translator_service is not None
     if translator_service is None:
