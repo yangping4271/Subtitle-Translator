@@ -21,7 +21,15 @@ def test_show_model_config_omits_reasoning_for_unregistered_models(capsys):
     assert "推理强度" not in output
 
 
-def test_show_model_config_omits_reasoning_for_openrouter_unregistered(capsys):
+def test_show_model_config_shows_official_provider_disable(capsys):
+    show_model_config("glm-4-flash", "any-model", provider_type="zhipu")
+
+    output = capsys.readouterr().out
+    assert "断句: glm-4-flash (思考模式: 已关闭)" in output
+    assert "翻译: any-model (思考模式: 已关闭)" in output
+
+
+def test_show_model_config_shows_openrouter_provider_disable(capsys):
     show_model_config(
         "qwen/qwen3.6-27b",
         "anthropic/claude-sonnet",
@@ -29,8 +37,8 @@ def test_show_model_config_omits_reasoning_for_openrouter_unregistered(capsys):
     )
 
     output = capsys.readouterr().out
-    assert "思考模式" not in output
-    assert "推理强度" not in output
+    assert "断句: qwen/qwen3.6-27b (思考模式: 已关闭)" in output
+    assert "翻译: anthropic/claude-sonnet (思考模式: 已关闭)" in output
 
 
 def test_show_model_config_omits_reasoning_for_unsupported_model(capsys):

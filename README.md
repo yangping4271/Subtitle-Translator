@@ -77,17 +77,25 @@ LOG_RAW_PAYLOADS=false
 ```
 
 `DISABLE_THINKING` defaults to `true`. Extra reasoning or thinking tokens are
-disabled only for models in an explicit registry:
+disabled in two ways:
 
-- `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` receive
-  `reasoning_effort=none`
-- `deepseek-v4-flash`, `deepseek-v4-pro` receive `thinking.type=disabled`
+- Official provider URLs with a unified switch disable all models:
+  - OpenRouter: `reasoning.effort=none`
+  - DeepSeek, Zhipu, MiniMax: `thinking.type=disabled`
+- Other endpoints, including official OpenAI / Kimi / Google / Groq, only
+  disable registered model names:
+  - `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`,
+    `gpt-oss-120b`, `gpt-oss-20b`, `qwen3-32b` receive `reasoning_effort=none`
+  - `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `glm-5.1`, `glm-5`,
+    `glm-5-turbo`, `glm-4.7`, `glm-4.6`, `glm-4.5`, `kimi-k2.6`, `kimi-k2.5`,
+    `MiniMax-M3` receive `thinking.type=disabled`
+  - `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3-flash-preview`
+    receive Google `thinking_config.thinking_level=minimal`
+  - `gemini-2.5-flash` receives Google `thinking_config.thinking_budget=0`
 
 Vendor prefixes such as `openai/` are ignored, and matching is case-insensitive.
-Unregistered models do not receive disable parameters.
-
-On OpenRouter, a registered model uses that provider's encoding
-(`reasoning.effort=none`) instead of the native fields above. Add new models in
+Models that officially cannot disable thinking (`kimi-k3`, `kimi-k2.7-code`,
+MiniMax M2.x) are left unchanged. Add new models in
 `src/subtitle_translator/translation_core/thinking.py`.
 
 Some providers expose models with mandatory reasoning. Those models reject the

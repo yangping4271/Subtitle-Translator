@@ -249,7 +249,7 @@ def test_deepseek_v4_disables_thinking_by_default():
     )
 
 
-def test_openrouter_does_not_disable_unregistered_models():
+def test_openrouter_disables_reasoning_for_all_models():
     config = SubtitleConfig(
         openai_base_url="https://openrouter.ai/api/v1",
         openai_api_key="test-key",
@@ -266,10 +266,11 @@ def test_openrouter_does_not_disable_unregistered_models():
     create_mock.assert_called_once_with(
         model="google/gemini-3-flash-preview",
         messages=[{"role": "user", "content": "hello"}],
+        extra_body={"reasoning": {"effort": "none"}},
     )
 
 
-def test_openrouter_proxy_does_not_disable_unregistered_models():
+def test_openrouter_proxy_disables_reasoning_for_all_models():
     config = SubtitleConfig(
         openai_base_url="https://ai-proxy.chatwise.app/openrouter/api/v1",
         openai_api_key="test-key",
@@ -286,6 +287,178 @@ def test_openrouter_proxy_does_not_disable_unregistered_models():
     create_mock.assert_called_once_with(
         model="qwen/qwen3.6-27b",
         messages=[{"role": "user", "content": "hello"}],
+        extra_body={"reasoning": {"effort": "none"}},
+    )
+
+
+def test_official_zhipu_disables_thinking_for_all_models():
+    config = SubtitleConfig(
+        openai_base_url="https://open.bigmodel.cn/api/paas/v4/",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="glm-4-flash",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="glm-4-flash",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+
+def test_official_minimax_disables_thinking_for_all_models():
+    config = SubtitleConfig(
+        openai_base_url="https://api.minimax.io/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="MiniMax-M3",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="MiniMax-M3",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+
+def test_official_kimi_only_disables_registered_models():
+    config = SubtitleConfig(
+        openai_base_url="https://api.moonshot.cn/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="kimi-k2.6",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    create_mock.assert_called_once_with(
+        model="kimi-k2.6",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+    create_mock.reset_mock()
+    client.create_chat_completion(
+        model="kimi-k3",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    create_mock.assert_called_once_with(
+        model="kimi-k3",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+
+def test_official_google_disables_registered_gemini():
+    config = SubtitleConfig(
+        openai_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="gemini-3.6-flash",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="gemini-3.6-flash",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={
+            "extra_body": {
+                "google": {
+                    "thinking_config": {
+                        "thinking_level": "minimal",
+                    }
+                }
+            }
+        },
+    )
+
+    create_mock.reset_mock()
+    client.create_chat_completion(
+        model="gemini-2.5-flash",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    create_mock.assert_called_once_with(
+        model="gemini-2.5-flash",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={
+            "extra_body": {
+                "google": {
+                    "thinking_config": {
+                        "thinking_budget": 0,
+                    }
+                }
+            }
+        },
+    )
+
+
+def test_official_groq_only_disables_registered_models():
+    config = SubtitleConfig(
+        openai_base_url="https://api.groq.com/openai/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="openai/gpt-oss-120b",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    create_mock.assert_called_once_with(
+        model="openai/gpt-oss-120b",
+        messages=[{"role": "user", "content": "hello"}],
+        reasoning_effort="none",
+    )
+
+    create_mock.reset_mock()
+    client.create_chat_completion(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    create_mock.assert_called_once_with(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+
+def test_custom_endpoint_glm_uses_registry():
+    config = SubtitleConfig(
+        openai_base_url="https://example.com/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="glm-5.2",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="glm-5.2",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={"thinking": {"type": "disabled"}},
     )
 
 
@@ -437,9 +610,30 @@ def test_unregistered_future_gpt_model_does_not_receive_reasoning_effort():
     )
 
 
-def test_unregistered_deepseek_v4_variant_does_not_receive_thinking_param():
+def test_official_deepseek_disables_thinking_for_all_models():
     config = SubtitleConfig(
         openai_base_url="https://api.deepseek.com",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="deepseek-v4-other",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="deepseek-v4-other",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+
+def test_custom_endpoint_unregistered_deepseek_variant_is_unchanged():
+    config = SubtitleConfig(
+        openai_base_url="https://example.com/v1",
         openai_api_key="test-key",
     )
     client = LLMClient(config)

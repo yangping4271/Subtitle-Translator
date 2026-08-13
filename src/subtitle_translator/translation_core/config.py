@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 # 语言代码映射表
 LANGUAGE_MAPPING = {
     "zh": "简体中文",
-    "zh-cn": "简体中文", 
+    "zh-cn": "简体中文",
     "zh-tw": "繁体中文",
     "ja": "日文",
     "japanese": "日文",
@@ -35,6 +35,7 @@ LANGUAGE_MAPPING = {
     "vietnamese": "越南文",
 }
 
+
 def get_target_language(lang_code: str) -> str:
     """将语言代码转换为目标语言名称"""
     if not lang_code or not isinstance(lang_code, str):
@@ -53,7 +54,7 @@ def _build_language_error(lang_code: str) -> str:
         "中文": ["zh", "zh-cn", "zh-tw"],
         "亚洲语言": ["ja", "ko", "th", "vi"],
         "欧洲语言": ["en", "fr", "de", "es", "pt", "it", "ru"],
-        "其他语言": ["ar"]
+        "其他语言": ["ar"],
     }
 
     error_msg = f"❌ 不支持的语言代码: '{lang_code}'\n\n🌍 支持的语言代码:\n"
@@ -66,19 +67,32 @@ def _build_language_error(lang_code: str) -> str:
                 error_msg += f"   {code:6} -> {lang_name}\n"
 
     suggestions = {
-        "jp": ["ja"], "kr": ["ko"], "cn": ["zh", "zh-cn"],
-        "chinese": ["zh", "zh-cn"], "japanese": ["ja"], "korean": ["ko"],
-        "english": ["en"], "french": ["fr"], "german": ["de"],
-        "spanish": ["es"], "portuguese": ["pt"], "russian": ["ru"],
-        "italian": ["it"], "arabic": ["ar"], "thai": ["th"],
+        "jp": ["ja"],
+        "kr": ["ko"],
+        "cn": ["zh", "zh-cn"],
+        "chinese": ["zh", "zh-cn"],
+        "japanese": ["ja"],
+        "korean": ["ko"],
+        "english": ["en"],
+        "french": ["fr"],
+        "german": ["de"],
+        "spanish": ["es"],
+        "portuguese": ["pt"],
+        "russian": ["ru"],
+        "italian": ["it"],
+        "arabic": ["ar"],
+        "thai": ["th"],
         "vietnamese": ["vi"],
     }
 
     similar_codes = suggestions.get(lang_code, [])
     if not similar_codes:
         for supported_code in LANGUAGE_MAPPING.keys():
-            if (lang_code in supported_code or supported_code in lang_code or
-                abs(len(lang_code) - len(supported_code)) <= 1):
+            if (
+                lang_code in supported_code
+                or supported_code in lang_code
+                or abs(len(lang_code) - len(supported_code)) <= 1
+            ):
                 similar_codes.append(supported_code)
 
     if similar_codes:
@@ -91,9 +105,13 @@ def _build_language_error(lang_code: str) -> str:
 def validate_api_configuration(base_url: str, api_key: str) -> None:
     """验证仅支持远程 API 的 LLM 配置。"""
     if not base_url:
-        raise ValueError("缺少必需的环境变量: OPENAI_BASE_URL。请运行 'translate init' 初始化配置。")
+        raise ValueError(
+            "缺少必需的环境变量: OPENAI_BASE_URL。请运行 'translate init' 初始化配置。"
+        )
     if not api_key:
-        raise ValueError("缺少必需的环境变量: OPENAI_API_KEY。请运行 'translate init' 初始化配置。")
+        raise ValueError(
+            "缺少必需的环境变量: OPENAI_API_KEY。请运行 'translate init' 初始化配置。"
+        )
 
     hostname = (urlparse(base_url).hostname or "").rstrip(".").lower()
     if hostname == "localhost":
@@ -108,9 +126,11 @@ def validate_api_configuration(base_url: str, api_key: str) -> None:
     if address.is_loopback or (mapped_address and mapped_address.is_loopback):
         raise ValueError("不支持本地模型服务；请配置远程 OpenAI-compatible API 端点。")
 
+
 @dataclass
 class SubtitleConfig:
     """字幕处理配置类"""
+
     openai_base_url: str = ""
     openai_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
@@ -142,9 +162,7 @@ class SubtitleConfig:
         parsed = urlparse(self.openai_base_url)
         hostname = (parsed.hostname or "").lower()
         path_parts = {
-            part.strip().lower()
-            for part in parsed.path.split("/")
-            if part.strip()
+            part.strip().lower() for part in parsed.path.split("/") if part.strip()
         }
         if hostname.endswith("deepseek.com") or "deepseek" in path_parts:
             return "deepseek"
@@ -154,6 +172,18 @@ class SubtitleConfig:
             "dashscope" in hostname or "compatible-mode" in path_parts
         ):
             return "dashscope"
+        if hostname.endswith("bigmodel.cn"):
+            return "zhipu"
+        if hostname.endswith(("moonshot.cn", "moonshot.ai", "kimi.com", "kimi.ai")):
+            return "kimi"
+        if hostname.endswith(("minimax.io", "minimaxi.com")):
+            return "minimax"
+        if hostname.endswith("groq.com"):
+            return "groq"
+        if hostname.endswith("googleapis.com") and (
+            "generativelanguage" in hostname or "generativelanguage" in path_parts
+        ):
+            return "google"
         if hostname == "api.openai.com":
             return "openai"
         return "custom"
