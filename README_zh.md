@@ -78,14 +78,16 @@ LOG_RAW_PAYLOADS=false
 
 - 能识别官方网址、且该供应商有统一关闭参数时，对所有模型关闭：
   - OpenRouter：`reasoning.effort=none`
-  - DeepSeek、智谱、MiniMax：`thinking.type=disabled`
-- 其他端点（包括 OpenAI / Kimi / Google / Groq 官方）只对已登记的模型名关闭：
-  - `gpt-5.6`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`gpt-oss-120b`、`gpt-oss-20b`、`qwen3-32b` 发送 `reasoning_effort=none`
-  - `deepseek-v4-flash`、`deepseek-v4-pro`、`glm-5.2`、`glm-5.1`、`glm-5`、`glm-5-turbo`、`glm-4.7`、`glm-4.6`、`glm-4.5`、`kimi-k2.6`、`kimi-k2.5`、`MiniMax-M3` 发送 `thinking.type=disabled`
+  - DeepSeek、智谱、MiniMax、火山引擎：`thinking.type=disabled`
+  - 阿里云 DashScope：`enable_thinking=false`
+- 其他端点（包括 OpenAI / Kimi / Google / Groq / Anthropic / xAI 官方）只对已登记的模型名关闭：
+  - `gpt-5.6`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`grok-4.3`、`grok-4.3-latest` 发送 `reasoning_effort=none`
+  - `deepseek-v4-flash`、`deepseek-v4-pro`、`glm-5.2`、`glm-5.1`、`glm-5`、`glm-5-turbo`、`glm-4.7`、`glm-4.6`、`glm-4.5`、`kimi-k2.6`、`kimi-k2.5`、`MiniMax-M3`、`claude-sonnet-5`、`claude-opus-5`、`claude-haiku-4-5`、`claude-sonnet-4-6`、`claude-opus-4-6`、`claude-sonnet-4-5`、`claude-opus-4-5`、`claude-opus-4-8`、`claude-opus-4-7`、`doubao-seed-1-6`、`doubao-seed-1-8`、`doubao-seed-2-0` 发送 `thinking.type=disabled`
+  - `qwen-plus`、`qwen-turbo`、`qwen-flash`、`qwen-max`、`qwen3-max`、`qwen3.5-plus`、`qwen3.5-flash`、`qwen3.6-plus`、`qwen3.6-flash`、`qwen3.7-plus`、`qwen3.7-max` 发送 `enable_thinking=false`
   - `gemini-3.6-flash`、`gemini-3.5-flash`、`gemini-3-flash-preview` 发送 Google `thinking_config.thinking_level=minimal`
   - `gemini-2.5-flash` 发送 Google `thinking_config.thinking_budget=0`
 
-匹配时会去掉 `openai/` 这类 vendor 前缀，且大小写不敏感。官方不允许关闭思考的模型（`kimi-k3`、`kimi-k2.7-code`、MiniMax M2.x）不会附加关闭参数。新增模型请改 `src/subtitle_translator/translation_core/thinking.py`。
+匹配时会去掉 `openai/` 这类 vendor 前缀，且大小写不敏感。官方不允许关闭思考的模型（`kimi-k3`、`kimi-k2.7-code`、MiniMax M2.x、`claude-fable-5`、`claude-mythos-5`、`grok-4.5`、`grok-4.6`、`qwq-plus`）不会附加关闭参数。新增模型请改 `src/subtitle_translator/translation_core/thinking.py`。
 
 部分供应商的强制推理模型不接受关闭参数，此时 API 会拒绝请求；请改用支持非推理模式的模型。
 

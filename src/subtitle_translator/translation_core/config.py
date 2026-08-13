@@ -184,6 +184,12 @@ class SubtitleConfig:
             "generativelanguage" in hostname or "generativelanguage" in path_parts
         ):
             return "google"
+        if hostname.endswith("anthropic.com"):
+            return "anthropic"
+        if hostname.endswith("x.ai"):
+            return "xai"
+        if hostname.endswith(("volces.com", "bytepluses.com")):
+            return "volcengine"
         if hostname == "api.openai.com":
             return "openai"
         return "custom"

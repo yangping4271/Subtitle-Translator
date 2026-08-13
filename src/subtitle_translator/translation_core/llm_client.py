@@ -326,6 +326,8 @@ class LLMClient:
             reasoning_state = "thinking-disabled"
         elif extra_body.get("reasoning") == {"effort": "none"}:
             reasoning_state = "openrouter-none"
+        elif extra_body.get("enable_thinking") is False:
+            reasoning_state = "enable-thinking-false"
         elif isinstance(extra_body.get("extra_body"), dict) and extra_body[
             "extra_body"
         ].get("google", {}).get("thinking_config"):

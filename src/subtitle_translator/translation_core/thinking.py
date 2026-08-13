@@ -22,6 +22,7 @@ class ThinkingDisableMethod(str, Enum):
     OPENROUTER_REASONING = "openrouter_reasoning"
     GOOGLE_THINKING_LEVEL = "google_thinking_level"
     GOOGLE_THINKING_BUDGET = "google_thinking_budget"
+    ENABLE_THINKING_FALSE = "enable_thinking_false"
 
 
 @dataclass(frozen=True)
@@ -33,12 +34,14 @@ class ThinkingDisableSpec:
 
 
 # 官方网址可识别、且有统一关闭参数的供应商。
-# OpenAI / Kimi / Google / Groq 没有对所有模型都安全的关闭开关。
+# OpenAI / Kimi / Google / Groq / Anthropic / xAI 没有对所有模型都安全的关闭开关。
 PROVIDER_THINKING_DISABLE: dict[str, ThinkingDisableMethod] = {
     "openrouter": ThinkingDisableMethod.OPENROUTER_REASONING,
     "deepseek": ThinkingDisableMethod.THINKING_TYPE_DISABLED,
     "zhipu": ThinkingDisableMethod.THINKING_TYPE_DISABLED,
     "minimax": ThinkingDisableMethod.THINKING_TYPE_DISABLED,
+    "dashscope": ThinkingDisableMethod.ENABLE_THINKING_FALSE,
+    "volcengine": ThinkingDisableMethod.THINKING_TYPE_DISABLED,
 }
 
 
@@ -64,6 +67,10 @@ def _google_thinking_level() -> ThinkingDisableSpec:
 
 def _google_thinking_budget() -> ThinkingDisableSpec:
     return ThinkingDisableSpec(ThinkingDisableMethod.GOOGLE_THINKING_BUDGET)
+
+
+def _enable_thinking_false() -> ThinkingDisableSpec:
+    return ThinkingDisableSpec(ThinkingDisableMethod.ENABLE_THINKING_FALSE)
 
 
 # 在这里追加新模型即可。
@@ -95,10 +102,35 @@ THINKING_DISABLE_MODELS: dict[str, ThinkingDisableSpec] = {
     "gemini-3.5-flash": _google_thinking_level(),
     "gemini-3-flash-preview": _google_thinking_level(),
     "gemini-2.5-flash": _google_thinking_budget(),
-    # Groq 上常见的可关推理模型
-    "gpt-oss-120b": _openai_none(),
-    "gpt-oss-20b": _openai_none(),
-    "qwen3-32b": _openai_none(),
+    # Anthropic：Fable / Mythos 官方不允许关闭思考
+    "claude-sonnet-5": _thinking_disabled(),
+    "claude-opus-5": _thinking_disabled(),
+    "claude-haiku-4-5": _thinking_disabled(),
+    "claude-sonnet-4-6": _thinking_disabled(),
+    "claude-opus-4-6": _thinking_disabled(),
+    "claude-sonnet-4-5": _thinking_disabled(),
+    "claude-opus-4-5": _thinking_disabled(),
+    "claude-opus-4-8": _thinking_disabled(),
+    "claude-opus-4-7": _thinking_disabled(),
+    # xAI：grok-4.5 / grok-4.6 官方不能关思考
+    "grok-4.3": _openai_none(),
+    "grok-4.3-latest": _openai_none(),
+    # 千问主流混合思考模型
+    "qwen-plus": _enable_thinking_false(),
+    "qwen-turbo": _enable_thinking_false(),
+    "qwen-flash": _enable_thinking_false(),
+    "qwen-max": _enable_thinking_false(),
+    "qwen3-max": _enable_thinking_false(),
+    "qwen3.5-plus": _enable_thinking_false(),
+    "qwen3.5-flash": _enable_thinking_false(),
+    "qwen3.6-plus": _enable_thinking_false(),
+    "qwen3.6-flash": _enable_thinking_false(),
+    "qwen3.7-plus": _enable_thinking_false(),
+    "qwen3.7-max": _enable_thinking_false(),
+    # 豆包主流 Seed
+    "doubao-seed-1-6": _thinking_disabled(),
+    "doubao-seed-1-8": _thinking_disabled(),
+    "doubao-seed-2-0": _thinking_disabled(),
 }
 
 
@@ -149,4 +181,6 @@ def encode_thinking_extra_body(
                 }
             }
         }
+    elif method is ThinkingDisableMethod.ENABLE_THINKING_FALSE:
+        encoded["enable_thinking"] = False
     return encoded

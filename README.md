@@ -81,21 +81,30 @@ disabled in two ways:
 
 - Official provider URLs with a unified switch disable all models:
   - OpenRouter: `reasoning.effort=none`
-  - DeepSeek, Zhipu, MiniMax: `thinking.type=disabled`
-- Other endpoints, including official OpenAI / Kimi / Google / Groq, only
-  disable registered model names:
-  - `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`,
-    `gpt-oss-120b`, `gpt-oss-20b`, `qwen3-32b` receive `reasoning_effort=none`
+  - DeepSeek, Zhipu, MiniMax, Volcengine: `thinking.type=disabled`
+  - DashScope: `enable_thinking=false`
+- Other endpoints, including official OpenAI / Kimi / Google / Groq /
+  Anthropic / xAI, only disable registered model names:
+  - `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `grok-4.3`,
+    `grok-4.3-latest` receive `reasoning_effort=none`
   - `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `glm-5.1`, `glm-5`,
     `glm-5-turbo`, `glm-4.7`, `glm-4.6`, `glm-4.5`, `kimi-k2.6`, `kimi-k2.5`,
-    `MiniMax-M3` receive `thinking.type=disabled`
+    `MiniMax-M3`, `claude-sonnet-5`, `claude-opus-5`, `claude-haiku-4-5`,
+    `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-sonnet-4-5`,
+    `claude-opus-4-5`, `claude-opus-4-8`, `claude-opus-4-7`,
+    `doubao-seed-1-6`, `doubao-seed-1-8`, `doubao-seed-2-0` receive
+    `thinking.type=disabled`
+  - `qwen-plus`, `qwen-turbo`, `qwen-flash`, `qwen-max`, `qwen3-max`,
+    `qwen3.5-plus`, `qwen3.5-flash`, `qwen3.6-plus`, `qwen3.6-flash`,
+    `qwen3.7-plus`, `qwen3.7-max` receive `enable_thinking=false`
   - `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3-flash-preview`
     receive Google `thinking_config.thinking_level=minimal`
   - `gemini-2.5-flash` receives Google `thinking_config.thinking_budget=0`
 
 Vendor prefixes such as `openai/` are ignored, and matching is case-insensitive.
 Models that officially cannot disable thinking (`kimi-k3`, `kimi-k2.7-code`,
-MiniMax M2.x) are left unchanged. Add new models in
+MiniMax M2.x, `claude-fable-5`, `claude-mythos-5`, `grok-4.5`, `grok-4.6`,
+`qwq-plus`) are left unchanged. Add new models in
 `src/subtitle_translator/translation_core/thinking.py`.
 
 Some providers expose models with mandatory reasoning. Those models reject the

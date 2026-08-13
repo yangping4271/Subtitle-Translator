@@ -179,6 +179,30 @@ def test_config_detects_provider_type_from_base_url():
     )
     assert (
         SubtitleConfig(
+            openai_base_url="https://api.anthropic.com/v1/",
+        ).provider_type()
+        == "anthropic"
+    )
+    assert (
+        SubtitleConfig(
+            openai_base_url="https://api.x.ai/v1",
+        ).provider_type()
+        == "xai"
+    )
+    assert (
+        SubtitleConfig(
+            openai_base_url="https://ark.cn-beijing.volces.com/api/v3",
+        ).provider_type()
+        == "volcengine"
+    )
+    assert (
+        SubtitleConfig(
+            openai_base_url="https://ark.ap-southeast.bytepluses.com/api/v3",
+        ).provider_type()
+        == "volcengine"
+    )
+    assert (
+        SubtitleConfig(
             openai_base_url="https://example.com/v1",
         ).provider_type()
         == "custom"

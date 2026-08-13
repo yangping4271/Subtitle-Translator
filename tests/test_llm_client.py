@@ -411,7 +411,7 @@ def test_official_google_disables_registered_gemini():
     )
 
 
-def test_official_groq_only_disables_registered_models():
+def test_official_groq_does_not_disable_thinking():
     config = SubtitleConfig(
         openai_base_url="https://api.groq.com/openai/v1",
         openai_api_key="test-key",
@@ -427,7 +427,6 @@ def test_official_groq_only_disables_registered_models():
     create_mock.assert_called_once_with(
         model="openai/gpt-oss-120b",
         messages=[{"role": "user", "content": "hello"}],
-        reasoning_effort="none",
     )
 
     create_mock.reset_mock()
@@ -462,9 +461,111 @@ def test_custom_endpoint_glm_uses_registry():
     )
 
 
-def test_dashscope_does_not_get_provider_level_thinking_disable():
+def test_official_dashscope_disables_thinking_for_all_models():
     config = SubtitleConfig(
         openai_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="qwen-vl-plus",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="qwen-vl-plus",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={"enable_thinking": False},
+    )
+
+
+def test_official_volcengine_disables_thinking_for_all_models():
+    config = SubtitleConfig(
+        openai_base_url="https://ark.cn-beijing.volces.com/api/v3",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="ep-unregistered",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="ep-unregistered",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+
+def test_official_anthropic_only_disables_registered_models():
+    config = SubtitleConfig(
+        openai_base_url="https://api.anthropic.com/v1/",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="claude-sonnet-5",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    create_mock.assert_called_once_with(
+        model="claude-sonnet-5",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+    create_mock.reset_mock()
+    client.create_chat_completion(
+        model="claude-fable-5",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    create_mock.assert_called_once_with(
+        model="claude-fable-5",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+
+def test_official_xai_only_disables_registered_models():
+    config = SubtitleConfig(
+        openai_base_url="https://api.x.ai/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="grok-4.3",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    create_mock.assert_called_once_with(
+        model="grok-4.3",
+        messages=[{"role": "user", "content": "hello"}],
+        reasoning_effort="none",
+    )
+
+    create_mock.reset_mock()
+    client.create_chat_completion(
+        model="grok-4.6",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+    create_mock.assert_called_once_with(
+        model="grok-4.6",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+
+def test_custom_endpoint_qwen_uses_registry():
+    config = SubtitleConfig(
+        openai_base_url="https://example.com/v1",
         openai_api_key="test-key",
     )
     client = LLMClient(config)
@@ -479,6 +580,7 @@ def test_dashscope_does_not_get_provider_level_thinking_disable():
     create_mock.assert_called_once_with(
         model="qwen-plus",
         messages=[{"role": "user", "content": "hello"}],
+        extra_body={"enable_thinking": False},
     )
 
 
