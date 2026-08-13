@@ -6,22 +6,22 @@ from subtitle_translator.console_views import (
 
 
 def test_show_model_config_shows_reasoning_disabled(capsys):
-    show_model_config("gpt-5.6-luna", "openai/gpt-6")
+    show_model_config("gpt-5.6-luna", "openai/gpt-5.6-sol")
 
     output = capsys.readouterr().out
     assert "断句: gpt-5.6-luna (思考模式: 已关闭)" in output
-    assert "翻译: openai/gpt-6 (思考模式: 已关闭)" in output
+    assert "翻译: openai/gpt-5.6-sol (思考模式: 已关闭)" in output
 
 
-def test_show_model_config_explains_original_gpt_5_limit(capsys):
-    show_model_config("gpt-5", "gpt-5-mini")
+def test_show_model_config_omits_reasoning_for_unregistered_models(capsys):
+    show_model_config("gpt-5", "gpt-5.1")
 
     output = capsys.readouterr().out
-    assert "断句: gpt-5 (推理强度: minimal，模型不支持关闭)" in output
-    assert "翻译: gpt-5-mini (推理强度: minimal，模型不支持关闭)" in output
+    assert "思考模式" not in output
+    assert "推理强度" not in output
 
 
-def test_show_model_config_shows_provider_level_disable(capsys):
+def test_show_model_config_omits_reasoning_for_openrouter_unregistered(capsys):
     show_model_config(
         "qwen/qwen3.6-27b",
         "anthropic/claude-sonnet",
@@ -29,8 +29,8 @@ def test_show_model_config_shows_provider_level_disable(capsys):
     )
 
     output = capsys.readouterr().out
-    assert "断句: qwen/qwen3.6-27b (思考模式: 已关闭)" in output
-    assert "翻译: anthropic/claude-sonnet (思考模式: 已关闭)" in output
+    assert "思考模式" not in output
+    assert "推理强度" not in output
 
 
 def test_show_model_config_omits_reasoning_for_unsupported_model(capsys):
@@ -38,6 +38,7 @@ def test_show_model_config_omits_reasoning_for_unsupported_model(capsys):
 
     output = capsys.readouterr().out
     assert "推理强度" not in output
+    assert "思考模式" not in output
 
 
 def test_show_api_performance_stats_uses_merged_request_view(capsys):

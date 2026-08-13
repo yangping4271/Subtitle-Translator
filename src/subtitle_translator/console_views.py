@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich import box
 
 from .file_discovery import get_file_type_info, format_file_size
-from .translation_core.llm_client import get_reasoning_effort
+from .translation_core.thinking import thinking_disable_applies
 
 
 def show_api_config(base_url: str, api_key: str) -> None:
@@ -39,22 +39,14 @@ def show_model_config(
 ) -> None:
     """显示模型配置信息"""
     print("[bold blue]🤖 模型配置:[/bold blue]")
-    split_effort = get_reasoning_effort(split_model)
-    translation_effort = get_reasoning_effort(translation_model)
 
-    def format_reasoning(model: str, effort: Optional[str]) -> str:
-        provider_disables_thinking = provider_type in {
-            "openrouter",
-            "dashscope",
-        } or model.lower().rsplit("/", 1)[-1].startswith("deepseek-v4-")
-        if disable_thinking and (effort == "none" or provider_disables_thinking):
+    def format_reasoning(model: str) -> str:
+        if disable_thinking and thinking_disable_applies(model, provider_type):
             return " [dim](思考模式: 已关闭)[/dim]"
-        if disable_thinking and effort:
-            return f" [dim](推理强度: {effort}，模型不支持关闭)[/dim]"
         return ""
 
-    split_reasoning = format_reasoning(split_model, split_effort)
-    translation_reasoning = format_reasoning(translation_model, translation_effort)
+    split_reasoning = format_reasoning(split_model)
+    translation_reasoning = format_reasoning(translation_model)
     print(f"   断句: [cyan]{split_model}[/cyan]{split_reasoning}")
     print(f"   翻译: [cyan]{translation_model}[/cyan]{translation_reasoning}")
 

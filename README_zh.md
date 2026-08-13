@@ -74,13 +74,14 @@ DISABLE_THINKING=true
 LOG_RAW_PAYLOADS=false
 ```
 
-`DISABLE_THINKING` 默认为 `true`。项目会尽可能关闭额外的推理/思考 token：
+`DISABLE_THINKING` 默认为 `true`。额外的推理/思考 token 只对明确登记的模型关闭：
 
-- OpenAI GPT-5.1 及后续非 Pro 模型发送 `reasoning_effort=none`
-- OpenRouter 发送 `reasoning.effort=none`
-- DeepSeek V4 发送 `thinking.type=disabled`
-- 阿里云 Model Studio/DashScope 发送 `enable_thinking=false`（MiniMax 模型发送 `thinking.type=disabled`）
-- 原始 GPT-5 不支持完全关闭，只能使用最低的 `minimal`；需要彻底关闭时请改用 GPT-5.1 或更新的非 Pro 模型
+- `gpt-5.6`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna` 发送 `reasoning_effort=none`
+- `deepseek-v4-flash`、`deepseek-v4-pro` 发送 `thinking.type=disabled`
+
+匹配时会去掉 `openai/` 这类 vendor 前缀，且大小写不敏感。未登记模型不会附加关闭参数。
+
+在 OpenRouter 上，已登记模型改用该供应商编码（`reasoning.effort=none`），而不是上面的原生字段。新增模型请改 `src/subtitle_translator/translation_core/thinking.py`。
 
 部分供应商的强制推理模型不接受关闭参数，此时 API 会拒绝请求；请改用支持非推理模式的模型。
 

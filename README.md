@@ -76,17 +76,19 @@ DISABLE_THINKING=true
 LOG_RAW_PAYLOADS=false
 ```
 
-`DISABLE_THINKING` defaults to `true`. The project disables additional reasoning
-or thinking tokens whenever the provider supports it:
+`DISABLE_THINKING` defaults to `true`. Extra reasoning or thinking tokens are
+disabled only for models in an explicit registry:
 
-- OpenAI GPT-5.1 and later non-Pro models receive `reasoning_effort=none`
-- OpenRouter receives `reasoning.effort=none`
-- DeepSeek V4 receives `thinking.type=disabled`
-- Alibaba Cloud Model Studio/DashScope receives `enable_thinking=false`
-  (MiniMax models receive `thinking.type=disabled`)
-- The original GPT-5 does not support fully disabling reasoning, so it uses the
-  lowest supported setting, `minimal`; use GPT-5.1 or a later non-Pro model when
-  reasoning must be completely disabled
+- `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` receive
+  `reasoning_effort=none`
+- `deepseek-v4-flash`, `deepseek-v4-pro` receive `thinking.type=disabled`
+
+Vendor prefixes such as `openai/` are ignored, and matching is case-insensitive.
+Unregistered models do not receive disable parameters.
+
+On OpenRouter, a registered model uses that provider's encoding
+(`reasoning.effort=none`) instead of the native fields above. Add new models in
+`src/subtitle_translator/translation_core/thinking.py`.
 
 Some providers expose models with mandatory reasoning. Those models reject the
 disable parameter; select a model with a non-reasoning mode instead.

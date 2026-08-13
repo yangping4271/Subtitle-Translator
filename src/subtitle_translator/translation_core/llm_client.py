@@ -14,6 +14,11 @@ from rich.markup import escape
 
 from ..logger import setup_logger
 from .config import SubtitleConfig, validate_api_configuration
+from .thinking import (
+    ThinkingDisableMethod,
+    ThinkingDisableSpec,
+    get_thinking_disable_spec,
+)
 
 logger = setup_logger("llm_client")
 
@@ -241,22 +246,12 @@ class ModelAdapter(Protocol):
 
 
 def get_reasoning_effort(model: str) -> Optional[str]:
-    """返回字幕任务可用的最低推理强度；优先彻底关闭推理。"""
-    normalized_model = model.lower().rsplit("/", 1)[-1]
-    if re.search(r"(?:^|-)pro(?:-|$)", normalized_model):
+    """返回已登记 GPT 模型的关闭推理档位；未登记或非 GPT 方式则返回 None。"""
+    spec = get_thinking_disable_spec(model)
+    if spec is None:
         return None
-
-    version_match = re.match(r"^gpt-(\d+)(?:\.(\d+))?(?:-|$)", normalized_model)
-    if not version_match:
-        return None
-
-    major = int(version_match.group(1))
-    minor = int(version_match.group(2) or 0)
-    if major > 5 or (major == 5 and minor >= 1):
-        return "none"
-    if major == 5:
-        # 原始 GPT-5 系列不支持 none，minimal 是其官方最低档。
-        return "minimal"
+    if spec.method is ThinkingDisableMethod.OPENAI_REASONING_EFFORT:
+        return spec.reasoning_effort
     return None
 
 
@@ -280,51 +275,44 @@ class LLMClient:
         self._reported_reasoning_models: set[str] = set()
 
     def _get_reasoning_effort(self, model: str) -> Optional[str]:
-        """获取模型支持的关闭或最低推理强度。"""
+        """获取已登记模型支持的关闭推理档位。"""
         return get_reasoning_effort(model)
 
-    def _build_extra_body(self, kwargs: dict) -> dict:
-        """构建供应商扩展参数，并强制执行禁用思考策略。"""
+    def _build_extra_body(
+        self,
+        kwargs: dict,
+        spec: Optional[ThinkingDisableSpec],
+    ) -> dict:
+        """仅对登记模型编码关闭思考参数；OpenRouter 使用其供应商字段。"""
         extra_body = dict(kwargs.get("extra_body") or {})
-        if not self.config.disable_thinking:
+        if not self.config.disable_thinking or spec is None:
             return extra_body
-
-        model = str(kwargs.get("model") or "")
-        model_name = model.lower().rsplit("/", 1)[-1]
-
-        if self._provider_type not in {
-            "openrouter",
-            "dashscope",
-        } and model_name.startswith("deepseek-v4-"):
-            extra_body["thinking"] = {"type": "disabled"}
 
         if self._provider_type == "openrouter":
             extra_body["reasoning"] = {"effort": "none"}
+            return extra_body
 
-        if self._provider_type == "dashscope":
-            if model_name.startswith("minimax"):
-                extra_body["thinking"] = {"type": "disabled"}
-            else:
-                extra_body["enable_thinking"] = False
+        if spec.method is ThinkingDisableMethod.DEEPSEEK_THINKING:
+            extra_body["thinking"] = {"type": "disabled"}
 
         return extra_body
 
     def _apply_reasoning_options(self, kwargs: dict) -> dict:
-        """为已知供应商追加关闭思考参数。"""
+        """仅为登记模型追加关闭思考参数。"""
         request = dict(kwargs)
         model = str(request.get("model") or "")
+        spec = get_thinking_disable_spec(model)
 
-        extra_body = self._build_extra_body(request)
+        extra_body = self._build_extra_body(request, spec)
         if extra_body:
             request["extra_body"] = extra_body
 
         reasoning_effort = None
         if self.config.disable_thinking:
-            # OpenRouter / DashScope 使用各自扩展参数。
-            # reasoning_effort 只发给明确的 GPT 模型名；未知模型不强塞。
             request.pop("reasoning_effort", None)
-            reasoning_effort = self._get_reasoning_effort(model)
-        if reasoning_effort and self._provider_type not in {"openrouter", "dashscope"}:
+            if spec is not None and self._provider_type != "openrouter":
+                reasoning_effort = self._get_reasoning_effort(model)
+        if reasoning_effort:
             request["reasoning_effort"] = reasoning_effort
 
         reasoning_state = "default"
@@ -332,12 +320,7 @@ class LLMClient:
             reasoning_state = "thinking-disabled"
         elif extra_body.get("reasoning") == {"effort": "none"}:
             reasoning_state = "openrouter-none"
-        elif extra_body.get("enable_thinking") is False:
-            reasoning_state = "dashscope-disabled"
-        elif reasoning_effort and self._provider_type not in {
-            "openrouter",
-            "dashscope",
-        }:
+        elif reasoning_effort:
             reasoning_state = f"openai-{reasoning_effort}"
 
         response_format = request.get("response_format")
