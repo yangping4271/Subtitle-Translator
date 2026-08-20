@@ -66,6 +66,15 @@ def test_registered_mainstream_models_use_expected_methods():
     assert spec is not None
     assert spec.method is ThinkingDisableMethod.ENABLE_THINKING_FALSE
 
+    for model in (
+        "qwen3-32b",
+        "unsloth/Qwen3.8-27B-GGUF",
+        "Qwen3.8-27B-UD-Q3_K_XL",
+    ):
+        spec = get_thinking_disable_spec(model)
+        assert spec is not None
+        assert spec.method is ThinkingDisableMethod.ENABLE_THINKING_FALSE
+
     spec = get_thinking_disable_spec("doubao-seed-1-6")
     assert spec is not None
     assert spec.method is ThinkingDisableMethod.THINKING_TYPE_DISABLED
@@ -81,7 +90,7 @@ def test_models_that_cannot_disable_thinking_are_not_registered():
     assert get_thinking_disable_spec("grok-4.5") is None
     assert get_thinking_disable_spec("qwq-plus") is None
     assert get_thinking_disable_spec("gpt-oss-120b") is None
-    assert get_thinking_disable_spec("qwen3-32b") is None
+    assert get_thinking_disable_spec("qwen2.5-7b") is None
 
 
 def test_unregistered_models_are_not_in_the_table():
@@ -103,6 +112,8 @@ def test_thinking_disable_applies_registry_or_official_providers():
     assert thinking_disable_applies("any-model", "dashscope")
     assert thinking_disable_applies("any-model", "volcengine")
     assert thinking_disable_applies("qwen-plus")
+    assert thinking_disable_applies("Qwen3.8-27B-UD-Q3_K_XL")
+    assert thinking_disable_applies("unsloth/Qwen3.8-27B-GGUF", "custom")
     assert not thinking_disable_applies("gpt-5.1", "openai")
     assert not thinking_disable_applies("kimi-k3", "kimi")
     assert not thinking_disable_applies("llama-3.3-70b", "groq")

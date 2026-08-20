@@ -7,7 +7,7 @@ A command-line tool for translating English `.srt` subtitles into other language
 ## Highlights
 
 - Translate English subtitles into Chinese, Japanese, Korean, French, and more
-- Generate translated `.srt` and bilingual `.ass` output
+- Generate bilingual `.ass` output and optionally keep intermediate `.srt` files
 - Work with remote OpenAI-compatible APIs
 - Support extra context via `context.txt` / `ctx.txt`
 - Support global and local terminology files for consistent translation
@@ -50,6 +50,10 @@ translate -i subtitle.srt -t zh --preserve-intermediate
 
 Source language is English only. Common target language codes include `zh`, `zh-tw`, `ja`, `ko`, `fr`, `de`, `es`, `pt`, `it`, `ru`, `ar`, `th`, and `vi`.
 
+By default, the bilingual result is written as `<input-name>.ass` in the
+current directory, or in the input directory when you use `--input-dir`. Use
+`-o OUTPUT_DIR` to choose another output directory.
+
 ## Configuration
 
 Recommended:
@@ -72,43 +76,8 @@ OPENAI_API_KEY=your-api-key-here
 SPLIT_MODEL=your-split-model
 TRANSLATION_MODEL=your-translation-model
 LLM_MODEL=your-default-model
-DISABLE_THINKING=true
 LOG_RAW_PAYLOADS=false
 ```
-
-`DISABLE_THINKING` defaults to `true`. Extra reasoning or thinking tokens are
-disabled in two ways:
-
-- Official provider URLs with a unified switch disable all models:
-  - OpenRouter: `reasoning.effort=none`
-  - DeepSeek, Zhipu, MiniMax, Volcengine: `thinking.type=disabled`
-  - DashScope: `enable_thinking=false`
-- Other endpoints, including official OpenAI / Kimi / Google / Groq /
-  Anthropic / xAI, only disable registered model names:
-  - `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `grok-4.3`,
-    `grok-4.3-latest` receive `reasoning_effort=none`
-  - `deepseek-v4-flash`, `deepseek-v4-pro`, `glm-5.2`, `glm-5.1`, `glm-5`,
-    `glm-5-turbo`, `glm-4.7`, `glm-4.6`, `glm-4.5`, `kimi-k2.6`, `kimi-k2.5`,
-    `MiniMax-M3`, `claude-sonnet-5`, `claude-opus-5`, `claude-haiku-4-5`,
-    `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-sonnet-4-5`,
-    `claude-opus-4-5`, `claude-opus-4-8`, `claude-opus-4-7`,
-    `doubao-seed-1-6`, `doubao-seed-1-8`, `doubao-seed-2-0` receive
-    `thinking.type=disabled`
-  - `qwen-plus`, `qwen-turbo`, `qwen-flash`, `qwen-max`, `qwen3-max`,
-    `qwen3.5-plus`, `qwen3.5-flash`, `qwen3.6-plus`, `qwen3.6-flash`,
-    `qwen3.7-plus`, `qwen3.7-max` receive `enable_thinking=false`
-  - `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3-flash-preview`
-    receive Google `thinking_config.thinking_level=minimal`
-  - `gemini-2.5-flash` receives Google `thinking_config.thinking_budget=0`
-
-Vendor prefixes such as `openai/` are ignored, and matching is case-insensitive.
-Models that officially cannot disable thinking (`kimi-k3`, `kimi-k2.7-code`,
-MiniMax M2.x, `claude-fable-5`, `claude-mythos-5`, `grok-4.5`, `grok-4.6`,
-`qwq-plus`) are left unchanged. Add new models in
-`src/subtitle_translator/translation_core/thinking.py`.
-
-Some providers expose models with mandatory reasoning. Those models reject the
-disable parameter; select a model with a non-reasoning mode instead.
 
 Logs are stored in `~/.local/share/subtitle-translator/logs/app.log`, rotate
 automatically, and use private file permissions. Full subtitle requests and
@@ -153,26 +122,6 @@ EXTERNAL_GLOSSARY_MAX_TERMS=40
 ## CLI
 
 Use `translate --help` for the full option list.
-
-## Codex Skill
-
-This repo also bundles a Codex skill under [`skills/subtitle-translator/`](./skills/subtitle-translator/).
-
-Install it into your Codex skills directory:
-
-```bash
-mkdir -p ~/.codex/skills
-cp -R skills/subtitle-translator ~/.codex/skills/subtitle-translator
-```
-
-Then restart Codex. After restart, you can invoke it with `$subtitle-translator`.
-
-The skill can:
-
-- discover or install the `translate` CLI when needed
-- translate one `.srt` file or a whole directory
-- update `terminology.txt` entries and ASR `aliases`
-- add or refine `context.txt` / `ctx.txt` before rerunning a translation
 
 ## Development
 

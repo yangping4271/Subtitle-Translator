@@ -584,6 +584,27 @@ def test_custom_endpoint_qwen_uses_registry():
     )
 
 
+def test_custom_endpoint_qwen3_gguf_disables_thinking():
+    config = SubtitleConfig(
+        openai_base_url="https://example.com/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    create_mock = Mock()
+    client._client.chat.completions.create = create_mock
+
+    client.create_chat_completion(
+        model="Qwen3.8-27B-UD-Q3_K_XL",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    create_mock.assert_called_once_with(
+        model="Qwen3.8-27B-UD-Q3_K_XL",
+        messages=[{"role": "user", "content": "hello"}],
+        extra_body={"enable_thinking": False},
+    )
+
+
 def test_unregistered_gpt_model_does_not_receive_reasoning_effort():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",

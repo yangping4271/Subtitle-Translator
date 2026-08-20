@@ -7,7 +7,7 @@
 ## 主要能力
 
 - 把英文字幕翻译成中文、日文、韩文、法文等多种语言
-- 输出翻译后的 `.srt` 和双语 `.ass`
+- 输出双语 `.ass`，并可选择保留中间 `.srt` 文件
 - 支持远程 OpenAI-compatible API
 - 支持通过 `context.txt` / `ctx.txt` 提供额外上下文
 - 支持全局和局部术语表，保持术语翻译一致
@@ -50,6 +50,8 @@ translate -i subtitle.srt -t zh --preserve-intermediate
 
 源语言只支持英文。常用目标语言代码包括 `zh`、`zh-tw`、`ja`、`ko`、`fr`、`de`、`es`、`pt`、`it`、`ru`、`ar`、`th`、`vi`。
 
+默认会在当前目录按输入文件名生成 `.ass` 格式的双语结果；使用 `--input-dir` 时会输出到输入目录。可以通过 `-o OUTPUT_DIR` 指定其他输出目录。
+
 ## 配置
 
 推荐直接运行：
@@ -70,26 +72,8 @@ OPENAI_API_KEY=your-api-key-here
 SPLIT_MODEL=your-split-model
 TRANSLATION_MODEL=your-translation-model
 LLM_MODEL=your-default-model
-DISABLE_THINKING=true
 LOG_RAW_PAYLOADS=false
 ```
-
-`DISABLE_THINKING` 默认为 `true`。额外的推理/思考 token 按两种方式关闭：
-
-- 能识别官方网址、且该供应商有统一关闭参数时，对所有模型关闭：
-  - OpenRouter：`reasoning.effort=none`
-  - DeepSeek、智谱、MiniMax、火山引擎：`thinking.type=disabled`
-  - 阿里云 DashScope：`enable_thinking=false`
-- 其他端点（包括 OpenAI / Kimi / Google / Groq / Anthropic / xAI 官方）只对已登记的模型名关闭：
-  - `gpt-5.6`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`、`grok-4.3`、`grok-4.3-latest` 发送 `reasoning_effort=none`
-  - `deepseek-v4-flash`、`deepseek-v4-pro`、`glm-5.2`、`glm-5.1`、`glm-5`、`glm-5-turbo`、`glm-4.7`、`glm-4.6`、`glm-4.5`、`kimi-k2.6`、`kimi-k2.5`、`MiniMax-M3`、`claude-sonnet-5`、`claude-opus-5`、`claude-haiku-4-5`、`claude-sonnet-4-6`、`claude-opus-4-6`、`claude-sonnet-4-5`、`claude-opus-4-5`、`claude-opus-4-8`、`claude-opus-4-7`、`doubao-seed-1-6`、`doubao-seed-1-8`、`doubao-seed-2-0` 发送 `thinking.type=disabled`
-  - `qwen-plus`、`qwen-turbo`、`qwen-flash`、`qwen-max`、`qwen3-max`、`qwen3.5-plus`、`qwen3.5-flash`、`qwen3.6-plus`、`qwen3.6-flash`、`qwen3.7-plus`、`qwen3.7-max` 发送 `enable_thinking=false`
-  - `gemini-3.6-flash`、`gemini-3.5-flash`、`gemini-3-flash-preview` 发送 Google `thinking_config.thinking_level=minimal`
-  - `gemini-2.5-flash` 发送 Google `thinking_config.thinking_budget=0`
-
-匹配时会去掉 `openai/` 这类 vendor 前缀，且大小写不敏感。官方不允许关闭思考的模型（`kimi-k3`、`kimi-k2.7-code`、MiniMax M2.x、`claude-fable-5`、`claude-mythos-5`、`grok-4.5`、`grok-4.6`、`qwq-plus`）不会附加关闭参数。新增模型请改 `src/subtitle_translator/translation_core/thinking.py`。
-
-部分供应商的强制推理模型不接受关闭参数，此时 API 会拒绝请求；请改用支持非推理模式的模型。
 
 日志固定保存在 `~/.local/share/subtitle-translator/logs/app.log`，会自动轮转并使用私有文件权限。默认不记录完整字幕请求和模型原始响应；只有排查 payload 问题时才建议临时设置 `LOG_RAW_PAYLOADS=true`。
 
@@ -126,26 +110,6 @@ EXTERNAL_GLOSSARY_MAX_TERMS=40
 ## CLI
 
 完整参数请看 `translate --help`。
-
-## Codex Skill
-
-这个仓库也内置了一个 Codex skill，目录在 [`skills/subtitle-translator/`](./skills/subtitle-translator/)。
-
-安装到本地 Codex skills 目录：
-
-```bash
-mkdir -p ~/.codex/skills
-cp -R skills/subtitle-translator ~/.codex/skills/subtitle-translator
-```
-
-然后重启 Codex。重启后可以通过 `$subtitle-translator` 调用。
-
-这个 skill 可以：
-
-- 在需要时发现或安装 `translate` CLI
-- 翻译单个 `.srt` 文件或整个目录
-- 更新 `terminology.txt` 术语和 ASR `aliases`
-- 在重跑翻译前补充或修正 `context.txt` / `ctx.txt`
 
 ## 开发
 

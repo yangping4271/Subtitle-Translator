@@ -199,10 +199,6 @@ OPENAI_API_KEY={api_key}
 SPLIT_MODEL={split_model}
 TRANSLATION_MODEL={translation_model}
 LLM_MODEL={split_model}
-
-# 可选配置
-# 默认禁止模型生成推理/思考 token
-DISABLE_THINKING=true
 """
 
     # 创建目录并写入文件

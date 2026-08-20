@@ -134,9 +134,20 @@ THINKING_DISABLE_MODELS: dict[str, ThinkingDisableSpec] = {
 }
 
 
+def _is_qwen3_hybrid_thinking_model(model: str) -> bool:
+    """Qwen3 开源混合思考模型，含 GGUF 量化后缀。"""
+    return normalize_model_name(model).startswith("qwen3")
+
+
 def get_thinking_disable_spec(model: str) -> Optional[ThinkingDisableSpec]:
     """查找模型的关闭思考配置；未登记则返回 None。"""
-    return THINKING_DISABLE_MODELS.get(normalize_model_name(model))
+    name = normalize_model_name(model)
+    spec = THINKING_DISABLE_MODELS.get(name)
+    if spec is not None:
+        return spec
+    if _is_qwen3_hybrid_thinking_model(name):
+        return _enable_thinking_false()
+    return None
 
 
 def get_provider_thinking_method(
