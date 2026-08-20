@@ -74,6 +74,7 @@ def test_show_api_performance_stats_uses_merged_request_view(capsys):
     assert "请求: 4 次 (成功 4 / 失败 0)" in output
     assert "平均 31.8s，P95 50.8s，最大 53.8s" in output
     assert "有效吞吐: 40.1 token/s" in output
+    assert "最长上下文: 无统计" in output
     assert "慢请求: 3 次 (>30s，最慢 53.8s)" in output
     assert "响应异常: 0 次" in output
     assert "TTFT" not in output
@@ -107,6 +108,33 @@ def test_show_api_performance_stats_shows_throughput_coverage(capsys):
         "响应异常: 2 次 (同一响应可重复命中：空响应 1，异常结束 1，响应统计缺失 1)"
         in output
     )
+
+
+def test_show_api_performance_stats_shows_longest_context(capsys):
+    show_api_performance_stats(
+        {
+            "requests": 4,
+            "successful_requests": 4,
+            "failed_requests": 0,
+            "latency_avg": 10.0,
+            "latency_p95": 16.0,
+            "latency_max": 17.0,
+            "effective_tps": 60.0,
+            "slow_requests": 0,
+            "slowest_request": 17.0,
+            "anomalies": 0,
+            "empty_responses": 0,
+            "abnormal_finishes": 0,
+            "unknown_finishes": 0,
+            "missing_usage": 0,
+            "max_context_tokens": 2591,
+            "context_reference_tokens": 4096,
+            "max_context_ratio": 2591 / 4096,
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "最长上下文: 2591 token（4K 的 63%）" in output
 
 
 def test_show_model_config_shows_prefixed_deepseek_as_disabled(capsys):

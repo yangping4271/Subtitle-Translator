@@ -150,6 +150,44 @@ def test_request_metrics_merge_concurrent_time_for_effective_throughput():
     assert stats["effective_tps"] == 15.0
     assert stats["slow_requests"] == 0
     assert stats["anomalies"] == 0
+    assert stats["max_context_tokens"] is None
+    assert stats["context_reference_tokens"] == 4096
+    assert stats["max_context_ratio"] is None
+
+
+def test_request_metrics_report_longest_context_against_4k():
+    metrics = [
+        RequestMetric(
+            started_at=0.0,
+            ended_at=5.0,
+            latency=5.0,
+            success=True,
+            completion_tokens=274,
+            finish_reason="stop",
+            content_chars=1158,
+            error_type=None,
+            prompt_tokens=865,
+            total_tokens=1139,
+        ),
+        RequestMetric(
+            started_at=5.0,
+            ended_at=22.0,
+            latency=17.0,
+            success=True,
+            completion_tokens=1180,
+            finish_reason="stop",
+            content_chars=3685,
+            error_type=None,
+            prompt_tokens=1411,
+            total_tokens=2591,
+        ),
+    ]
+
+    stats = summarize_request_metrics(metrics)
+
+    assert stats["max_context_tokens"] == 2591
+    assert stats["context_reference_tokens"] == 4096
+    assert stats["max_context_ratio"] == 2591 / 4096
 
 
 def test_request_metrics_report_slow_failures_and_response_anomalies():

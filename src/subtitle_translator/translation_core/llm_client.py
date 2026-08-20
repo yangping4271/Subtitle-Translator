@@ -25,6 +25,7 @@ from .thinking import (
 logger = setup_logger("llm_client")
 
 SLOW_REQUEST_SECONDS = 30.0
+CONTEXT_REFERENCE_TOKENS = 4096
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,8 @@ class RequestMetric:
     finish_reason: Optional[str]
     content_chars: int
     error_type: Optional[str]
+    prompt_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
 
 
 def _average(values: list[float]) -> Optional[float]:
@@ -166,6 +169,15 @@ def _response_has_reasoning_content(response: Any) -> bool:
     return isinstance(reasoning_content, str) and bool(reasoning_content.strip())
 
 
+def _context_tokens(metric: RequestMetric) -> Optional[int]:
+    """一次请求占用的上下文长度：优先 total，否则 prompt+completion。"""
+    if metric.total_tokens is not None:
+        return metric.total_tokens
+    if metric.prompt_tokens is None:
+        return None
+    return metric.prompt_tokens + (metric.completion_tokens or 0)
+
+
 def summarize_request_metrics(metrics: list[RequestMetric]) -> dict[str, Any]:
     """汇总一次字幕文件处理期间的所有模型请求。"""
     successful = [metric for metric in metrics if metric.success]
@@ -198,6 +210,12 @@ def summarize_request_metrics(metrics: list[RequestMetric]) -> dict[str, Any]:
             or metric.completion_tokens is None
         )
     )
+    context_sizes = [
+        size
+        for metric in successful
+        if (size := _context_tokens(metric)) is not None
+    ]
+    max_context_tokens = max(context_sizes) if context_sizes else None
 
     return {
         "requests": len(metrics),
@@ -223,6 +241,13 @@ def summarize_request_metrics(metrics: list[RequestMetric]) -> dict[str, Any]:
         "unknown_finishes": unknown_finishes,
         "missing_usage": missing_usage,
         "error_types": error_types,
+        "max_context_tokens": max_context_tokens,
+        "context_reference_tokens": CONTEXT_REFERENCE_TOKENS,
+        "max_context_ratio": (
+            max_context_tokens / CONTEXT_REFERENCE_TOKENS
+            if max_context_tokens is not None
+            else None
+        ),
     }
 
 
@@ -453,6 +478,16 @@ class LLMClient:
                     finish_reason=finish_reason,
                     content_chars=content_chars,
                     error_type=None,
+                    prompt_tokens=(
+                        usage["prompt_tokens"]
+                        if isinstance(usage["prompt_tokens"], int)
+                        else None
+                    ),
+                    total_tokens=(
+                        usage["total_tokens"]
+                        if isinstance(usage["total_tokens"], int)
+                        else None
+                    ),
                 )
             )
             logger.info(

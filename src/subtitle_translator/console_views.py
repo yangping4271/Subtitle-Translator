@@ -86,6 +86,19 @@ def show_api_performance_stats(stats: dict) -> None:
     else:
         print("   延迟: [dim]无请求[/dim]")
 
+    max_context = stats.get("max_context_tokens")
+    if max_context is not None:
+        reference = stats.get("context_reference_tokens") or 4096
+        ratio = stats.get("max_context_ratio")
+        if ratio is None:
+            ratio = max_context / reference
+        print(
+            f"   最长上下文: [cyan]{max_context}[/cyan] token"
+            f"（4K 的 [cyan]{ratio:.0%}[/cyan]）"
+        )
+    else:
+        print("   最长上下文: [dim]无统计[/dim]")
+
     if stats.get("effective_tps") is not None:
         missing_usage = stats.get("missing_usage", 0)
         coverage = ""
