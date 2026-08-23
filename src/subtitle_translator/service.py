@@ -314,7 +314,7 @@ class SubtitleTranslatorService:
             self.logger.info(
                 "📡 API性能统计: 请求=%s, 成功=%s, 失败=%s, "
                 "平均延迟=%s, P95=%s, 最大延迟=%s, 有效吞吐=%s, "
-                "最长上下文=%s, 吞吐覆盖请求=%s, usage缺失=%s, "
+                "吞吐覆盖请求=%s, usage缺失=%s, "
                 "慢请求=%s, 响应异常=%s",
                 api_stats["requests"],
                 api_stats["successful_requests"],
@@ -337,15 +337,6 @@ class SubtitleTranslatorService:
                 (
                     f"{api_stats['effective_tps']:.2f} token/s"
                     if api_stats["effective_tps"] is not None
-                    else "unknown"
-                ),
-                (
-                    (
-                        f"{api_stats['max_context_tokens']} token"
-                        f"（4K 的 {api_stats['max_context_ratio']:.0%}）"
-                    )
-                    if api_stats.get("max_context_tokens") is not None
-                    and api_stats.get("max_context_ratio") is not None
                     else "unknown"
                 ),
                 api_stats["throughput_requests"],

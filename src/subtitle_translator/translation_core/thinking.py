@@ -96,11 +96,8 @@ THINKING_DISABLE_MODELS: dict[str, ThinkingDisableSpec] = {
     "kimi-k2.5": _thinking_disabled(),
     # MiniMax：官方仅 M3 能关；M2.x 传 disabled 仍会思考
     "minimax-m3": _thinking_disabled(),
-    # Google Gemini 主流 Flash（OpenAI 兼容端点）
-    # Gemini 3 用 thinking_level；Gemini 2.5 用 thinking_budget；不能同时发送。
-    "gemini-3.6-flash": _google_thinking_level(),
-    "gemini-3.5-flash": _google_thinking_level(),
-    "gemini-3-flash-preview": _google_thinking_level(),
+    # Google Gemini：按模型名前缀整体匹配，见 _gemini_thinking_spec。
+    # Gemini 3 及以后用 thinking_level；Gemini 2.5 Flash 系用 thinking_budget；不能同时发送。
     "gemini-2.5-flash": _google_thinking_budget(),
     # Anthropic：Fable / Mythos 官方不允许关闭思考
     "claude-sonnet-5": _thinking_disabled(),
@@ -139,12 +136,33 @@ def _is_qwen3_hybrid_thinking_model(model: str) -> bool:
     return normalize_model_name(model).startswith("qwen3")
 
 
+def _gemini_thinking_spec(name: str) -> Optional[ThinkingDisableSpec]:
+    """按前缀匹配 Gemini 模型，覆盖未逐个登记的新版本。
+
+    - Gemini 3 及以后（含 pro / flash / lite / preview 变体）：thinking_level=minimal
+    - Gemini 2.5 Flash 系：thinking_budget=0
+    - Gemini 2.5 Pro 官方不允许完全关闭思考，不匹配。
+    """
+    if not name.startswith("gemini-"):
+        return None
+    version = name.removeprefix("gemini-")
+    if version.startswith("2.5-flash") or version.startswith("2.5-flash-"):
+        return _google_thinking_budget()
+    major = version.split(".", 1)[0].split("-", 1)[0]
+    if major.isdigit() and int(major) >= 3:
+        return _google_thinking_level()
+    return None
+
+
 def get_thinking_disable_spec(model: str) -> Optional[ThinkingDisableSpec]:
     """查找模型的关闭思考配置；未登记则返回 None。"""
     name = normalize_model_name(model)
     spec = THINKING_DISABLE_MODELS.get(name)
     if spec is not None:
         return spec
+    gemini_spec = _gemini_thinking_spec(name)
+    if gemini_spec is not None:
+        return gemini_spec
     if _is_qwen3_hybrid_thinking_model(name):
         return _enable_thinking_false()
     return None

@@ -40,9 +40,12 @@ def test_registered_mainstream_models_use_expected_methods():
         assert spec.method is ThinkingDisableMethod.THINKING_TYPE_DISABLED
 
     for model in (
+        "gemini-3.7-flash",
         "gemini-3.6-flash",
-        "gemini-3.5-flash",
         "google/gemini-3-flash-preview",
+        # 未逐个登记的 Gemini 新版本也按前缀匹配
+        "gemini-4-flash",
+        "vendor/gemini-3.8-flash-lite",
     ):
         spec = get_thinking_disable_spec(model)
         assert spec is not None
@@ -51,6 +54,13 @@ def test_registered_mainstream_models_use_expected_methods():
     spec = get_thinking_disable_spec("google/gemini-2.5-flash")
     assert spec is not None
     assert spec.method is ThinkingDisableMethod.GOOGLE_THINKING_BUDGET
+
+    spec = get_thinking_disable_spec("gemini-2.5-flash-lite")
+    assert spec is not None
+    assert spec.method is ThinkingDisableMethod.GOOGLE_THINKING_BUDGET
+
+    # Gemini 2.5 Pro 官方不允许完全关闭思考，不应匹配
+    assert get_thinking_disable_spec("gemini-2.5-pro") is None
 
     for model in ("claude-sonnet-5", "anthropic/claude-opus-4-6"):
         spec = get_thinking_disable_spec(model)

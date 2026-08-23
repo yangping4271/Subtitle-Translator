@@ -41,9 +41,14 @@ def show_model_config(
     print("[bold blue]🤖 模型配置:[/bold blue]")
 
     def format_reasoning(model: str) -> str:
-        if disable_thinking and thinking_disable_applies(model, provider_type):
-            return " [dim](思考模式: 已关闭)[/dim]"
-        return ""
+        if disable_thinking:
+            if thinking_disable_applies(model, provider_type):
+                return " [dim](思考模式: 已关闭)[/dim]"
+            return (
+                " [bold yellow]⚠️ 思考模式: 未关闭"
+                "（未识别该模型的关闭方式）[/bold yellow]"
+            )
+        return " [dim](思考模式: 关闭功能未启用)[/dim]"
 
     split_reasoning = format_reasoning(split_model)
     translation_reasoning = format_reasoning(translation_model)
@@ -85,19 +90,6 @@ def show_api_performance_stats(stats: dict) -> None:
         )
     else:
         print("   延迟: [dim]无请求[/dim]")
-
-    max_context = stats.get("max_context_tokens")
-    if max_context is not None:
-        reference = stats.get("context_reference_tokens") or 4096
-        ratio = stats.get("max_context_ratio")
-        if ratio is None:
-            ratio = max_context / reference
-        print(
-            f"   最长上下文: [cyan]{max_context}[/cyan] token"
-            f"（4K 的 [cyan]{ratio:.0%}[/cyan]）"
-        )
-    else:
-        print("   最长上下文: [dim]无统计[/dim]")
 
     if stats.get("effective_tps") is not None:
         missing_usage = stats.get("missing_usage", 0)
