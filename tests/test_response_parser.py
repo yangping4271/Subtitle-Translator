@@ -92,10 +92,10 @@ def test_json_code_fence_and_thinking_tags_are_removed():
     assert parse_translation_response(response)["1"]["translation"] == "你好"
 
 
-def test_legacy_id_dictionary_is_preserved():
+def test_legacy_id_dictionary_is_normalized():
     response = '{"1": {"optimized_subtitle": "Hello", "translation": "你好"}}'
     assert parse_translation_response(response) == {
-        "1": {"optimized_subtitle": "Hello", "translation": "你好"}
+        "1": {"optimized_subtitle": "Hello", "translation": "你好", "discarded": False}
     }
 
 
@@ -109,3 +109,17 @@ def test_array_response_preserves_discard_and_skips_invalid_items():
 def test_invalid_responses_are_empty():
     for response in ("", "  ", "not JSON", "{", "[]", "null", "42"):
         assert parse_translation_response(response) == {}
+
+
+def test_id_dictionary_and_array_preserve_the_same_corrections():
+    keyed = '{"7": {"id": 99, "optimized": " LangChain ", "translation": " LangChain "}}'
+    array = '{"subtitles": [{"id": 7, "optimized": "LangChain", "translation": "LangChain"}]}'
+    assert parse_translation_response(keyed) == parse_translation_response(array)
+
+
+def test_invalid_dictionary_items_do_not_drop_valid_translations():
+    response = '{"1": null, "2": {"optimized": null, "translation": 42}, "3": {"translation": "成功"}}'
+    result = parse_translation_response(response)
+    assert "1" not in result
+    assert result["2"]["translation"] == ""
+    assert result["3"]["translation"] == "成功"

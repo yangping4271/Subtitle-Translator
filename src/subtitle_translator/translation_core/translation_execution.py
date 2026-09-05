@@ -357,24 +357,26 @@ class TranslationEngine:
         for subtitle_id, original in original_subtitle.items():
             item = response_content.get(subtitle_id, {})
             optimized = item.get("optimized_subtitle")
+            shifted = False
             if not isinstance(optimized, str) or not optimized.strip():
                 optimized = original
             elif _is_suspicious_optimized_shift(original, optimized):
                 logger.warning(
-                    "⚠️ 字幕ID %s 的 optimized 疑似跨 ID 错位，已回退为原文",
+                    "⚠️ 字幕ID %s 的 optimized 疑似跨 ID 错位，将重试翻译",
                     subtitle_id,
                 )
                 if self.config.log_raw_payloads:
                     logger.debug("原文: %s -> %s", original, optimized)
                 optimized = original
+                shifted = True
 
-            translation = item.get("translation", "")
+            translation = "" if shifted else item.get("translation", "")
             result = {
                 "id": int(subtitle_id),
                 "original": original,
                 "optimized": optimized,
                 "translation": translation if isinstance(translation, str) else "",
-                "discarded": item.get("discarded") is True,
+                "discarded": not shifted and item.get("discarded") is True,
             }
             results.append(result)
             if original != optimized:

@@ -72,20 +72,15 @@ If provided, use the following reference data:
 - All optimizations must be performed in the source language (from the original subtitles).
 - Do NOT translate or paraphrase to {target_language} when preparing the <optimized> field; this field must remain in the source language. Translation is exclusively in the <translation> field.
 - Apply corrections precisely as provided (e.g., replace every instance of "WinSurf" with "Windsurf"). Do not improvise new spellings or formats.
-- Correct spelling and grammar errors, ensure terminology is consistent, and remove repeated words or phrases.
-- Eliminate filler words (e.g., "um," "uh," "like"), non-speech sound tags (e.g., [Music], [Applause]), reaction markers (e.g., (laugh), (cough)), and musical symbols (e.g., ♪). If nothing remains after cleaning, set <optimized> to an empty string.
+- Make minimal source corrections: punctuation, obvious typos and supplied ASR aliases. Preserve meaningful repetition, uncertainty and emphasis; do not rewrite the speaker’s claims.
+- Eliminate only meaningless hesitation (e.g., "um", "uh", never a meaningful "like"), non-speech sound tags (e.g., [Music], [Applause]), reaction markers (e.g., (laugh), (cough)), and musical symbols (e.g., ♪). If nothing remains after cleaning, set <optimized> to an empty string.
 
 ### 2. Translation Procedures
 - Using the cleaned and corrected original text, translate each subtitle into {target_language}.
-- Ensure contextual and technical accuracy in the translation, keeping the content natural and faithful to the meaning and structure.
-- Preserve formatting, numbers, and symbols exactly.
-- For technical/professional terminology only (scientific terms, programming concepts, specialized jargon):
-  - If a translation exists, translate and keep original in parentheses
-  - If no translation exists, keep original only
-- For proper nouns (person names, organization names, place names, artwork titles):
-  - Translate naturally without adding parentheses
-- For all other content: Translate naturally.
-- Always translate each segment individually without attempting to complete incomplete sentences. Maintain proper flow and context with adjacent subtitles as appropriate.
+- Preserve the full meaning, including qualifications, comparisons, negation, numerical values and units. Keep code, paths and API identifiers intact; adapt punctuation and word order to the target language.
+- Write concise, idiomatic subtitles with direct verbs. Omit redundant discourse markers and pronouns when meaning is unchanged; do not mirror every "and then", "so", or "is about". Preserve technical details and logical relationships, not English sentence structure.
+- Use supplied user terminology consistently, ahead of external suggestions. Otherwise use standard translations and established names; do not automatically append the original term in parentheses.
+- Translate only the source span belonging to each id. Neighbors help resolve references, but their nouns, clauses and examples must stay in their own translations. Never expand one fragment into the whole sentence and repeat it in the next id.
 
 ## Output Format
 Return only valid JSON in this structure:
@@ -108,10 +103,10 @@ SINGLE_TRANSLATE_PROMPT = """
 You are a professional {target_language} translator.
 
 ## Translation Rules
-- For technical/professional terminology: If translation exists, translate and keep original in parentheses; otherwise keep original only
-- For proper nouns: Translate naturally without parentheses
-- For all other content: Translate naturally
-- Preserve formatting, numbers, and symbols exactly
+- Preserve all meaning, qualifications, negation, numbers and units. Keep code, paths and API identifiers intact.
+- Use natural spoken language and established domain terms; avoid literal English syntax or added explanations.
+- Follow supplied user terminology ahead of external suggestions. Do not automatically append original terms in parentheses.
+- Apply supplied ASR aliases when context supports them; do not guess names or complete unfinished fragments.
 
 {terminology}
 

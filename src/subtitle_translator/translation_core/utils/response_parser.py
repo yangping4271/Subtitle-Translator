@@ -28,9 +28,15 @@ def parse_translation_response(response: str) -> dict:
         }
 
     if isinstance(parsed, dict):
-        if not isinstance(parsed.get("subtitles"), list):
-            return parsed
-        parsed = parsed["subtitles"]
+        if isinstance(parsed.get("subtitles"), list):
+            parsed = parsed["subtitles"]
+        else:
+            # ID 字典和数组使用相同的字段规范；外层 ID 才是字幕标识。
+            parsed = [
+                {**item, "id": subtitle_id}
+                for subtitle_id, item in parsed.items()
+                if isinstance(item, dict)
+            ]
     if not isinstance(parsed, list):
         return {}
 
