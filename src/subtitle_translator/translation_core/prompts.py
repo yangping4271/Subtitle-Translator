@@ -88,12 +88,14 @@ If provided, use the following reference data:
 - Always translate each segment individually without attempting to complete incomplete sentences. Maintain proper flow and context with adjacent subtitles as appropriate.
 
 ## Output Format
-Return only valid JSON that matches the response schema provided by the caller.
+Return only valid JSON in this structure:
+{{"subtitles":[{{"id":1,"optimized":"source text","translation":"translated text","discarded":false}}]}}
+Match the response schema provided by the caller, if any.
 
 - Ensure all subtitle ids and their order exactly match the input.
 - If the input is empty or contains only non-speech elements after cleaning, return empty strings for all text fields and set `discarded` to true.
 - Do not add, omit, or renumber ids for any reason.
-- Every subtitle item must contain {required_fields}.
+- Every subtitle item must contain `id`, `optimized`, `translation`, and `discarded`.
 - Only include fields defined by the caller's response schema.
 - Output a single JSON object only. Do not wrap it in markdown or code fences.
 - Set `discarded` to true only when the subtitle was intentionally removed as non-speech content after cleaning. Otherwise set `discarded` to false.

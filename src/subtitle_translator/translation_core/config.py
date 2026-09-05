@@ -154,7 +154,7 @@ class SubtitleConfig:
 
     external_glossary_enabled: bool = True
     external_glossary_domains: tuple[str, ...] = ("programming", "tech", "education")
-    external_glossary_max_terms: int = 40
+    external_glossary_max_terms: int = 12
 
     def provider_type(self) -> str:
         """根据 OpenAI-compatible Base URL 推断供应商类型。"""

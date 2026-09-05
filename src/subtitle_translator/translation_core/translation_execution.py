@@ -255,12 +255,9 @@ class TranslationEngine:
         self, original_subtitle: Dict[str, str], context_info: Optional[str]
     ):
         """创建翻译提示消息。"""
-        input_content = (
-            "Correct and translate the following subtitles into "
-            f"{self.translation_context.target_language}.\n"
-            "Return a single valid JSON object only, with no markdown or code fences.\n"
-            f"<subtitles>{json.dumps(original_subtitle, ensure_ascii=False)}</subtitles>"
-        )
+        # 保留默认 JSON 空格：DeepSeek V4 Flash 实测对紧凑格式存在翻译回退。
+        source_json = json.dumps(original_subtitle, ensure_ascii=False)
+        input_content = f"<subtitles>{source_json}</subtitles>"
 
         if context_info:
             input_content += f"\n\n<reference>\n{context_info}\n</reference>"
@@ -268,9 +265,8 @@ class TranslationEngine:
         prompt = TRANSLATE_PROMPT.format(
             target_language=self.translation_context.target_language,
             terminology=self._fallback._format_terminology(
-                json.dumps(original_subtitle, ensure_ascii=False)
+                "\n".join(original_subtitle.values())
             ),
-            required_fields="`id`, `optimized`, `translation`, and `discarded`",
         )
 
         return [

@@ -116,7 +116,7 @@ You can tune this behavior with:
 ```bash
 EXTERNAL_GLOSSARY_ENABLED=true
 EXTERNAL_GLOSSARY_DOMAINS=programming,tech,education
-EXTERNAL_GLOSSARY_MAX_TERMS=40
+EXTERNAL_GLOSSARY_MAX_TERMS=12
 ```
 
 ## CLI

@@ -4,6 +4,7 @@
 
 从外部文件加载术语表，支持全局和局部术语表合并。
 """
+import re
 from pathlib import Path
 from typing import Optional, Any
 import logging
@@ -49,6 +50,12 @@ def get_terminology_aliases(value: Any) -> list[str]:
         return []
     aliases = value.get("aliases") or []
     return [str(alias).strip() for alias in aliases if str(alias).strip()]
+
+
+def term_matches(text: str, term: str) -> bool:
+    """按词边界命中术语；允许 ASR 中连续空白变化。"""
+    pattern = r"\s+".join(re.escape(part) for part in term.split())
+    return bool(pattern and re.search(rf"(?<![\w]){pattern}(?![\w])", text, re.IGNORECASE))
 
 
 def load_terminology_file(file_path: Path) -> dict:

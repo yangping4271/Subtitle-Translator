@@ -85,7 +85,10 @@ def select_relevant_external_terms(
         return {}
 
     selected = {}
+    folded_text = text.casefold()
     for term, entry in sorted(external_terms.items(), key=lambda item: (-len(item[0]), item[0].lower())):
+        if term.casefold() not in folded_text:
+            continue
         pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(term)}(?![A-Za-z0-9])", re.IGNORECASE)
         if pattern.search(text):
             selected[term] = entry

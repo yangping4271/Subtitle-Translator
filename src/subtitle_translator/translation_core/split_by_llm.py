@@ -32,7 +32,7 @@ def split_by_llm(
         max_word_count_english=max_word_count_english
     )
 
-    user_prompt = f"Please use multiple <br> tags to separate the following sentence. Make sure to preserve all spaces and punctuation exactly as they appear in the original text:\n{text}"
+    user_prompt = f"Segment this subtitle text:\n{text}"
 
     try:
         response = llm.create_chat_completion(

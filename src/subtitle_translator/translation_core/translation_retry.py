@@ -10,7 +10,7 @@ from .config import SubtitleConfig
 from .external_glossary import select_relevant_external_terms
 from .llm_client import ModelAdapter
 from .prompts import SINGLE_TRANSLATE_PROMPT
-from .terminology import get_terminology_aliases, get_terminology_translation
+from .terminology import get_terminology_aliases, get_terminology_translation, term_matches
 from .translation_context import TranslationContext
 from .utils.api import validate_api_response
 
@@ -78,16 +78,16 @@ class _TranslationFallback:
 
             if still_failed:
                 logger.info(f"⚡ {batch_info}降级到单条并发翻译 {len(still_failed)} 条")
-                retry_map.update(self._translate_by_single(still_failed))
+                retry_map.update(self._translate_by_single(still_failed, context_info))
 
             return [retry_map.get(result["id"], result) for result in results]
         except Exception as e:
             logger.warning(f"⚠️ {batch_info}重试失败: {e}")
             return results
 
-    def _translate_by_single(self, subtitle_json: Dict[int, str]) -> dict:
+    def _translate_by_single(self, subtitle_json: Dict[int, str], context_info: str = "") -> dict:
         futures = {
-            self.executor.submit(self._translate_single_subtitle, key, value): key
+            self.executor.submit(self._translate_single_subtitle, key, value, context_info): key
             for key, value in subtitle_json.items()
         }
         results = {}
@@ -109,7 +109,7 @@ class _TranslationFallback:
         return results
 
     @retry.retry(tries=2)
-    def _translate_single_subtitle(self, key: int, value: str) -> Dict:
+    def _translate_single_subtitle(self, key: int, value: str, context_info: str = "") -> Dict:
         """翻译单条字幕（带重试）。"""
         message = [
             {
@@ -119,7 +119,8 @@ class _TranslationFallback:
                     terminology=self._format_terminology(value),
                 ),
             },
-            {"role": "user", "content": value},
+            {"role": "user", "content": f"<subtitles>{value}</subtitles>"
+             + (f"\n<reference>{context_info}</reference>" if context_info else "")},
         ]
 
         response = self.llm.create_chat_completion(
@@ -137,41 +138,39 @@ class _TranslationFallback:
     def _format_terminology(self, source_text: str = "") -> str:
         """格式化术语表为 prompt 文本。"""
         user_terms = self.translation_context.terminology
+        user_lines = []
+        corrections = []
+        for term, entry in user_terms.items():
+            aliases = list(dict.fromkeys(
+                alias for alias in get_terminology_aliases(entry)
+                if term_matches(source_text, alias)
+            ))
+            if not aliases and not term_matches(source_text, term):
+                continue
+            translation = get_terminology_translation(entry)
+            if translation and translation != term:
+                user_lines.append(f"{term} → {translation}")
+            elif not aliases:
+                user_lines.append(f"{term} (keep)")
+            corrections.extend(f"{alias} → {term}" for alias in aliases)
+
+        user_names = {term.casefold() for term in user_terms}
         external_terms = select_relevant_external_terms(
             source_text,
-            self.translation_context.external_terminology,
+            {term: entry for term, entry in self.translation_context.external_terminology.items()
+             if term.casefold() not in user_names},
             self.config.external_glossary_max_terms,
         )
-        if not user_terms and not external_terms:
-            return ""
-        lines = [
-            "## Standard Terminology",
-            "Use these canonical terms/translations exactly:",
+        external_lines = [
+            f"{term} → {get_terminology_translation(entry)}"
+            for term, entry in external_terms.items()
+            if get_terminology_translation(entry)
+            and get_terminology_translation(entry).casefold() != term.casefold()
         ]
-        correction_lines = []
-        for term, entry in user_terms.items():
-            translation = get_terminology_translation(entry)
-            if translation:
-                lines.append(f"- {term} → {translation}")
-            for alias in get_terminology_aliases(entry):
-                correction_lines.append(f"- {alias} → {term}")
-
-        if external_terms:
-            lines.extend([
-                "",
-                "## Relevant External Terminology",
-                "These domain terms were found in the current subtitles. Use them when applicable:",
-            ])
-            for term, entry in external_terms.items():
-                translation = get_terminology_translation(entry)
-                if translation:
-                    lines.append(f"- {term} → {translation}")
-
-        if correction_lines:
-            lines.extend([
-                "",
-                "## Possible ASR Corrections",
-                "When these speech-recognition variants appear, correct them before translation:",
-            ])
-            lines.extend(correction_lines)
-        return "\n".join(lines)
+        sections = []
+        for title, lines in (("User terms", user_lines),
+                             ("ASR aliases", corrections),
+                             ("External suggestions (context-dependent)", external_lines)):
+            if lines:
+                sections.append(title + ":\n" + "\n".join(lines))
+        return "\n".join(sections)

@@ -224,10 +224,15 @@ def test_translation_batch_falls_back_to_a_retried_single_translation():
         [failed_batch, failed_batch, RuntimeError("temporary failure"), "你好，世界！"]
     )
 
+    adapter.create_chat_completion = Mock(wraps=adapter.create_chat_completion)
     with TranslationEngine(config, adapter, DEFAULT_TRANSLATION_CONTEXT) as engine:
-        results = engine.translate_batch(source_subtitle, context_info="")
+        results = engine.translate_batch(source_subtitle, context_info="Course introduction")
 
     assert results[0]["translation"] == "你好，世界！"
+    assert adapter.create_chat_completion.call_count == 4
+    messages = adapter.create_chat_completion.call_args.kwargs["messages"]
+    assert "<reference>Course introduction</reference>" in messages[-1]["content"]
+    assert "<subtitles>Hello world!</subtitles>" in messages[-1]["content"]
 
 
 def test_batch_run_closes_owned_service_when_interrupted(monkeypatch, tmp_path):

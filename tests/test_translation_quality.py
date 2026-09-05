@@ -58,10 +58,11 @@ def test_translation_engine_uses_full_schema_for_remote_endpoint():
     request, _ = _translate_once("https://api.openai.com/v1")
 
     assert request["response_format"] == TRANSLATION_RESPONSE_FORMAT
-    assert (
-        "`id`, `optimized`, `translation`, and `discarded`"
-        in request["messages"][0]["content"]
-    )
+    example = request["messages"][0]["content"].splitlines()
+    example = next(line for line in example if line.startswith('{"subtitles":['))
+    assert set(json.loads(example)["subtitles"][0]) == {
+        "id", "optimized", "translation", "discarded"
+    }
 
 
 def test_translation_engine_uses_json_object_for_deepseek_endpoint():
@@ -74,8 +75,7 @@ def test_translation_prompt_explicitly_requests_json_output():
     request, _ = _translate_once("https://api.openai.com/v1")
 
     assert "json" in request["messages"][0]["content"].lower()
-    assert "json" in request["messages"][1]["content"].lower()
-    assert "code fences" in request["messages"][1]["content"].lower()
+    assert "code fences" in request["messages"][0]["content"].lower()
 
 
 def test_translation_engine_allows_term_corrections():

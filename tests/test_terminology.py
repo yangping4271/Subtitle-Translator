@@ -104,11 +104,11 @@ def test_format_terminology_includes_asr_corrections():
         "land chain and LLM",
     )
 
-    assert "LangChain → LangChain" in formatted
+    assert "LangChain → LangChain" not in formatted
     assert "LLM → 大语言模型 (LLM)" in formatted
-    assert "Possible ASR Corrections" in formatted
+    assert "ASR aliases" in formatted
     assert "land chain → LangChain" in formatted
-    assert "lang chain → LangChain" in formatted
+    assert "lang chain → LangChain" not in formatted
 
 
 def test_format_terminology_includes_only_relevant_external_terms():
@@ -130,7 +130,41 @@ def test_format_terminology_includes_only_relevant_external_terms():
         "We use a database in this course.",
     )
 
-    assert "Relevant External Terminology" in formatted
+    assert "External suggestions" in formatted
     assert "Database → 数据库" in formatted
     assert "Framework → 框架" not in formatted
     assert "Cache → 缓存" not in formatted
+
+
+def test_user_terms_filter_boundaries_aliases_and_external_conflicts():
+    context = TranslationContext(
+        target_language="简体中文",
+        terminology={
+            "LangChain": {"translation": "LangChain", "aliases": ["land chain", "length chain"]},
+            "MCP": "模型上下文协议",
+            "Token": "Token",
+            "Unused": "不应注入",
+        },
+        external_terminology={"mcp": "错误覆盖", "Database": "数据库"},
+    )
+    prompt = _capture_translation_prompt(
+        SubtitleConfig(), context, "Use LAND  CHAIN, MCP and a tokenizer with a database."
+    )
+    assert "land chain → LangChain" in prompt
+    assert "length chain" not in prompt
+    assert "MCP → 模型上下文协议" in prompt
+    assert "错误覆盖" not in prompt
+    assert "Database → 数据库" in prompt
+    assert "Token (keep)" not in prompt
+    assert "不应注入" not in prompt
+
+
+def test_no_matching_terms_emit_no_glossary_sections():
+    prompt = _capture_translation_prompt(
+        SubtitleConfig(),
+        TranslationContext(target_language="简体中文", terminology={"MCP": "模型上下文协议"}),
+        "Hello world.",
+    )
+    assert "User terms:" not in prompt
+    assert "ASR aliases:" not in prompt
+    assert "External suggestions" not in prompt
