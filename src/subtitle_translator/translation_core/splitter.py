@@ -1,7 +1,7 @@
 import difflib
 import math
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
 
 from ..logger import setup_logger
@@ -66,48 +66,35 @@ class SubtitleSegmenter:
                 )
             )
 
-        results = {}
         with ThreadPoolExecutor(
             max_workers=min(len(batches), self.config.thread_num)
         ) as executor:
-            future_indexes = {
-                executor.submit(segment_batch, batch_index, batch): batch_index
-                for batch_index, batch in enumerate(batches)
-            }
-            for future in as_completed(future_indexes):
-                results[future_indexes[future]] = future.result()
+            return list(executor.map(segment_batch, range(len(batches)), batches))
 
-        return [results[index] for index in range(len(batches))]
 
 def is_pure_punctuation(s: str) -> bool:
     """
     检查字符串是否仅由标点符号组成
     """
-    return not re.search(r'\w', s, flags=re.UNICODE)
+    return not re.search(r"\w", s, flags=re.UNICODE)
 
 
 def preprocess_text(s: str) -> str:
     """
     通过规范化空格来标准化文本
     """
-    return ' '.join(s.split())
+    return " ".join(s.split())
 
 
-def presplit_by_punctuation(word_segments: List[SubtitleSegment]) -> List[PreSplitSentence]:
-    """
-    基于标点预分句（移植自 youtube-subtitle）
-
-    Args:
-        word_segments: 单词级字幕段列表
-
-    Returns:
-        PreSplitSentence 列表，包含句子文本和对应的单词索引范围
-    """
+def presplit_by_punctuation(
+    word_segments: List[SubtitleSegment],
+) -> List[PreSplitSentence]:
+    """基于标点预分句（移植自 youtube-subtitle）。"""
     if not word_segments:
         return []
 
     # 拼接所有单词为完整文本
-    full_text = ' '.join(seg.text for seg in word_segments)
+    full_text = " ".join(seg.text for seg in word_segments)
 
     # 使用 split_by_end_marks 进行预分句
     sentences = split_by_end_marks(full_text)
@@ -124,16 +111,26 @@ def presplit_by_punctuation(word_segments: List[SubtitleSegment]) -> List[PreSpl
         word_end_index = current_word_index + word_count
 
         # 获取时间范围
-        start_time = word_segments[word_start_index].start_time if word_start_index < len(word_segments) else 0
-        end_time = word_segments[min(word_end_index - 1, len(word_segments) - 1)].end_time if word_end_index > 0 else 0
+        start_time = (
+            word_segments[word_start_index].start_time
+            if word_start_index < len(word_segments)
+            else 0
+        )
+        end_time = (
+            word_segments[min(word_end_index - 1, len(word_segments) - 1)].end_time
+            if word_end_index > 0
+            else 0
+        )
 
-        pre_split_sentences.append(PreSplitSentence(
-            text=sentence,
-            word_start_index=word_start_index,
-            word_end_index=word_end_index,
-            start_time=start_time,
-            end_time=end_time
-        ))
+        pre_split_sentences.append(
+            PreSplitSentence(
+                text=sentence,
+                word_start_index=word_start_index,
+                word_end_index=word_end_index,
+                start_time=start_time,
+                end_time=end_time,
+            )
+        )
 
         current_word_index = word_end_index
 
@@ -147,7 +144,7 @@ def _build_pre_split_sentence_from_word_range(
 ) -> PreSplitSentence:
     """根据单词索引范围构造预分句。"""
     batch_word_segments = word_segments[word_start_index:word_end_index]
-    text = ' '.join(seg.text for seg in batch_word_segments)
+    text = " ".join(seg.text for seg in batch_word_segments)
     start_time = batch_word_segments[0].start_time if batch_word_segments else 0
     end_time = batch_word_segments[-1].end_time if batch_word_segments else 0
     return PreSplitSentence(
@@ -205,19 +202,7 @@ def batch_by_sentence_count(
     target_size: Optional[int] = None,
     max_words: Optional[int] = None,
 ) -> List[List[PreSplitSentence]]:
-    """
-    按句子数分批；若配置了 max_words，则同时限制每批总词数。
-
-    Args:
-        sentences: 预分句列表
-        min_size: 最小批次大小
-        max_size: 最大批次大小
-        target_size: 目标批次大小
-        max_words: 每批最大词数限制
-
-    Returns:
-        批次列表，每个批次是 PreSplitSentence 列表
-    """
+    """按句子数分批；若配置了 max_words，则同时限制每批总词数。"""
     if not sentences:
         return []
 
@@ -227,35 +212,36 @@ def batch_by_sentence_count(
     target_size = max(1, min(target_size, max_size))
 
     if max_words is not None and max_words > 0:
-        return _balanced_batches_with_word_limit(
+        batch_sizes = _balanced_batch_sizes_with_word_limit(
             sentences,
             min_size=min_size,
             max_size=max_size,
             target_size=target_size,
             max_words=max_words,
         )
-
-    # 计算批次大小（不使用首批特殊处理）
-    batch_sizes = calculate_batch_sizes(len(sentences), target_size, min_size, max_size)
+    else:
+        batch_sizes = calculate_batch_sizes(
+            len(sentences), target_size, min_size, max_size
+        )
 
     # 按计算出的批次大小分批
     batches = []
     start_index = 0
     for size in batch_sizes:
-        batches.append(sentences[start_index:start_index + size])
+        batches.append(sentences[start_index : start_index + size])
         start_index += size
 
     return batches
 
 
-def _balanced_batches_with_word_limit(
+def _balanced_batch_sizes_with_word_limit(
     sentences: List[PreSplitSentence],
     *,
     min_size: int,
     max_size: int,
     target_size: int,
     max_words: int,
-) -> List[List[PreSplitSentence]]:
+) -> list[int]:
     """在句数和词数限制内，对连续预分句做尽量均衡的分区。"""
     sentence_count = len(sentences)
     word_counts = [
@@ -274,13 +260,11 @@ def _balanced_batches_with_word_limit(
     def solve(batch_count: int) -> Optional[list[int]]:
         ideal_sentences = sentence_count / batch_count
         ideal_words = prefix_words[-1] / batch_count
-        states: dict[tuple[int, int], tuple[float, list[int]]] = {
-            (0, 0): (0.0, [])
-        }
+        states = {0: (0.0, [])}
 
         for completed_batches in range(batch_count):
-            next_states: dict[tuple[int, int], tuple[float, list[int]]] = {}
-            for (_, start), (cost, sizes) in states.items():
+            next_states = {}
+            for start, (cost, sizes) in states.items():
                 batches_left = batch_count - completed_batches - 1
                 minimum_end = start + 1
                 maximum_end = min(start + max_size, sentence_count)
@@ -300,35 +284,24 @@ def _balanced_batches_with_word_limit(
                     word_delta = (batch_words - ideal_words) / word_scale
                     small_batch_penalty = max(0, min_size - batch_size)
                     batch_cost = (
-                        sentence_delta ** 2
-                        + 0.35 * word_delta ** 2
-                        + 0.05 * small_batch_penalty ** 2
+                        sentence_delta**2
+                        + 0.35 * word_delta**2
+                        + 0.05 * small_batch_penalty**2
                     )
-                    key = (completed_batches + 1, end)
                     candidate = (cost + batch_cost, [*sizes, batch_size])
-                    previous = next_states.get(key)
+                    previous = next_states.get(end)
                     if previous is None or candidate[0] < previous[0]:
-                        next_states[key] = candidate
+                        next_states[end] = candidate
             states = next_states
 
-        result = states.get((batch_count, sentence_count))
+        result = states.get(sentence_count)
         return result[1] if result else None
 
-    batch_sizes = None
     for batch_count in range(minimum_batch_count, sentence_count + 1):
         batch_sizes = solve(batch_count)
         if batch_sizes is not None:
-            break
-
-    if batch_sizes is None:
-        return [[sentence] for sentence in sentences]
-
-    batches = []
-    start = 0
-    for size in batch_sizes:
-        batches.append(sentences[start:start + size])
-        start += size
-    return batches
+            return batch_sizes
+    return [1] * sentence_count
 
 
 def merge_segments_within_batch(
@@ -337,20 +310,9 @@ def merge_segments_within_batch(
     config: SubtitleConfig,
     llm: ModelAdapter,
     model: Optional[str] = None,
-    batch_index: Optional[int] = None
+    batch_index: Optional[int] = None,
 ) -> List[SubtitleSegment]:
-    """
-    在批次内进行 LLM 断句和时间戳对齐（移植自 youtube-subtitle）
-
-    Args:
-        pre_split_sentences: 批次内的预分句列表
-        word_segments: 完整的单词级字幕段（用于时间戳对齐）
-        model: LLM 模型名称
-        batch_index: 批次索引（用于日志）
-
-    Returns:
-        处理后的字幕段列表
-    """
+    """在批次内进行 LLM 断句和时间戳对齐（移植自 youtube-subtitle）。"""
     if not pre_split_sentences:
         return []
 
@@ -363,12 +325,14 @@ def merge_segments_within_batch(
     batch_word_segments = word_segments[start_index:end_index]
 
     # 拼接为文本
-    batch_text = ' '.join(seg.text for seg in batch_word_segments)
+    batch_text = " ".join(seg.text for seg in batch_word_segments)
 
     # 记录日志
     current_words = count_words(batch_text)
     batch_prefix = f"[批次{batch_index}]" if batch_index is not None else ""
-    logger.info(f"📝 {batch_prefix} 处理 {current_words} 个单词，{len(pre_split_sentences)} 个预分句")
+    logger.info(
+        f"📝 {batch_prefix} 处理 {current_words} 个单词，{len(pre_split_sentences)} 个预分句"
+    )
 
     # LLM 断句
     llm_sentences = split_by_llm(
@@ -377,12 +341,14 @@ def merge_segments_within_batch(
         llm=llm,
         model=model,
         max_word_count_english=config.max_word_count_english,
-        batch_index=batch_index
+        batch_index=batch_index,
     )
     logger.info(f"✂️ {batch_prefix} LLM 断句得到 {len(llm_sentences)} 个句子")
 
     # 时间戳对齐
-    aligned_segments = merge_segments_based_on_sentences(batch_word_segments, llm_sentences)
+    aligned_segments = merge_segments_based_on_sentences(
+        batch_word_segments, llm_sentences
+    )
 
     # 合并过短的分段
     merge_short_segment(aligned_segments, config.max_word_count_english)
@@ -390,22 +356,12 @@ def merge_segments_within_batch(
     return aligned_segments
 
 
-
-def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences: List[str], max_unmatched: int = MAX_UNMATCHED_SENTENCES) -> List[SubtitleSegment]:
-    """
-    基于提供的句子列表合并字幕分段
-    
-    Args:
-        segments: 字幕段列表
-        sentences: 句子列表
-        max_unmatched: 允许的最大未匹配句子数量，超过此数量将抛出异常
-        
-    Returns:
-        合并后的 SubtitleSegment 列表
-        
-    Raises:
-        SubtitleProcessError: 当未匹配句子数量超过阈值时抛出
-    """
+def merge_segments_based_on_sentences(
+    segments: List[SubtitleSegment],
+    sentences: List[str],
+    max_unmatched: int = MAX_UNMATCHED_SENTENCES,
+) -> List[SubtitleSegment]:
+    """基于提供的句子列表合并字幕分段。"""
     asr_texts = [seg.text for seg in segments]
     asr_len = len(asr_texts)
     asr_index = 0
@@ -422,14 +378,19 @@ def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences
 
         max_window_size = min(word_count * 2, asr_len - asr_index)
         min_window_size = max(1, word_count // 2)
-        window_sizes = sorted(range(min_window_size, max_window_size + 1), key=lambda x: abs(x - word_count))
+        window_sizes = sorted(
+            range(min_window_size, max_window_size + 1),
+            key=lambda x: abs(x - word_count),
+        )
 
         for window_size in window_sizes:
             max_start = min(asr_index + max_shift + 1, asr_len - window_size + 1)
             for start in range(asr_index, max_start):
-                substr = ''.join(asr_texts[start:start + window_size])
+                substr = "".join(asr_texts[start : start + window_size])
                 substr_proc = preprocess_text(substr)
-                ratio = difflib.SequenceMatcher(None, sentence_proc, substr_proc).ratio()
+                ratio = difflib.SequenceMatcher(
+                    None, sentence_proc, substr_proc
+                ).ratio()
 
                 if ratio > best_ratio:
                     best_ratio = ratio
@@ -444,14 +405,16 @@ def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences
             start_seg_index = best_pos
             end_seg_index = best_pos + best_window_size - 1
 
-            segs_to_merge = segments[start_seg_index:end_seg_index + 1]
+            segs_to_merge = segments[start_seg_index : end_seg_index + 1]
             seg_groups = merge_by_time_gaps(segs_to_merge, max_gap=MAX_GAP)
 
             for group in seg_groups:
                 merged_text = sentence_proc
                 merged_start_time = group[0].start_time
                 merged_end_time = group[-1].end_time
-                merged_seg = SubtitleSegment(merged_text, merged_start_time, merged_end_time)
+                merged_seg = SubtitleSegment(
+                    merged_text, merged_start_time, merged_end_time
+                )
                 new_segments.append(merged_seg)
 
             max_shift = MAX_SHIFT
@@ -471,17 +434,9 @@ def merge_segments_based_on_sentences(segments: List[SubtitleSegment], sentences
 
     return new_segments
 
+
 def _should_merge_segments(current_seg, next_seg, max_word_count: int) -> bool:
-    """判断是否应该合并两个分段
-
-    Args:
-        current_seg: 当前分段
-        next_seg: 下一个分段
-        max_word_count: 最大单词数限制
-
-    Returns:
-        是否应该合并
-    """
+    """判断是否应该合并两个分段。"""
     time_gap = abs(next_seg.start_time - current_seg.end_time)
     current_words = count_words(current_seg.text)
     next_words = count_words(next_seg.text)
@@ -494,10 +449,15 @@ def _should_merge_segments(current_seg, next_seg, max_word_count: int) -> bool:
     # 4. 当前段落不以句子结束标记结尾
     has_sentence_end = any(mark in current_seg.text for mark in [".", "?", "!"])
 
-    return (time_gap < 300 and
-            (current_words < 5 or next_words <= 5) and
-            total_words <= max_word_count and
-            not has_sentence_end)
+    return (
+        time_gap < SHORT_SEGMENT_TIME_GAP
+        and (
+            current_words < SHORT_SEGMENT_MIN_WORDS
+            or next_words <= SHORT_SEGMENT_MIN_WORDS
+        )
+        and total_words <= max_word_count
+        and not has_sentence_end
+    )
 
 
 def merge_short_segment(
@@ -530,59 +490,17 @@ def merge_short_segment(
 
 
 def preprocess_segments(segments: List[SubtitleSegment]) -> List[SubtitleSegment]:
-    """
-    预处理字幕分段:
-    1. 移除纯标点符号的分段
-    2. 保留原始大小写格式
-    
-    Args:
-        segments: 字幕分段列表
-    Returns:
-        处理后的分段列表
-    """
-    new_segments = []
-    for seg in segments:
-        if not is_pure_punctuation(seg.text):
-            # 保留原始格式，不转换为小写
-            new_segments.append(seg)
-    return new_segments
+    """预处理字幕分段。"""
+    return [seg for seg in segments if not is_pure_punctuation(seg.text)]
 
 
-def merge_by_time_gaps(segments: List[SubtitleSegment], max_gap: int = MAX_GAP, check_large_gaps: bool = False) -> List[List[SubtitleSegment]]:
-    """
-    根据时间间隔合并分段
-    """
-    if not segments:
-        return []
-
-    result = []
-    current_group = [segments[0]]
-    recent_gaps = []  # 存储最近的时间间隔
-    WINDOW_SIZE = 5   # 检查最近5个间隔
-
-    for i in range(1, len(segments)):
-        time_gap = segments[i].start_time - segments[i-1].end_time
-
-        if check_large_gaps:
-            recent_gaps.append(time_gap)
-            if len(recent_gaps) > WINDOW_SIZE:
-                recent_gaps.pop(0)
-            if len(recent_gaps) == WINDOW_SIZE:
-                avg_gap = sum(recent_gaps) / len(recent_gaps)
-                # 如果当前间隔大于平均值的3倍
-                if time_gap > avg_gap*3 and len(current_group) > 5:
-                    result.append(current_group)
-                    current_group = []
-                    recent_gaps = []  # 重置间隔记录
-
-        if time_gap > max_gap:
-            result.append(current_group)
-            current_group = []
-            recent_gaps = []  # 重置间隔记录
-
-        current_group.append(segments[i])
-
-    if current_group:
-        result.append(current_group)
-
-    return result
+def merge_by_time_gaps(
+    segments: List[SubtitleSegment], max_gap: int = MAX_GAP
+) -> List[List[SubtitleSegment]]:
+    """按超过阈值的停顿将连续字幕分组。"""
+    groups = []
+    for segment in segments:
+        if not groups or segment.start_time - groups[-1][-1].end_time > max_gap:
+            groups.append([])
+        groups[-1].append(segment)
+    return groups

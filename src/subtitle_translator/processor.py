@@ -125,10 +125,10 @@ def _handle_translation_error(e: Exception, logger) -> None:
     for error_type, error_name in error_types.items():
         if isinstance(e, error_type):
             logger.error(f"❌ {error_name}: {e.message}")
-            if hasattr(e, "suggestion") and e.suggestion:
+            if e.suggestion:
                 logger.error(f"{e.suggestion}")
             print(f"[bold red]❌ {error_name}:[/bold red] {e.message}")
-            if hasattr(e, "suggestion") and e.suggestion:
+            if e.suggestion:
                 print(f"[bold yellow]{e.suggestion}[/bold yellow]")
             raise
 
@@ -156,28 +156,18 @@ def process_single_file(
         print(f"文件 [cyan]{input_file.name}[/cyan] 不是 SRT 格式。")
         raise RuntimeError(f"只支持 SRT 字幕文件，当前文件: {input_file.name}")
 
-    temp_srt_path = input_file
-
     # 使用传入的翻译服务或创建新的服务
     service_was_passed = translator_service is not None
-    if translator_service is None:
-        # 单文件模式，需要创建并初始化翻译服务
-        try:
+    try:
+        if translator_service is None:
             translator_service = SubtitleTranslatorService()
             translator_service.init_translation_env(llm_model, show_config=True)
-        except Exception as init_error:
-            print(f"[bold red]创建翻译服务失败:[/bold red] {init_error}")
-            if translator_service is not None:
-                translator_service.close()
-            raise
-    # 批量模式下，翻译服务已经初始化完成，直接使用
-    try:
         output_files = translator_service.translate_srt(
-            input_srt_path=temp_srt_path,
+            input_srt_path=input_file,
             target_lang=target_lang,
             output_dir=output_dir,
             llm_model=llm_model,
-            skip_env_init=service_was_passed,  # 如果服务是传入的（批量模式），跳过环境初始化
+            skip_env_init=True,
             preserve_intermediate=preserve_intermediate,
         )
         logger.info(f"ASS 文件生成成功: {output_files.bilingual_ass}")

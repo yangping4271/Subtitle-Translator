@@ -198,7 +198,6 @@ class SubtitleTranslatorService:
                 metrics_checkpoint = self.llm.metrics_checkpoint()
         except Exception:
             metrics_checkpoint = None
-        metrics_reported = False
         try:
             log_section_start(self.logger, "字幕翻译任务", "🎬")
 
@@ -266,13 +265,6 @@ class SubtitleTranslatorService:
 
             print()
             show_time_stats(stage_times, total_elapsed)
-            if metrics_checkpoint is not None:
-                try:
-                    self._show_api_metrics(metrics_checkpoint)
-                except Exception:
-                    pass
-                metrics_reported = True
-
             final_stats = {
                 "输入文件": input_srt_path.name,
                 "输入字幕片段": len(source_subtitle.segments),
@@ -297,11 +289,8 @@ class SubtitleTranslatorService:
             self.logger.debug("详细错误信息:", exc_info=True)
             raise
         finally:
-            if metrics_checkpoint is not None and not metrics_reported:
-                try:
-                    self._show_api_metrics(metrics_checkpoint)
-                except Exception:
-                    pass
+            if metrics_checkpoint is not None:
+                self._show_api_metrics(metrics_checkpoint)
 
     def _show_api_metrics(self, checkpoint: int) -> None:
         """输出 checkpoint 之后的请求指标，失败任务也保留汇总。"""
@@ -392,68 +381,49 @@ class SubtitleTranslatorService:
             translation_context,
         ) as translator:
 
-            def process_batch_task(args):
-                """翻译一个已完成 Subtitle segmentation 的 Translation batch。"""
-                batch_index, translation_batch = args
-                batch_translate_result = translator.translate_batch(
-                    translation_batch,
-                    context_info,
-                    batch_num=batch_index + 1,
-                    total_batches=total_batches,
-                )
-
-                return (
-                    batch_index,
-                    list(translation_batch.segments),
-                    batch_translate_result,
-                )
-
-            batch_tasks = list(enumerate(batches))
-
-            for i in range(0, len(batch_tasks), concurrency):
-                chunk = batch_tasks[i : i + concurrency]
-                with ThreadPoolExecutor(
-                    max_workers=min(len(chunk), concurrency)
-                ) as executor:
+            for i in range(0, total_batches, concurrency):
+                chunk = batches[i : i + concurrency]
+                with ThreadPoolExecutor(max_workers=len(chunk)) as executor:
                     future_to_batch_index = {
-                        executor.submit(process_batch_task, batch_task): batch_task[0]
-                        for batch_task in chunk
+                        executor.submit(
+                            translator.translate_batch,
+                            batch,
+                            context_info,
+                            batch_num=index + 1,
+                            total_batches=total_batches,
+                        ): index
+                        for index, batch in enumerate(chunk, i)
                     }
                     chunk_results = {}
 
                     for future in as_completed(future_to_batch_index):
-                        batch_index, segments, translate_result = future.result()
-                        chunk_results[batch_index] = (segments, translate_result)
+                        batch_index = future_to_batch_index[future]
+                        chunk_results[batch_index] = future.result()
                         completed_batches += 1
                         self.logger.info(
-                            f"📈 翻译进度: {completed_batches}/{len(batch_tasks)}"
+                            f"📈 翻译进度: {completed_batches}/{total_batches}"
                         )
                         print(
                             "📈 [bold cyan]批次进度:[/bold cyan] "
-                            f"[cyan]{completed_batches}/{len(batch_tasks)}[/cyan] "
+                            f"[cyan]{completed_batches}/{total_batches}[/cyan] "
                             f"(当前完成: 第 {batch_index + 1} 批)"
                         )
 
                     for batch_index in sorted(chunk_results):
-                        segments, translate_result = chunk_results[batch_index]
-                        all_segments.extend(segments)
-                        all_translated_results.extend(translate_result)
+                        all_segments.extend(batches[batch_index].segments)
+                        all_translated_results.extend(chunk_results[batch_index])
 
             batch_logs_all = list(translator.batch_logs)
         translation_time = time.time() - translation_start
 
-        # 6. 按时间排序
-        all_segments.sort(key=lambda seg: seg.start_time)
         sentence_subtitle = SubtitleData(all_segments)
 
-        # 7. 重新编号翻译结果
-        renumbered_results = []
-        for idx, result in enumerate(all_translated_results, 1):
-            result_copy = result.copy()
-            result_copy["id"] = idx
-            renumbered_results.append(result_copy)
+        renumbered_results = [
+            {**result, "id": index}
+            for index, result in enumerate(all_translated_results, 1)
+        ]
 
-        # 8. 显示优化统计
+        # 显示优化统计
         stats = self._get_optimization_stats(batch_logs_all)
         self.logger.info(
             "📊 优化统计: 格式=%s, 内容=%s, 可疑=%s, 总计=%s",

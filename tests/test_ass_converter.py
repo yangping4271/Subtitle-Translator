@@ -59,3 +59,25 @@ def test_normalize_chinese_punctuation_removes_trailing_weak_punctuation():
     assert normalize_chinese_punctuation("但当会话结束时，") == "但当会话结束时"
     assert normalize_chinese_punctuation("用于存储、检索、") == "用于存储、检索"
     assert normalize_chinese_punctuation("刚才在做什么？") == "刚才在做什么？"
+
+
+def test_ass_output_language_suffix_and_styles(tmp_path):
+    from subtitle_translator.translation_core.utils.ass_converter import (
+        convert_srt_to_ass,
+    )
+
+    english = tmp_path / "lesson.en.srt"
+    english.write_text(SRT_CONTENT, encoding="utf-8")
+    for suffix, expected_name, font in (
+        ("zh-cn", "lesson.ass", "宋体-简 黑体,11"),
+        ("ja", "lesson.ass", "Noto Sans CJK JP,13"),
+        ("unknown", "lesson.unknown.ass", "Noto Sans,13"),
+    ):
+        target = tmp_path / f"lesson.{suffix}.srt"
+        target.write_text(SRT_CONTENT.replace("Hello world", "你好"), encoding="utf-8")
+        output = convert_srt_to_ass(target, english, tmp_path)
+        assert output.name == expected_name
+        content = output.read_text(encoding="utf-8")
+        assert f"Style: Secondary,{font}," in content
+        assert content.count("Dialogue:") == 4
+        assert "你好" in content and "Hello world" in content

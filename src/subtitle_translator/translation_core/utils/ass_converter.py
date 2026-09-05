@@ -130,8 +130,7 @@ def srt2ass_converter_func(input_file: Union[str, Path], pos: str) -> str:
 
     content, _ = fileopen(input_file)
 
-    if '\ufeff' in content:
-        content = content.replace('\ufeff', '')
+    content = content.replace('\ufeff', '')
 
     # 解析 SRT 内容
     subtitles = parse_srt_content(content)
@@ -191,19 +190,14 @@ def convert_srt_to_ass(target_lang_srt_path: Path, english_srt_path: Path, outpu
         'default': 'Noto Sans,13'          # 默认
     }
     
-    # 从文件名检测语言
-    def detect_language_from_filename(filepath):
-        filename = Path(filepath).stem.lower()
-        language_suffixes = ['zh-cn', 'zh-tw', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'ru', 'it', 'ar', 'th', 'vi', 'en']
-        for suffix in language_suffixes:
-            if filename.endswith('.' + suffix):
-                return suffix
-        return 'default'
-    
-    # 检测目标语言并获取对应字体
-    target_lang = detect_language_from_filename(target_lang_srt_path)
-    target_font = LANGUAGE_FONTS.get(target_lang, LANGUAGE_FONTS['default'])
-    
+    base_name, separator, target_lang = target_lang_srt_path.stem.rpartition(".")
+    target_font = LANGUAGE_FONTS.get(
+        target_lang.lower() if separator else "default", LANGUAGE_FONTS["default"]
+    )
+    known_language = target_lang in LANGUAGE_FONTS and target_lang != "default"
+    if not separator or (not known_language and target_lang != "en"):
+        base_name = target_lang_srt_path.stem
+
     head_str = f'''[Script Info]
 ; This is an Advanced Sub Station Alpha v4+ script.
 Title:
@@ -226,26 +220,11 @@ Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
     english_lines = srt2ass_converter_func(str(english_srt_path), 'Default')
 
     # 使用目标语言文件来获取编码信息和生成输出文件名
-    tmp, encoding = fileopen(str(target_lang_srt_path))
-
-    if u'\ufeff' in tmp:
-        tmp = tmp.replace(u'\ufeff', '')
-
-    # 移除语言后缀，支持多种语言代码格式
-    base_name = target_lang_srt_path.stem
-    # 移除常见的语言后缀模式，如 .zh, .ja, .en, .ko, .fr 等
-    language_suffixes = ['.zh', '.zh-cn', '.zh-tw', '.ja', '.en', '.ko', '.fr', '.de', '.es', '.pt', '.ru', '.it', '.ar', '.th', '.vi']
-    for suffix in language_suffixes:
-        if base_name.endswith(suffix):
-            base_name = base_name[:-len(suffix)]
-            break
+    _, encoding = fileopen(target_lang_srt_path)
     output_file = output_dir / f"{base_name}.ass"
     
     # 合并目标语言字幕和英文字幕
     output_str = head_str + '\n' + target_lang_lines + english_lines
-    output_str = output_str.encode(encoding)
-
-    with open(output_file, 'wb') as output:
-        output.write(output_str)
+    output_file.write_bytes(output_str.encode(encoding))
     
     return output_file

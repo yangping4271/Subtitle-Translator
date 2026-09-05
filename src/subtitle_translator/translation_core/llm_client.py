@@ -301,10 +301,6 @@ class LLMClient:
         self._metrics_lock = threading.Lock()
         self._reported_reasoning_models: set[str] = set()
 
-    def _get_reasoning_effort(self, model: str) -> Optional[str]:
-        """获取已登记模型支持的关闭推理档位。"""
-        return get_reasoning_effort(model)
-
     def _build_extra_body(
         self,
         kwargs: dict,
@@ -342,7 +338,7 @@ class LLMClient:
         if self.config.disable_thinking:
             request.pop("reasoning_effort", None)
             if provider_method is None:
-                reasoning_effort = self._get_reasoning_effort(model)
+                reasoning_effort = get_reasoning_effort(model)
         if reasoning_effort:
             request["reasoning_effort"] = reasoning_effort
 

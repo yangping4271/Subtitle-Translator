@@ -1,7 +1,6 @@
 import re
-import os
 import math
-from typing import List, Dict, Optional
+from typing import List, Dict
 from pathlib import Path
 from dataclasses import dataclass
 import logging
@@ -11,7 +10,7 @@ logger = logging.getLogger("subtitle_translator_cli")
 
 # 常量定义
 CHARS_PER_PHONEME = 4  # 每个音素包含的字符数（基于语音学理论）
-ELLIPSIS_PLACEHOLDER = '<<<ELLIPSIS>>>'
+ELLIPSIS_PLACEHOLDER = "<<<ELLIPSIS>>>"
 WORD_TIMESTAMP_THRESHOLD = 0.8  # 单词级时间戳判定阈值
 MAX_CHAR_LENGTH_FOR_WORD = 2  # 单词级时间戳的最大字符长度
 
@@ -19,34 +18,39 @@ MAX_CHAR_LENGTH_FOR_WORD = 2  # 单词级时间戳的最大字符长度
 @dataclass
 class PreSplitSentence:
     """预分句数据结构（移植自 youtube-subtitle）"""
+
     text: str
     word_start_index: int
     word_end_index: int
     start_time: int
     end_time: int
 
+
 def normalize_chinese_punctuation(text: str) -> str:
     """保留中文句内标点，删除行尾弱标点，并补齐中英文/数字间空格。"""
-    text = re.sub(r'\s+', ' ', text).strip()
-    text = re.sub(r'([\u4e00-\u9fff])([A-Za-z0-9])', r'\1 \2', text)
-    text = re.sub(r'([A-Za-z0-9])([\u4e00-\u9fff])', r'\1 \2', text)
-    text = re.sub(r'[，,、。．.；;：:]+$', '', text)
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"([\u4e00-\u9fff])([A-Za-z0-9])", r"\1 \2", text)
+    text = re.sub(r"([A-Za-z0-9])([\u4e00-\u9fff])", r"\1 \2", text)
+    text = re.sub(r"[，,、。．.；;：:]+$", "", text)
     return text
+
 
 def normalize_english_punctuation(text: str) -> str:
     """按 Netflix 规范处理英文标点：保留 ? ! ... ' "，删除 . , ; :"""
     # 先保护省略号
-    text = text.replace('...', ELLIPSIS_PLACEHOLDER)
+    text = text.replace("...", ELLIPSIS_PLACEHOLDER)
 
     # 删除 . , ; :
-    text = re.sub(r'[.,;:]', '', text)
+    text = re.sub(r"[.,;:]", "", text)
 
     # 恢复省略号
-    text = text.replace(ELLIPSIS_PLACEHOLDER, '...')
+    text = text.replace(ELLIPSIS_PLACEHOLDER, "...")
     return text
+
 
 class SubtitleSegment:
     """单个字幕段的数据结构"""
+
     def __init__(self, text: str, start_time: int, end_time: int):
         self.text = text
         self.start_time = start_time
@@ -75,22 +79,20 @@ class SubtitleSegment:
 
 class SubtitleData:
     """字幕数据的主要容器类"""
+
     def __init__(self, segments: List[SubtitleSegment]):
         # 去除 segments.text 为空的
-        filtered_segments = [seg for seg in segments if seg.text and seg.text.strip()]
-        filtered_segments.sort(key=lambda x: x.start_time)
-        self.segments = filtered_segments
+        self.segments = sorted(
+            (seg for seg in segments if seg.text and seg.text.strip()),
+            key=lambda seg: seg.start_time,
+        )
 
     def __iter__(self):
         return iter(self.segments)
-    
+
     def __len__(self) -> int:
         return len(self.segments)
-    
-    def has_data(self) -> bool:
-        """检查是否有字幕数据"""
-        return len(self.segments) > 0
-    
+
     def is_word_timestamp(self) -> bool:
         """
         判断是否是字级时间戳
@@ -103,41 +105,23 @@ class SubtitleData:
             return False
 
         valid_segments = sum(
-            1 for seg in self.segments
-            if self._is_single_word_or_char(seg.text.strip())
+            1 for seg in self.segments if self._is_single_word_or_char(seg.text.strip())
         )
         return (valid_segments / len(self.segments)) >= WORD_TIMESTAMP_THRESHOLD
 
     def _is_single_word_or_char(self, text: str) -> bool:
         """检查是否只包含一个英文单词或一个汉字"""
-        return (len(text.split()) == 1 and text.isascii()) or len(text.strip()) <= MAX_CHAR_LENGTH_FOR_WORD
+        return (len(text.split()) == 1 and text.isascii()) or len(
+            text.strip()
+        ) <= MAX_CHAR_LENGTH_FOR_WORD
 
-    def split_to_word_segments(self) -> 'SubtitleData':
-        """
-        将片段级别字幕转换为单词级别字幕，并按音素精确分配时间戳
-        
-        这个方法借鉴了VideoCaptioner项目的实现策略，通过以下步骤处理：
-        1. 使用多语言正则表达式识别所有有效字符和单词
-        2. 基于音素理论分配时间戳（每4个字符=1个音素）
-        3. 支持拉丁语系、中日韩、阿拉伯文、俄文等多种语言
-        
-        优势：
-        - 时间戳分配比简单比例分配更准确
-        - 支持多语言混合文本
-        - 转换后可复用现有的批量断句框架
-        
-        Returns:
-            SubtitleData: 包含分割后字词级别segments的新SubtitleData实例
-            
-        Note:
-            转换后的字幕将被现有的断句系统进一步优化，
-            最终生成适合观看的句子级别字幕
-        """
+    def split_to_word_segments(self) -> "SubtitleData":
+        """按语言拆分字词，以字符权重分配原片段的时间。"""
         new_segments = []
         for seg in self.segments:
             text = seg.text
             duration = seg.end_time - seg.start_time
-            
+
             # 多语言字符匹配模式（借鉴VideoCaptioner的全面支持）
             # 分为两类：连续提取的语言和单字提取的语言
             pattern = (
@@ -159,115 +143,42 @@ class SubtitleData:
                 r"|[\u0e80-\u0eff]"  # 老挝文
                 r"|[\u1000-\u109f]"  # 缅甸文
             )
-            
-            words = re.finditer(pattern, text)
-            words_list = list(words)
-            
-            if not words_list:
-                # 如果没有匹配到有效字符，跳过此段
+
+            words = re.findall(pattern, text)
+            if not words:
                 continue
-                
-            # 基于音素理论计算时间分配
-            total_phonemes = sum(
-                math.ceil(len(w.group()) / CHARS_PER_PHONEME) for w in words_list
-            )
-            time_per_phoneme = duration / max(total_phonemes, 1)  # 防止除零错误
-            
-            # 为每个识别出的词/字符创建独立的时间戳
+            phonemes = [math.ceil(len(word) / CHARS_PER_PHONEME) for word in words]
+            time_per_phoneme = duration / sum(phonemes)
             current_time = seg.start_time
-            for word_match in words_list:
-                word = word_match.group()
-                # 计算当前词的音素数量
-                word_phonemes = math.ceil(len(word) / CHARS_PER_PHONEME)
-                word_duration = int(time_per_phoneme * word_phonemes)
-                
-                # 创建新的字词级segment，确保时间不超出原始范围
-                word_end_time = min(current_time + word_duration, seg.end_time)
-                new_segments.append(
-                    SubtitleSegment(
-                        text=word, 
-                        start_time=current_time, 
-                        end_time=word_end_time
-                    )
+            for word, weight in zip(words, phonemes):
+                word_end_time = min(
+                    current_time + int(time_per_phoneme * weight), seg.end_time
                 )
-                
+                new_segments.append(SubtitleSegment(word, current_time, word_end_time))
                 current_time = word_end_time
-                
+
         return SubtitleData(new_segments)
 
     def to_txt(self) -> str:
-        """
-        转换为纯文本格式
-        - 正确处理标点符号（不在标点前加空格）
-        - 保持单词之间的空格
-        """
-        # 过滤掉音效标记，并获取所有文本
-        texts = []
-        for seg in self.segments:
-            text = seg.text.strip()
-            # 如果是标点符号，不需要前导空格
-            if text and not text[0].isalnum() and texts:
-                texts[-1] = texts[-1].rstrip()
-            texts.append(text)
-        
-        # 使用空格连接所有文本
-        return ' '.join(texts).strip()
-
-    def to_srt(self, save_path=None) -> str:
-        """转换为SRT字幕格式"""
-        srt_lines = []
-        for n, seg in enumerate(self.segments, 1):
-            srt_lines.append(f"{n}\n{seg.to_srt_ts()}\n{seg.transcript}\n")
-
-        srt_text = "\n".join(srt_lines)
-        if save_path:
-            with open(save_path, 'w', encoding='utf-8') as f:
-                f.write(srt_text)
-        return srt_text
+        """按时间顺序连接字幕文本。"""
+        return " ".join(seg.text.strip() for seg in self.segments).strip()
 
     def to_json(self) -> dict:
         """转换为JSON格式"""
         result_json = {}
         for i, segment in enumerate(self.segments, 1):
-            # 检查是否有换行符
-            if "\n" in segment.text:
-                original_subtitle, translated_subtitle = segment.text.split("\n", 1)
-            else:
-                original_subtitle, translated_subtitle = segment.text, ""
-
+            original_subtitle, _, translated_subtitle = segment.text.partition("\n")
             result_json[str(i)] = {
                 "start_time": segment.start_time,
                 "end_time": segment.end_time,
                 "original_subtitle": original_subtitle,
-                "translated_subtitle": translated_subtitle
+                "translated_subtitle": translated_subtitle,
             }
         return result_json
 
-    def merge_segments(self, start_index: int, end_index: int, merged_text: Optional[str] = None):
-        """合并从 start_index 到 end_index 的段（包含）"""
-        if start_index < 0 or end_index >= len(self.segments) or start_index > end_index:
-            raise IndexError("无效的段索引。")
-        merged_start_time = self.segments[start_index].start_time
-        merged_end_time = self.segments[end_index].end_time
-        if merged_text is None:
-            merged_text = ''.join(seg.text for seg in self.segments[start_index:end_index+1])
-        merged_seg = SubtitleSegment(merged_text, merged_start_time, merged_end_time)
-        # 替换 segments[start_index:end_index+1] 为 merged_seg
-        self.segments[start_index:end_index+1] = [merged_seg]
-
-    def merge_with_next_segment(self, index: int) -> None:
-        """合并指定索引的段与下一个段"""
-        if index < 0 or index >= len(self.segments) - 1:
-            raise IndexError("索引超出范围或没有下一个段可合并。")
-        current_seg = self.segments[index]
-        next_seg = self.segments[index + 1]
-        merged_text = f"{current_seg.text} {next_seg.text}"
-        merged_seg = SubtitleSegment(merged_text, current_seg.start_time, next_seg.end_time)
-        self.segments[index] = merged_seg
-        # 删除下一个段
-        del self.segments[index + 1]
-
-    def save_translation(self, output_path: str, subtitle_dict: Dict[int, str], operation: str = "处理") -> None:
+    def save_translation(
+        self, output_path: str, subtitle_dict: Dict[int, str], operation: str = "处理"
+    ) -> None:
         """
         保存翻译或优化后的字幕文件
 
@@ -278,74 +189,55 @@ class SubtitleData:
         """
         # 创建输出目录（如果不存在）
         output_dir = Path(output_path).parent
-        if output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         # 生成SRT格式的字幕内容
         srt_lines = []
         logger.info(f"{operation}字幕段落数: {len(self.segments)}")
-        
+
         # 记录写入字幕数
         saved_subtitle_count = 0
         empty_translation_count = 0
-        
+
         for i, segment in enumerate(self.segments, 1):
             if i not in subtitle_dict:
                 logger.warning(f"字幕 {i} 不在字典中")
                 continue
-                
-            # 获取字幕内容，确保是字符串类型
-            subtitle_text = subtitle_dict[i]
-            if subtitle_text is None:
-                if operation == "优化":
-                    logger.warning(f"字幕 {i} 的优化内容为None，将回退为原文")
-                    subtitle_text = segment.transcript
-                else:
-                    logger.warning(f"字幕 {i} 的翻译内容为None，将保留为空字幕")
-                    subtitle_text = ""
-                
-            processed_text = subtitle_text.strip()
 
-            # 按 Netflix 规范处理标点
+            processed_text = (subtitle_dict[i] or "").strip()
             if operation == "翻译":
-                if processed_text:
-                    processed_text = normalize_chinese_punctuation(processed_text)
+                processed_text = normalize_chinese_punctuation(processed_text)
             elif operation == "优化":
-                if processed_text:
-                    processed_text = normalize_english_punctuation(processed_text)
+                processed_text = normalize_english_punctuation(processed_text)
                 if not processed_text:
                     logger.warning(f"字幕 {i} 的优化内容为空，将回退为原文")
-                    processed_text = normalize_english_punctuation(segment.transcript.strip())
+                    processed_text = normalize_english_punctuation(segment.text.strip())
 
             if operation == "翻译" and not processed_text:
                 empty_translation_count += 1
                 logger.info(f"字幕 {i} 的翻译为空，保留时间轴并写入空字幕")
 
             saved_subtitle_count += 1
-            output_text = processed_text if processed_text else ""
-            
-            srt_lines.extend([
-                str(saved_subtitle_count),  # 使用新的编号
-                segment.to_srt_ts(),
-                output_text,
-                ""  # 空行分隔
-            ])
+
+            srt_lines.extend(
+                [
+                    str(saved_subtitle_count),  # 使用新的编号
+                    segment.to_srt_ts(),
+                    processed_text,
+                    "",  # 空行分隔
+                ]
+            )
 
         # 写入文件
-        srt_content = "\n".join(srt_lines)
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(srt_content)
+        Path(output_path).write_text("\n".join(srt_lines), encoding="utf-8")
 
-        # 检查文件是否成功保存
-        if not Path(output_path).exists():
-            raise Exception(f"字幕{operation}失败: 文件未能成功保存")
-            
         logger.info(f"{operation}后的字幕已保存至: {output_path}")
         if operation == "翻译" and empty_translation_count > 0:
             logger.info(f"空翻译字幕数: {empty_translation_count}")
 
-    def save_translations_to_files(self, translate_result: List[Dict],
-                                english_output: str, target_lang_output: str) -> None:
+    def save_translations_to_files(
+        self, translate_result: List[Dict], english_output: str, target_lang_output: str
+    ) -> None:
         """
         保存翻译结果到指定的文件路径
 
@@ -357,28 +249,37 @@ class SubtitleData:
         logger.info("开始保存...")
 
         # 保存优化后的英文字幕
-        optimized_subtitles = {item["id"]: item["optimized"] for item in translate_result}
+        optimized_subtitles = {
+            item["id"]: item["optimized"] for item in translate_result
+        }
         self.save_translation(english_output, optimized_subtitles, "优化")
 
         # 保存翻译后的目标语言字幕
         translated_subtitles = {
-            item["id"]: item["translation"]
-            for item in translate_result
+            item["id"]: item["translation"] for item in translate_result
         }
         self.save_translation(target_lang_output, translated_subtitles, "翻译")
 
         # 只在最后统一打印总体统计
         total = len(self.segments)
-        english_fallback = sum(1 for item in translate_result if not (item.get("optimized") or "").strip())
-        empty_translations = sum(1 for item in translate_result if not (item.get("translation") or "").strip())
-        logger.info(f"总字幕数: {total}, 英文回退数: {english_fallback}, 空翻译数: {empty_translations}")
+        english_fallback = sum(
+            1 for item in translate_result if not (item.get("optimized") or "").strip()
+        )
+        empty_translations = sum(
+            1
+            for item in translate_result
+            if not (item.get("translation") or "").strip()
+        )
+        logger.info(
+            f"总字幕数: {total}, 英文回退数: {english_fallback}, 空翻译数: {empty_translations}"
+        )
         logger.info("保存完成")
 
     def __str__(self):
         return self.to_txt()
 
 
-def load_subtitle(file_path: str) -> 'SubtitleData':
+def load_subtitle(file_path: str) -> "SubtitleData":
     """
     从文件加载字幕数据
 
@@ -396,15 +297,16 @@ def load_subtitle(file_path: str) -> 'SubtitleData':
         raise FileNotFoundError(f"文件不存在: {path}")
 
     # 检查文件格式
-    if not path.suffix.lower() == '.srt':
+    if not path.suffix.lower() == ".srt":
         raise ValueError("仅支持srt格式字幕文件")
 
     try:
-        content = path.read_text(encoding='utf-8')
+        content = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        content = path.read_text(encoding='gbk')
+        content = path.read_text(encoding="gbk")
 
     return _parse_srt(content)
+
 
 def _validate_timestamps(segments: List[SubtitleSegment]) -> None:
     """验证字幕时间戳合法性，发现问题时抛出异常"""
@@ -418,7 +320,7 @@ def _validate_timestamps(segments: List[SubtitleSegment]) -> None:
                 f"({SubtitleSegment._ms_to_srt_time(seg.end_time)}) "
                 f"早于开始时间 "
                 f"({SubtitleSegment._ms_to_srt_time(seg.start_time)})",
-                suggestion="请检查 SRT 文件时间戳是否正确。"
+                suggestion="请检查 SRT 文件时间戳是否正确。",
             )
 
     if len(segments) < 2:
@@ -432,12 +334,13 @@ def _validate_timestamps(segments: List[SubtitleSegment]) -> None:
                 f"({SubtitleSegment._ms_to_srt_time(segments[i].start_time)}) "
                 f"早于第 {i} 条 "
                 f"({SubtitleSegment._ms_to_srt_time(segments[i - 1].start_time)})",
-                suggestion="请检查 SRT 文件时间戳是否单调递增。"
+                suggestion="请检查 SRT 文件时间戳是否单调递增。",
             )
 
     # 检查2：过多重复开始时间（超过 20% 的相邻字幕共享同一开始时间）
     same_start_count = sum(
-        1 for i in range(1, len(segments))
+        1
+        for i in range(1, len(segments))
         if segments[i].start_time == segments[i - 1].start_time
     )
     ratio = same_start_count / (len(segments) - 1)
@@ -445,11 +348,11 @@ def _validate_timestamps(segments: List[SubtitleSegment]) -> None:
         raise SubtitleProcessError(
             f"SRT 时间戳不合法：{same_start_count} 对相邻字幕共享相同开始时间"
             f"（占比 {ratio:.0%}），时间戳可能已损坏。",
-            suggestion="请检查 SRT 文件的时间戳是否正确。"
+            suggestion="请检查 SRT 文件的时间戳是否正确。",
         )
 
 
-def _parse_srt(srt_str: str) -> 'SubtitleData':
+def _parse_srt(srt_str: str) -> "SubtitleData":
     """
     解析SRT格式的字符串
 
@@ -460,16 +363,16 @@ def _parse_srt(srt_str: str) -> 'SubtitleData':
     """
     segments = []
     srt_time_pattern = re.compile(
-        r'(\d{2}):(\d{2}):(\d{1,2})[.,](\d{3})\s-->\s(\d{2}):(\d{2}):(\d{1,2})[.,](\d{3})'
+        r"(\d{2}):(\d{2}):(\d{1,2})[.,](\d{3})\s-->\s(\d{2}):(\d{2}):(\d{1,2})[.,](\d{3})"
     )
-    blocks = re.split(r'\n\s*\n', srt_str.strip())
+    blocks = re.split(r"\n\s*\n", srt_str.strip())
 
-    # 如果超过90%的块都超过4行，说明可能包含翻译文本
-    blocks_lines_count = [len(block.splitlines()) for block in blocks]
-    if all(count <= 4 for count in blocks_lines_count) and sum(count == 4 for count in blocks_lines_count) / len(blocks_lines_count) > 0.9:
-        has_translated_subtitle = True
-    else:
-        has_translated_subtitle = False
+    # 绝大多数块恰有两行文本时，保留双语字幕的换行。
+    line_counts = [len(block.splitlines()) for block in blocks]
+    has_translated_subtitle = (
+        all(count <= 4 for count in line_counts)
+        and sum(count == 4 for count in line_counts) / len(line_counts) > 0.9
+    )
 
     for block in blocks:
         lines = block.splitlines()
@@ -489,54 +392,16 @@ def _parse_srt(srt_str: str) -> 'SubtitleData':
             continue
 
         time_parts = list(map(int, match.groups()))
-        start_time = sum([
-            time_parts[0] * 3600000,
-            time_parts[1] * 60000,
-            time_parts[2] * 1000,
-            time_parts[3]
-        ])
-        end_time = sum([
-            time_parts[4] * 3600000,
-            time_parts[5] * 60000,
-            time_parts[6] * 1000,
-            time_parts[7]
-        ])
-
-        # 字幕文本在时间戳行之后
-        text_lines = lines[time_line_index + 1:]
-
+        start_time, end_time = (
+            sum(value * scale for value, scale in zip(parts, (3600000, 60000, 1000, 1)))
+            for parts in (time_parts[:4], time_parts[4:])
+        )
+        separator = "\n" if has_translated_subtitle else " "
+        text = separator.join(lines[time_line_index + 1 :])
         if has_translated_subtitle:
-            text = '\n'.join(text_lines).strip()
-        else:
-            text = ' '.join(text_lines)
+            text = text.strip()
 
         segments.append(SubtitleSegment(text, start_time, end_time))
 
     _validate_timestamps(segments)
     return SubtitleData(segments)
-
-
-def save_split_results(text: str, split_results: List[str], output_path: str) -> None:
-    """
-    保存原文本和断句结果到文件。
-    
-    Args:
-        text: 原始文本
-        split_results: 断句结果列表
-        output_path: 输出文件路径
-    """
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write("原始文本:\n")
-            f.write(text + "\n\n")
-            f.write("断句结果:\n")
-            for i, segment in enumerate(split_results):
-                f.write(f"{segment}")
-                if i < len(split_results) - 1:  # 确保不是最后一个分段
-                    f.write("<br>")
-        # 显示保存成功信息
-        if os.path.exists(output_path):
-            logger.info(f"断句结果已保存到: {output_path}")
-    except Exception as e:
-        logger.error(f"保存断句结果失败: {str(e)}")
-        raise 

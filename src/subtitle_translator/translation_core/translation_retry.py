@@ -1,7 +1,7 @@
 """TranslationEngine 内部的批量重试和单条降级 implementation。"""
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Optional
 
 import retry
 
@@ -42,7 +42,6 @@ class _TranslationFallback:
         self.config = config
         self.llm = llm
         self.translation_context = translation_context
-        self.thread_num = config.thread_num
         self.executor = executor
         self._translate = translate_fn
 
@@ -71,100 +70,47 @@ class _TranslationFallback:
                 total_batches=total_batches,
             )
 
-            retry_map, still_failed = self._categorize_retry_results(retry_results)
+            retry_map = {r["id"]: r for r in retry_results if not _is_translation_failed(r)}
+            still_failed = {
+                key: value for key, value in failed_items.items() if key not in retry_map
+            }
             logger.info(f"📊 {batch_info}批量重试成功 {len(retry_map)}/{len(failed_items)} 条")
 
             if still_failed:
-                logger.info(
-                    f"⚡ {batch_info}批量重试后还有{len(still_failed)}条失败，降级到单条并发翻译"
-                )
-                single_result = self._translate_by_single(still_failed)
-                self._merge_single_results(single_result, retry_map)
+                logger.info(f"⚡ {batch_info}降级到单条并发翻译 {len(still_failed)} 条")
+                retry_map.update(self._translate_by_single(still_failed))
 
-            self._apply_retry_results(results, retry_map)
-            logger.info(f"✅ {batch_info}总共重试成功 {len(retry_map)}/{len(failed_items)} 条")
-
+            return [retry_map.get(result["id"], result) for result in results]
         except Exception as e:
             logger.warning(f"⚠️ {batch_info}重试失败: {e}")
-        return results
+            return results
 
-    def _categorize_retry_results(self, retry_results: list) -> Tuple[dict, dict]:
-        """分类重试结果为成功和失败。"""
-        retry_map = {}
-        still_failed = {}
-        for r in retry_results:
-            if not _is_translation_failed(r):
-                retry_map[r['id']] = r
-            else:
-                still_failed[r['id']] = r['original']
-        return retry_map, still_failed
-
-    def _apply_retry_results(self, results: list, retry_map: dict) -> None:
-        """应用重试结果到原始结果列表。"""
-        for i, r in enumerate(results):
-            if r['id'] in retry_map:
-                results[i] = retry_map[r['id']]
-
-    def _merge_single_results(self, single_result: dict, retry_map: dict) -> None:
-        """合并单条翻译结果到重试映射。"""
-        for k, v in single_result["translated_subtitles"].items():
-            if v.strip():
-                retry_map[int(k)] = {
-                    "id": int(k),
-                    "original": single_result["optimized_subtitles"][k],
-                    "optimized": single_result["optimized_subtitles"][k],
-                    "translation": v,
-                    "discarded": False,
-                }
-
-    # ── 单条并发翻译 ──────────────────────────────────────────────────────────
-
-    def _translate_by_single(self, subtitle_json: Dict[int, str]) -> Dict:
-        """单条翻译模式（带重试）。"""
-        logger.info(f"开始单条并发翻译 {len(subtitle_json)} 条字幕（并发数: {self.thread_num}）")
-
-        if self.executor is None:
-            raise RuntimeError("线程池未初始化")
-
+    def _translate_by_single(self, subtitle_json: Dict[int, str]) -> dict:
         futures = {
             self.executor.submit(self._translate_single_subtitle, key, value): key
             for key, value in subtitle_json.items()
         }
-        return self._collect_single_results(futures, subtitle_json)
-
-    def _collect_single_results(self, futures: dict, subtitle_json: Dict[int, str]) -> Dict:
-        """收集单条翻译结果。"""
-        optimized_subtitles = {}
-        translated_subtitles = {}
-        completed = 0
-        total = len(futures)
-
-        for future in concurrent.futures.as_completed(futures):
+        results = {}
+        for completed, future in enumerate(concurrent.futures.as_completed(futures), 1):
             key = futures[future]
-            completed += 1
             try:
                 result = future.result()
-                optimized_subtitles[str(key)] = result["optimized"]
-                translated_subtitles[str(key)] = result["translation"]
-                if completed % 5 == 0 or completed == total:
-                    logger.info(f"单条翻译进度: {completed}/{total}")
+                if result["translation"].strip():
+                    results[key] = {
+                        "id": key,
+                        "original": subtitle_json[key],
+                        **result,
+                        "discarded": False,
+                    }
             except Exception as e:
                 logger.error(f"单条翻译失败，字幕ID: {key}，错误: {e}")
-                optimized_subtitles[str(key)] = subtitle_json[key]
-                translated_subtitles[str(key)] = ""
-
-        return {
-            "optimized_subtitles": optimized_subtitles,
-            "translated_subtitles": translated_subtitles,
-        }
+            if completed % 5 == 0 or completed == len(futures):
+                logger.info(f"单条翻译进度: {completed}/{len(futures)}")
+        return results
 
     @retry.retry(tries=2)
     def _translate_single_subtitle(self, key: int, value: str) -> Dict:
         """翻译单条字幕（带重试）。"""
-        return self._translate_single_subtitle_impl(key, value)
-
-    def _translate_single_subtitle_impl(self, key: int, value: str) -> Dict:
-        """翻译单条字幕的实现。"""
         message = [
             {
                 "role": "system",

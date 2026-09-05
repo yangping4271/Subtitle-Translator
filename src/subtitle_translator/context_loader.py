@@ -1,6 +1,7 @@
 """
 上下文加载模块 - 负责提取和加载翻译上下文信息
 """
+
 import re
 from pathlib import Path
 
@@ -59,31 +60,16 @@ def build_context_info(input_file: Path) -> str:
 
 def read_external_context(parent_dir: Path) -> str:
     """读取外部上下文文件"""
-    for ctx_filename in ['context.txt', 'ctx.txt']:
+    for ctx_filename in ["context.txt", "ctx.txt"]:
         ctx_file = parent_dir / ctx_filename
         if ctx_file.exists():
             try:
-                content = ctx_file.read_text(encoding='utf-8').strip()
+                content = ctx_file.read_text(encoding="utf-8").strip()
                 if content:
                     return content
             except Exception:
                 pass
     return ""
-
-
-def extract_folder_path(parent_dir: Path, max_depth: int = 3) -> str:
-    """提取文件夹路径信息"""
-    parent_names = []
-    current_path = parent_dir
-
-    for _ in range(max_depth):
-        if not current_path.name or current_path.name in ['/', '.', '..']:
-            break
-        folder_name = current_path.name.replace('_', ' ').replace('-', ' ')
-        parent_names.append(folder_name)
-        current_path = current_path.parent
-
-    return ' / '.join(reversed(parent_names))
 
 
 def extract_terminology_hints(input_file: Path, max_depth: int = 3) -> list[str]:
@@ -96,7 +82,7 @@ def extract_terminology_hints(input_file: Path, max_depth: int = 3) -> list[str]
 
     current_path = input_file.parent
     for _ in range(max_depth):
-        if not current_path.name or current_path.name in ['/', '.', '..']:
+        if not current_path.name or current_path.name in ["/", ".", ".."]:
             break
         if _is_useful_folder(current_path):
             folder_name = _readable_path_name(current_path.name)

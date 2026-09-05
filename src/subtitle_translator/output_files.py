@@ -46,13 +46,7 @@ def write_subtitle_outputs(
             str(target_srt),
         )
 
-        for label, path in (("目标语言", target_srt), ("英文", source_srt)):
-            if not path.exists():
-                raise RuntimeError(f"{label}字幕文件保存失败: {path}")
-
         bilingual_ass = convert_srt_to_ass(target_srt, source_srt, output_dir)
-        if not bilingual_ass.exists():
-            raise RuntimeError(f"双语 ASS 文件保存失败: {bilingual_ass}")
 
         logger.info("双语 ASS 文件: %s", bilingual_ass)
         return SubtitleOutputFiles(

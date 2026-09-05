@@ -103,11 +103,6 @@ def main(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if not output_dir.exists():
-        logger.error(f"输出目录不存在: {output_dir}")
-        print(f"[bold red]❌ 输出目录不存在: {output_dir}[/bold red]")
-        raise typer.Exit(code=1)
-
     if not os.access(output_dir, os.W_OK):
         logger.error(f"输出目录不可写: {output_dir}")
         print(f"[bold red]❌ 输出目录不可写: {output_dir}[/bold red]")

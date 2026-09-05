@@ -1,21 +1,8 @@
 from pathlib import Path
 from subtitle_translator.context_loader import (
     build_context_info,
-    extract_folder_path,
     extract_terminology_hints,
 )
-
-
-def test_extract_folder_path_max_depth():
-    path = Path("/a/b/c/d")
-    result = extract_folder_path(path, max_depth=3)
-    assert result == "b / c / d"
-
-
-def test_extract_folder_path_replaces_separators():
-    path = Path("/root/my_show/season-1")
-    result = extract_folder_path(path, max_depth=2)
-    assert result == "my show / season 1"
 
 
 def test_build_context_info_with_context_file(tmp_path):

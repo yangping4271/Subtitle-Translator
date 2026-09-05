@@ -31,27 +31,25 @@ def count_words(text: str) -> int:
     return non_english_chars + len(remaining_text.strip().split())
 
 
-def split_by_end_marks(sentence: str) -> list[str]:
+def split_by_end_marks(sentence: str, *, require_space: bool = False) -> list[str]:
     """按句末标记分割，同时保护小数和过短尾段。"""
-    positions = []
-    for mark in [". ", "! ", "? ", ".", "!", "?"]:
-        start = 0
-        while True:
-            pos = sentence.find(mark, start)
-            if pos == -1:
-                break
-            if _is_decimal_point(sentence, pos, mark):
-                start = pos + 1
-                continue
-            positions.append(pos + len(mark))
-            start = pos + 1
+    pattern = r"[.!?](?= )" if require_space else r"[.!?]"
+    positions = [
+        match.end()
+        for match in re.finditer(pattern, sentence)
+        if not (
+            match.group() == "."
+            and match.start() > 0
+            and sentence[match.start() - 1].isdigit()
+        )
+    ]
 
     if not positions:
         return [sentence]
 
     segments = []
     start = 0
-    for pos in sorted(set(positions)):
+    for pos in positions:
         segment = sentence[start:pos].strip()
         if segment and count_words(segment) >= MIN_SENTENCE_WORDS:
             segments.append(segment)
@@ -65,7 +63,3 @@ def split_by_end_marks(sentence: str) -> list[str]:
             segments.append(last_segment)
 
     return segments if len(segments) > 1 else [sentence]
-
-
-def _is_decimal_point(sentence: str, pos: int, mark: str) -> bool:
-    return mark in (".", ". ") and pos > 0 and sentence[pos - 1].isdigit()

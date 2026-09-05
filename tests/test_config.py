@@ -101,109 +101,30 @@ def test_raw_payload_logging_is_disabled_by_default_and_can_be_enabled(monkeypat
     assert SubtitleConfig.from_env().log_raw_payloads is True
 
 
-def test_config_detects_provider_type_from_base_url():
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://api.deepseek.com/v1",
-        ).provider_type()
-        == "deepseek"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://openrouter.ai/api/v1",
-        ).provider_type()
-        == "openrouter"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://ai-proxy.chatwise.app/openrouter/api/v1",
-        ).provider_type()
-        == "openrouter"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://ai-proxy.example.com/deepseek/v1",
-        ).provider_type()
-        == "deepseek"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        ).provider_type()
-        == "dashscope"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url=(
-                "https://workspace-id.ap-southeast-1.maas.aliyuncs.com/"
-                "compatible-mode/v1"
-            ),
-        ).provider_type()
-        == "dashscope"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://api.openai.com/v1",
-        ).provider_type()
-        == "openai"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://open.bigmodel.cn/api/paas/v4/",
-        ).provider_type()
-        == "zhipu"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://api.moonshot.cn/v1",
-        ).provider_type()
-        == "kimi"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://api.minimax.io/v1",
-        ).provider_type()
-        == "minimax"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://api.groq.com/openai/v1",
-        ).provider_type()
-        == "groq"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        ).provider_type()
-        == "google"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://api.anthropic.com/v1/",
-        ).provider_type()
-        == "anthropic"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://api.x.ai/v1",
-        ).provider_type()
-        == "xai"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://ark.cn-beijing.volces.com/api/v3",
-        ).provider_type()
-        == "volcengine"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://ark.ap-southeast.bytepluses.com/api/v3",
-        ).provider_type()
-        == "volcengine"
-    )
-    assert (
-        SubtitleConfig(
-            openai_base_url="https://example.com/v1",
-        ).provider_type()
-        == "custom"
-    )
+@pytest.mark.parametrize(
+    "base_url, expected",
+    [
+        ("https://api.deepseek.com/v1", "deepseek"),
+        ("https://openrouter.ai/api/v1", "openrouter"),
+        ("https://ai-proxy.chatwise.app/openrouter/api/v1", "openrouter"),
+        ("https://ai-proxy.example.com/deepseek/v1", "deepseek"),
+        ("https://dashscope.aliyuncs.com/compatible-mode/v1", "dashscope"),
+        (
+            "https://workspace-id.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+            "dashscope",
+        ),
+        ("https://api.openai.com/v1", "openai"),
+        ("https://open.bigmodel.cn/api/paas/v4/", "zhipu"),
+        ("https://api.moonshot.cn/v1", "kimi"),
+        ("https://api.minimax.io/v1", "minimax"),
+        ("https://api.groq.com/openai/v1", "groq"),
+        ("https://generativelanguage.googleapis.com/v1beta/openai/", "google"),
+        ("https://api.anthropic.com/v1/", "anthropic"),
+        ("https://api.x.ai/v1", "xai"),
+        ("https://ark.cn-beijing.volces.com/api/v3", "volcengine"),
+        ("https://ark.ap-southeast.bytepluses.com/api/v3", "volcengine"),
+        ("https://example.com/v1", "custom"),
+    ],
+)
+def test_config_detects_provider_type_from_base_url(base_url, expected):
+    assert SubtitleConfig(openai_base_url=base_url).provider_type() == expected

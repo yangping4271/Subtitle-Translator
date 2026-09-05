@@ -149,7 +149,6 @@ class SubtitleConfig:
     tolerance_multiplier: float = 1.2
     warning_multiplier: float = 1.5
     max_multiplier: float = 2.0
-    need_reflect: bool = False
     disable_thinking: bool = True
     log_raw_payloads: bool = False
 
@@ -204,20 +203,6 @@ class SubtitleConfig:
         validate_api_configuration(openai_base_url, openai_api_key)
 
         llm_model = env.get("LLM_MODEL", defaults.llm_model)
-        thread_num = defaults.thread_num
-        if env.get("THREAD_NUM"):
-            try:
-                thread_num = max(1, int(env["THREAD_NUM"]))
-            except ValueError:
-                pass
-
-        max_batch_words = defaults.max_batch_words
-        if env.get("MAX_BATCH_WORDS"):
-            try:
-                max_batch_words = max(1, int(env["MAX_BATCH_WORDS"]))
-            except ValueError:
-                pass
-
         external_glossary_domains = defaults.external_glossary_domains
         if env.get("EXTERNAL_GLOSSARY_DOMAINS"):
             parsed_domains = tuple(
@@ -228,24 +213,14 @@ class SubtitleConfig:
             if parsed_domains:
                 external_glossary_domains = parsed_domains
 
-        external_glossary_max_terms = defaults.external_glossary_max_terms
-        if env.get("EXTERNAL_GLOSSARY_MAX_TERMS"):
-            try:
-                external_glossary_max_terms = max(
-                    0,
-                    int(env["EXTERNAL_GLOSSARY_MAX_TERMS"]),
-                )
-            except ValueError:
-                pass
-
         return cls(
             openai_base_url=openai_base_url,
             openai_api_key=openai_api_key,
             llm_model=llm_model,
             split_model=env.get("SPLIT_MODEL", llm_model),
             translation_model=env.get("TRANSLATION_MODEL", llm_model),
-            thread_num=thread_num,
-            max_batch_words=max_batch_words,
+            thread_num=_env_int(env, "THREAD_NUM", defaults.thread_num, minimum=1),
+            max_batch_words=_env_int(env, "MAX_BATCH_WORDS", defaults.max_batch_words, minimum=1),
             disable_thinking=_env_bool(
                 env,
                 "DISABLE_THINKING",
@@ -262,7 +237,9 @@ class SubtitleConfig:
                 defaults.external_glossary_enabled,
             ),
             external_glossary_domains=external_glossary_domains,
-            external_glossary_max_terms=external_glossary_max_terms,
+            external_glossary_max_terms=_env_int(
+                env, "EXTERNAL_GLOSSARY_MAX_TERMS", defaults.external_glossary_max_terms
+            ),
         )
 
 
@@ -275,3 +252,10 @@ def _env_bool(
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(environ: Mapping[str, str], name: str, default: int, minimum: int = 0) -> int:
+    try:
+        return max(minimum, int(environ[name]))
+    except (KeyError, ValueError):
+        return default

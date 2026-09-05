@@ -30,45 +30,6 @@ class StubModelAdapter:
         )
 
 
-def test_translation_batch_returns_structured_results_through_injected_model():
-    response = json.dumps(
-        {
-            "subtitles": [
-                {
-                    "id": 1,
-                    "optimized": "Hello world!",
-                    "translation": "你好，世界！",
-                    "discarded": False,
-                }
-            ]
-        }
-    )
-    config = SubtitleConfig(
-        openai_base_url="https://api.openai.com/v1",
-        thread_num=1,
-    )
-    source_subtitle = SubtitleData(
-        [SubtitleSegment("Hello world!", start_time=0, end_time=1000)]
-    )
-
-    with TranslationEngine(
-        config,
-        StubModelAdapter([response]),
-        DEFAULT_TRANSLATION_CONTEXT,
-    ) as engine:
-        results = engine.translate_batch(source_subtitle, context_info="")
-
-    assert results == [
-        {
-            "id": 1,
-            "original": "Hello world!",
-            "optimized": "Hello world!",
-            "translation": "你好，世界！",
-            "discarded": False,
-        }
-    ]
-
-
 def test_closed_translation_engine_rejects_new_batches():
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
@@ -88,41 +49,25 @@ def test_closed_translation_engine_rejects_new_batches():
         engine.translate_batch(source_subtitle, context_info="")
 
 
-def test_discarded_translation_result_does_not_trigger_fallback():
-    response = json.dumps(
-        {
-            "subtitles": [
-                {
-                    "id": 1,
-                    "optimized": "",
-                    "translation": "",
-                    "discarded": True,
-                }
-            ]
-        }
-    )
-    config = SubtitleConfig(
-        openai_base_url="https://api.openai.com/v1",
-        thread_num=1,
-    )
-    source_subtitle = SubtitleData(
-        [SubtitleSegment("Music.", start_time=0, end_time=1000)]
-    )
-
+@pytest.mark.parametrize("invalid_response", ["", "{}", "not JSON", "null"])
+def test_empty_or_invalid_batch_response_retries_before_single_fallback(
+    invalid_response,
+):
+    response = json.dumps({"1": {"translation": "你好，世界！"}})
+    adapter = StubModelAdapter([invalid_response, response])
+    batch = SubtitleData([SubtitleSegment("Hello world!", 0, 1000)])
     with TranslationEngine(
-        config,
-        StubModelAdapter([response]),
-        DEFAULT_TRANSLATION_CONTEXT,
+        SubtitleConfig(), adapter, DEFAULT_TRANSLATION_CONTEXT
     ) as engine:
-        results = engine.translate_batch(source_subtitle, context_info="")
+        results = engine.translate_batch(batch, "")
 
     assert results == [
         {
             "id": 1,
-            "original": "Music.",
-            "optimized": "Music.",
-            "translation": "",
-            "discarded": True,
+            "original": "Hello world!",
+            "optimized": "Hello world!",
+            "translation": "你好，世界！",
+            "discarded": False,
         }
     ]
 
@@ -253,33 +198,6 @@ def test_batch_progress_shows_one_translation_line_with_filename(
     console_output = capsys.readouterr().out
     assert "🎯 开始翻译第 1/2 个文件: lesson.srt" in console_output
     assert console_output.count("lesson.srt") == 1
-
-
-def test_single_file_processing_does_not_repeat_console_progress(
-    tmp_path,
-    capsys,
-):
-    class FakeService:
-        def translate_srt(self, **kwargs):
-            return SimpleNamespace(
-                bilingual_ass=tmp_path / "lesson.ass",
-                target_srt=tmp_path / "lesson.zh.srt",
-                source_srt=tmp_path / "lesson.en.srt",
-                intermediates_preserved=False,
-            )
-
-    processor.process_single_file(
-        input_file=tmp_path / "lesson.srt",
-        target_lang="zh",
-        output_dir=tmp_path,
-        llm_model=None,
-        translator_service=FakeService(),
-    )
-
-    output = capsys.readouterr().out
-    assert ">>> 检测到 SRT 文件" not in output
-    assert ">>> 开始翻译: lesson.srt" not in output
-    assert ">>> 开始翻译..." not in output
 
 
 def test_translation_batch_falls_back_to_a_retried_single_translation():
@@ -622,3 +540,107 @@ def test_process_batch_does_not_repeat_start_filename_in_app_log(
     assert start_translation_logs == []
     assert len(start_progress_logs) == 1
     assert not any(">>> 开始翻译" in message for message in log_messages)
+
+
+@pytest.mark.parametrize("single_succeeds", [True, False])
+def test_partial_retry_preserves_order_discard_and_unrecovered_subtitles(
+    single_succeeds,
+):
+    initial = json.dumps(
+        {
+            "subtitles": [
+                {"id": 4, "translation": None},
+                {"id": 2, "discarded": True},
+                {"id": 1, "translation": "第一句"},
+            ]
+        }
+    )
+    retry_response = json.dumps(
+        {
+            "subtitles": [
+                {"id": 3, "translation": "第三句"},
+                {"id": 4, "translation": ""},
+            ]
+        }
+    )
+    single_responses = (
+        ["第四句"]
+        if single_succeeds
+        else [RuntimeError("unavailable"), RuntimeError("unavailable")]
+    )
+    adapter = StubModelAdapter([initial, retry_response, *single_responses])
+    source = SubtitleData(
+        [
+            SubtitleSegment(text, i * 1000, (i + 1) * 1000)
+            for i, text in enumerate(
+                ["First sentence.", "Music.", "Third sentence.", "Fourth sentence."]
+            )
+        ]
+    )
+    config = SubtitleConfig(openai_base_url="https://api.openai.com/v1", thread_num=1)
+    with TranslationEngine(config, adapter, DEFAULT_TRANSLATION_CONTEXT) as engine:
+        results = engine.translate_batch(source, context_info="")
+    assert [r["id"] for r in results] == [1, 2, 3, 4]
+    assert [r["translation"] for r in results] == [
+        "第一句",
+        "",
+        "第三句",
+        "第四句" if single_succeeds else "",
+    ]
+    assert [r["discarded"] for r in results] == [False, True, False, False]
+    assert [r["optimized"] for r in results] == [s.text for s in source]
+    assert [r["original"] for r in results] == [s.text for s in source]
+
+
+def test_single_file_initializes_once_and_closes_owned_service(monkeypatch, tmp_path):
+    service = Mock()
+    service.translate_srt.return_value = SimpleNamespace(
+        bilingual_ass=tmp_path / "lesson.ass", intermediates_preserved=False
+    )
+    monkeypatch.setattr(processor, "SubtitleTranslatorService", lambda: service)
+    processor.process_single_file(tmp_path / "lesson.srt", "zh", tmp_path, "test-model")
+    service.init_translation_env.assert_called_once_with("test-model", show_config=True)
+    assert service.translate_srt.call_args.kwargs["skip_env_init"] is True
+    service.close.assert_called_once()
+
+
+def test_concurrent_translation_keeps_batch_order_and_global_ids(monkeypatch):
+    from threading import Event
+    from subtitle_translator import service as service_module
+
+    batches = [
+        SubtitleData([SubtitleSegment(str(i), i * 1000, i * 1000 + 900)])
+        for i in range(5)
+    ]
+    second_finished = Event()
+
+    def translate(self, batch, context_info, batch_num, total_batches):
+        assert total_batches == 5
+        if batch_num == 1:
+            assert second_finished.wait(2)
+        if batch_num == 2:
+            second_finished.set()
+        return [
+            {
+                "id": 1,
+                "original": batch.segments[0].text,
+                "optimized": batch.segments[0].text,
+                "translation": str(batch_num),
+                "discarded": False,
+            }
+        ]
+
+    monkeypatch.setattr(
+        service_module.SubtitleSegmenter, "segment", lambda *args: batches
+    )
+    monkeypatch.setattr(TranslationEngine, "translate_batch", translate)
+    service = SubtitleTranslatorService(
+        config=SubtitleConfig(thread_num=2), llm=StubModelAdapter([])
+    )
+    sentences, results, _ = service._translate_segmented_batches(
+        SubtitleData([]), "", DEFAULT_TRANSLATION_CONTEXT
+    )
+    assert [s.text for s in sentences] == [str(i) for i in range(5)]
+    assert [r["id"] for r in results] == list(range(1, 6))
+    assert [r["original"] for r in results] == [s.text for s in sentences]
+    assert [r["translation"] for r in results] == [str(i) for i in range(1, 6)]

@@ -14,6 +14,12 @@ from subtitle_translator.translation_core.llm_client import (
 )
 
 
+def _metric(**fields):
+    return RequestMetric(
+        **{"success": True, "finish_reason": "stop", "error_type": None, **fields}
+    )
+
+
 def test_response_usage_includes_reasoning_tokens_and_request_id():
     response = SimpleNamespace(
         id="chatcmpl-123",
@@ -117,25 +123,19 @@ def test_zero_reasoning_tokens_does_not_show_notice(monkeypatch):
 
 def test_request_metrics_merge_concurrent_time_for_effective_throughput():
     metrics = [
-        RequestMetric(
+        _metric(
             started_at=0.0,
             ended_at=10.0,
             latency=10.0,
-            success=True,
             completion_tokens=100,
-            finish_reason="stop",
             content_chars=300,
-            error_type=None,
         ),
-        RequestMetric(
+        _metric(
             started_at=0.0,
             ended_at=20.0,
             latency=20.0,
-            success=True,
             completion_tokens=200,
-            finish_reason="stop",
             content_chars=600,
-            error_type=None,
         ),
     ]
 
@@ -157,27 +157,21 @@ def test_request_metrics_merge_concurrent_time_for_effective_throughput():
 
 def test_request_metrics_report_longest_context_against_4k():
     metrics = [
-        RequestMetric(
+        _metric(
             started_at=0.0,
             ended_at=5.0,
             latency=5.0,
-            success=True,
             completion_tokens=274,
-            finish_reason="stop",
             content_chars=1158,
-            error_type=None,
             prompt_tokens=865,
             total_tokens=1139,
         ),
-        RequestMetric(
+        _metric(
             started_at=5.0,
             ended_at=22.0,
             latency=17.0,
-            success=True,
             completion_tokens=1180,
-            finish_reason="stop",
             content_chars=3685,
-            error_type=None,
             prompt_tokens=1411,
             total_tokens=2591,
         ),
@@ -192,17 +186,15 @@ def test_request_metrics_report_longest_context_against_4k():
 
 def test_request_metrics_report_slow_failures_and_response_anomalies():
     metrics = [
-        RequestMetric(
+        _metric(
             started_at=0.0,
             ended_at=31.0,
             latency=31.0,
-            success=True,
             completion_tokens=None,
             finish_reason="length",
             content_chars=0,
-            error_type=None,
         ),
-        RequestMetric(
+        _metric(
             started_at=32.0,
             ended_at=65.0,
             latency=33.0,
@@ -244,698 +236,6 @@ def test_close_releases_the_owned_openai_client(monkeypatch):
     client.close()
 
     openai_client.close.assert_called_once_with()
-
-
-def test_create_chat_completion_keeps_request_body_unchanged():
-    config = SubtitleConfig(
-        openai_base_url="https://example.com/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="gemma-4-e4b-it",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="gemma-4-e4b-it",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-def test_deepseek_v4_disables_thinking_by_default():
-    config = SubtitleConfig(
-        openai_base_url="https://api.deepseek.com",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"thinking": {"type": "disabled"}},
-    )
-
-
-def test_openrouter_disables_reasoning_for_all_models():
-    config = SubtitleConfig(
-        openai_base_url="https://openrouter.ai/api/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="google/gemini-3-flash-preview",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="google/gemini-3-flash-preview",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"reasoning": {"effort": "none"}},
-    )
-
-
-def test_openrouter_proxy_disables_reasoning_for_all_models():
-    config = SubtitleConfig(
-        openai_base_url="https://ai-proxy.chatwise.app/openrouter/api/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="qwen/qwen3.6-27b",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="qwen/qwen3.6-27b",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"reasoning": {"effort": "none"}},
-    )
-
-
-def test_official_zhipu_disables_thinking_for_all_models():
-    config = SubtitleConfig(
-        openai_base_url="https://open.bigmodel.cn/api/paas/v4/",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="glm-4-flash",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="glm-4-flash",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"thinking": {"type": "disabled"}},
-    )
-
-
-def test_official_minimax_disables_thinking_for_all_models():
-    config = SubtitleConfig(
-        openai_base_url="https://api.minimax.io/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="MiniMax-M3",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="MiniMax-M3",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"thinking": {"type": "disabled"}},
-    )
-
-
-def test_official_kimi_only_disables_registered_models():
-    config = SubtitleConfig(
-        openai_base_url="https://api.moonshot.cn/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="kimi-k2.6",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-    create_mock.assert_called_once_with(
-        model="kimi-k2.6",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"thinking": {"type": "disabled"}},
-    )
-
-    create_mock.reset_mock()
-    client.create_chat_completion(
-        model="kimi-k3",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-    create_mock.assert_called_once_with(
-        model="kimi-k3",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-def test_official_google_disables_registered_gemini():
-    config = SubtitleConfig(
-        openai_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="gemini-3.6-flash",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="gemini-3.6-flash",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={
-            "extra_body": {
-                "google": {
-                    "thinking_config": {
-                        "thinking_level": "minimal",
-                    }
-                }
-            }
-        },
-    )
-
-    create_mock.reset_mock()
-    client.create_chat_completion(
-        model="gemini-2.5-flash",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-    create_mock.assert_called_once_with(
-        model="gemini-2.5-flash",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={
-            "extra_body": {
-                "google": {
-                    "thinking_config": {
-                        "thinking_budget": 0,
-                    }
-                }
-            }
-        },
-    )
-
-
-def test_official_groq_does_not_disable_thinking():
-    config = SubtitleConfig(
-        openai_base_url="https://api.groq.com/openai/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="openai/gpt-oss-120b",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-    create_mock.assert_called_once_with(
-        model="openai/gpt-oss-120b",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.reset_mock()
-    client.create_chat_completion(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-    create_mock.assert_called_once_with(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-def test_custom_endpoint_glm_uses_registry():
-    config = SubtitleConfig(
-        openai_base_url="https://example.com/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="glm-5.2",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="glm-5.2",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"thinking": {"type": "disabled"}},
-    )
-
-
-def test_official_dashscope_disables_thinking_for_all_models():
-    config = SubtitleConfig(
-        openai_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="qwen-vl-plus",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="qwen-vl-plus",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"enable_thinking": False},
-    )
-
-
-def test_official_volcengine_disables_thinking_for_all_models():
-    config = SubtitleConfig(
-        openai_base_url="https://ark.cn-beijing.volces.com/api/v3",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="ep-unregistered",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="ep-unregistered",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"thinking": {"type": "disabled"}},
-    )
-
-
-def test_official_anthropic_only_disables_registered_models():
-    config = SubtitleConfig(
-        openai_base_url="https://api.anthropic.com/v1/",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="claude-sonnet-5",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-    create_mock.assert_called_once_with(
-        model="claude-sonnet-5",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"thinking": {"type": "disabled"}},
-    )
-
-    create_mock.reset_mock()
-    client.create_chat_completion(
-        model="claude-fable-5",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-    create_mock.assert_called_once_with(
-        model="claude-fable-5",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-def test_official_xai_only_disables_registered_models():
-    config = SubtitleConfig(
-        openai_base_url="https://api.x.ai/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="grok-4.3",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-    create_mock.assert_called_once_with(
-        model="grok-4.3",
-        messages=[{"role": "user", "content": "hello"}],
-        reasoning_effort="none",
-    )
-
-    create_mock.reset_mock()
-    client.create_chat_completion(
-        model="grok-4.6",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-    create_mock.assert_called_once_with(
-        model="grok-4.6",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-def test_custom_endpoint_qwen_uses_registry():
-    config = SubtitleConfig(
-        openai_base_url="https://example.com/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="qwen-plus",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="qwen-plus",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"enable_thinking": False},
-    )
-
-
-def test_custom_endpoint_qwen3_gguf_disables_thinking():
-    config = SubtitleConfig(
-        openai_base_url="https://example.com/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="Qwen3.8-27B-UD-Q3_K_XL",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="Qwen3.8-27B-UD-Q3_K_XL",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"enable_thinking": False},
-    )
-
-
-def test_unregistered_gpt_model_does_not_receive_reasoning_effort():
-    config = SubtitleConfig(
-        openai_base_url="https://api.openai.com/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="gpt-5.1",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="gpt-5.1",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-@pytest.mark.parametrize(
-    "model",
-    ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
-)
-def test_openai_gpt_5_6_family_disables_reasoning(model):
-    config = SubtitleConfig(
-        openai_base_url="https://api.openai.com/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model=model,
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model=model,
-        messages=[{"role": "user", "content": "hello"}],
-        reasoning_effort="none",
-    )
-
-
-def test_deepseek_v4_pro_disables_thinking():
-    config = SubtitleConfig(
-        openai_base_url="https://api.deepseek.com",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="deepseek-v4-pro",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="deepseek-v4-pro",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"thinking": {"type": "disabled"}},
-    )
-
-
-def test_openrouter_deepseek_v4_uses_provider_encoding():
-    config = SubtitleConfig(
-        openai_base_url="https://openrouter.ai/api/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="deepseek/deepseek-v4-flash",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="deepseek/deepseek-v4-flash",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"reasoning": {"effort": "none"}},
-    )
-
-
-def test_openrouter_gpt_5_6_luna_disables_reasoning():
-    config = SubtitleConfig(
-        openai_base_url="https://openrouter.ai/api/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="openai/gpt-5.6-luna",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="openai/gpt-5.6-luna",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"reasoning": {"effort": "none"}},
-    )
-
-
-def test_unregistered_future_gpt_model_does_not_receive_reasoning_effort():
-    config = SubtitleConfig(
-        openai_base_url="https://example.com/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="openai/gpt-6",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="openai/gpt-6",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-def test_official_deepseek_disables_thinking_for_all_models():
-    config = SubtitleConfig(
-        openai_base_url="https://api.deepseek.com",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="deepseek-v4-other",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="deepseek-v4-other",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"thinking": {"type": "disabled"}},
-    )
-
-
-def test_custom_endpoint_unregistered_deepseek_variant_is_unchanged():
-    config = SubtitleConfig(
-        openai_base_url="https://example.com/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="deepseek-v4-other",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="deepseek-v4-other",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-def test_original_gpt_5_does_not_receive_reasoning_effort():
-    config = SubtitleConfig(
-        openai_base_url="https://api.openai.com/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="gpt-5",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="gpt-5",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-def test_disable_thinking_overrides_explicit_reasoning_options():
-    config = SubtitleConfig(
-        openai_base_url="https://openrouter.ai/api/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="openai/gpt-5.6-luna",
-        messages=[{"role": "user", "content": "hello"}],
-        reasoning_effort="high",
-        extra_body={"reasoning": {"effort": "high"}},
-    )
-
-    create_mock.assert_called_once_with(
-        model="openai/gpt-5.6-luna",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"reasoning": {"effort": "none"}},
-    )
-
-
-def test_custom_openai_compatible_gpt_5_6_disables_reasoning():
-    config = SubtitleConfig(
-        openai_base_url="https://example.com/codex/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="gpt-5.6-luna",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="gpt-5.6-luna",
-        messages=[{"role": "user", "content": "hello"}],
-        reasoning_effort="none",
-    )
-
-
-def test_gpt_4_model_does_not_receive_reasoning_effort():
-    config = SubtitleConfig(
-        openai_base_url="https://api.openai.com/v1",
-        openai_api_key="test-key",
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-def test_disable_thinking_false_keeps_request_body_unchanged():
-    config = SubtitleConfig(
-        openai_base_url="https://api.deepseek.com",
-        openai_api_key="test-key",
-        disable_thinking=False,
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="deepseek-v4-flash",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-
-def test_disable_thinking_false_keeps_openai_request_body_unchanged():
-    config = SubtitleConfig(
-        openai_base_url="https://api.openai.com/v1",
-        openai_api_key="test-key",
-        disable_thinking=False,
-    )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="gpt-5.6-luna",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="gpt-5.6-luna",
-        messages=[{"role": "user", "content": "hello"}],
-    )
 
 
 def test_response_usage_reads_top_level_reasoning_tokens():
@@ -984,27 +284,21 @@ def test_zero_reasoning_tokens_does_not_hide_later_fields():
 
 def test_request_metrics_compute_throughput_from_known_usage_only():
     metrics = [
-        RequestMetric(
+        _metric(
             started_at=0.0,
             ended_at=10.0,
             latency=10.0,
-            success=True,
             completion_tokens=100,
-            finish_reason="stop",
             content_chars=300,
-            error_type=None,
         ),
-        RequestMetric(
+        _metric(
             started_at=0.0,
             ended_at=100.0,
             latency=100.0,
-            success=True,
             completion_tokens=None,
-            finish_reason="stop",
             content_chars=50,
-            error_type=None,
         ),
-        RequestMetric(
+        _metric(
             started_at=200.0,
             ended_at=260.0,
             latency=60.0,
@@ -1182,22 +476,228 @@ def test_detected_reasoning_warns_once_under_concurrency(monkeypatch):
     log_warning.assert_called_once()
 
 
-def test_custom_endpoint_prefixed_deepseek_v4_disables_thinking():
-    config = SubtitleConfig(
-        openai_base_url="https://example.com/v1",
-        openai_api_key="test-key",
+@pytest.mark.parametrize(
+    "base_url, model, disable_thinking, options, expected",
+    [
+        ("https://example.com/v1", "gemma-4-e4b-it", True, {}, {}),
+        (
+            "https://api.deepseek.com",
+            "deepseek-v4-flash",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        (
+            "https://openrouter.ai/api/v1",
+            "google/gemini-3-flash-preview",
+            True,
+            {},
+            {"extra_body": {"reasoning": {"effort": "none"}}},
+        ),
+        (
+            "https://ai-proxy.chatwise.app/openrouter/api/v1",
+            "qwen/qwen3.6-27b",
+            True,
+            {},
+            {"extra_body": {"reasoning": {"effort": "none"}}},
+        ),
+        (
+            "https://open.bigmodel.cn/api/paas/v4/",
+            "glm-4-flash",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        (
+            "https://api.minimax.io/v1",
+            "MiniMax-M3",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        (
+            "https://api.moonshot.cn/v1",
+            "kimi-k2.6",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        ("https://api.moonshot.cn/v1", "kimi-k3", True, {}, {}),
+        (
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "gemini-3.6-flash",
+            True,
+            {},
+            {
+                "extra_body": {
+                    "extra_body": {
+                        "google": {"thinking_config": {"thinking_level": "minimal"}}
+                    }
+                }
+            },
+        ),
+        (
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
+            "gemini-2.5-flash",
+            True,
+            {},
+            {
+                "extra_body": {
+                    "extra_body": {
+                        "google": {"thinking_config": {"thinking_budget": 0}}
+                    }
+                }
+            },
+        ),
+        ("https://api.groq.com/openai/v1", "openai/gpt-oss-120b", True, {}, {}),
+        ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", True, {}, {}),
+        (
+            "https://example.com/v1",
+            "glm-5.2",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        (
+            "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "qwen-vl-plus",
+            True,
+            {},
+            {"extra_body": {"enable_thinking": False}},
+        ),
+        (
+            "https://ark.cn-beijing.volces.com/api/v3",
+            "ep-unregistered",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        (
+            "https://api.anthropic.com/v1/",
+            "claude-sonnet-5",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        ("https://api.anthropic.com/v1/", "claude-fable-5", True, {}, {}),
+        ("https://api.x.ai/v1", "grok-4.3", True, {}, {"reasoning_effort": "none"}),
+        ("https://api.x.ai/v1", "grok-4.6", True, {}, {}),
+        (
+            "https://example.com/v1",
+            "qwen-plus",
+            True,
+            {},
+            {"extra_body": {"enable_thinking": False}},
+        ),
+        (
+            "https://example.com/v1",
+            "Qwen3.8-27B-UD-Q3_K_XL",
+            True,
+            {},
+            {"extra_body": {"enable_thinking": False}},
+        ),
+        ("https://api.openai.com/v1", "gpt-5.1", True, {}, {}),
+        (
+            "https://api.openai.com/v1",
+            "gpt-5.6",
+            True,
+            {},
+            {"reasoning_effort": "none"},
+        ),
+        (
+            "https://api.openai.com/v1",
+            "gpt-5.6-sol",
+            True,
+            {},
+            {"reasoning_effort": "none"},
+        ),
+        (
+            "https://api.openai.com/v1",
+            "gpt-5.6-terra",
+            True,
+            {},
+            {"reasoning_effort": "none"},
+        ),
+        (
+            "https://api.openai.com/v1",
+            "gpt-5.6-luna",
+            True,
+            {},
+            {"reasoning_effort": "none"},
+        ),
+        (
+            "https://api.deepseek.com",
+            "deepseek-v4-pro",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        (
+            "https://openrouter.ai/api/v1",
+            "deepseek/deepseek-v4-flash",
+            True,
+            {},
+            {"extra_body": {"reasoning": {"effort": "none"}}},
+        ),
+        (
+            "https://openrouter.ai/api/v1",
+            "openai/gpt-5.6-luna",
+            True,
+            {},
+            {"extra_body": {"reasoning": {"effort": "none"}}},
+        ),
+        ("https://example.com/v1", "openai/gpt-6", True, {}, {}),
+        (
+            "https://api.deepseek.com",
+            "deepseek-v4-other",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        ("https://example.com/v1", "deepseek-v4-other", True, {}, {}),
+        ("https://api.openai.com/v1", "gpt-5", True, {}, {}),
+        (
+            "https://openrouter.ai/api/v1",
+            "openai/gpt-5.6-luna",
+            True,
+            {
+                "reasoning_effort": "high",
+                "extra_body": {"reasoning": {"effort": "high"}},
+            },
+            {"extra_body": {"reasoning": {"effort": "none"}}},
+        ),
+        (
+            "https://example.com/codex/v1",
+            "gpt-5.6-luna",
+            True,
+            {},
+            {"reasoning_effort": "none"},
+        ),
+        ("https://api.openai.com/v1", "gpt-4o", True, {}, {}),
+        ("https://api.deepseek.com", "deepseek-v4-flash", False, {}, {}),
+        ("https://api.openai.com/v1", "gpt-5.6-luna", False, {}, {}),
+        (
+            "https://example.com/v1",
+            "vendor/deepseek-v4-flash",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+    ],
+)
+def test_provider_request_options(base_url, model, disable_thinking, options, expected):
+    client = LLMClient(
+        SubtitleConfig(
+            openai_base_url=base_url,
+            openai_api_key="test-key",
+            disable_thinking=disable_thinking,
+        )
     )
-    client = LLMClient(config)
-    create_mock = Mock()
-    client._client.chat.completions.create = create_mock
-
-    client.create_chat_completion(
-        model="vendor/deepseek-v4-flash",
-        messages=[{"role": "user", "content": "hello"}],
-    )
-
-    create_mock.assert_called_once_with(
-        model="vendor/deepseek-v4-flash",
-        messages=[{"role": "user", "content": "hello"}],
-        extra_body={"thinking": {"type": "disabled"}},
-    )
+    create = Mock(return_value=_completion_response(reasoning_tokens=0))
+    client._client.chat.completions.create = create
+    messages = [{"role": "user", "content": "hello"}]
+    try:
+        client.create_chat_completion(model=model, messages=messages, **options)
+        create.assert_called_once_with(model=model, messages=messages, **expected)
+    finally:
+        client.close()

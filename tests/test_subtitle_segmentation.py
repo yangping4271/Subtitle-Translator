@@ -201,3 +201,37 @@ def test_llm_postprocessing_keeps_original_explicit_end_mark_policy():
     )
 
     assert sentences == [text]
+
+
+@pytest.mark.parametrize("word_count", [14, 16, 21, 28, 29, 50])
+def test_long_sentence_postprocessing_preserves_every_word(word_count):
+    text = " ".join(f"word{i}" for i in range(word_count))
+    sentences = split_by_llm(text, SubtitleConfig(), StubModelAdapter([text]))
+
+    assert " ".join(sentences) == text
+    if word_count <= 21:  # 警告阈值内没有语义边界时保留原句。
+        assert sentences == [text]
+    else:
+        assert len(sentences) > 1
+        assert all(len(sentence.split()) <= 21 for sentence in sentences)
+
+
+def test_long_sentence_prefers_conjunction_boundary():
+    text = "one two three four five six seven and eight nine ten eleven twelve"
+    sentences = split_by_llm(
+        text, SubtitleConfig(), StubModelAdapter([text]), max_word_count_english=7
+    )
+
+    assert sentences == [
+        "one two three four five six seven",
+        "and eight nine ten eleven twelve",
+    ]
+
+
+def test_explicit_end_marks_preserve_numbers_and_attach_short_tail():
+    text = "Version 3. one two three. Four five six! End"
+    sentences = split_by_llm(
+        text, SubtitleConfig(), StubModelAdapter([text]), max_word_count_english=20
+    )
+
+    assert sentences == ["Version 3. one two three.", "Four five six! End"]
