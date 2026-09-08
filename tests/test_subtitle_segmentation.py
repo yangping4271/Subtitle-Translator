@@ -13,6 +13,7 @@ from subtitle_translator.translation_core.split_by_llm import split_by_llm
 from subtitle_translator.translation_core.splitter import (
     SubtitleSegmenter,
     batch_by_sentence_count,
+    merge_segments_based_on_sentences,
 )
 
 
@@ -235,3 +236,48 @@ def test_explicit_end_marks_preserve_numbers_and_attach_short_tail():
     )
 
     assert sentences == ["Version 3. one two three.", "Four five six! End"]
+
+
+@pytest.mark.parametrize("sentences", [
+    ["Hello world"],
+    ["Goodbye"],
+    ["Hello", "Goodbye"],
+    ["zzzzzzzzzzzzzzzz", "Hello world", "Goodbye"],
+    ["Hello Goodbye"],
+])
+def test_alignment_preserves_source_words_when_model_omits_content(sentences):
+    source = [SubtitleSegment(word, i * 500, (i + 1) * 500)
+              for i, word in enumerate(["Hello", "world", "Goodbye"])]
+    result = merge_segments_based_on_sentences(source, sentences)
+    assert " ".join(s.text for s in result) == "Hello world Goodbye"
+    assert result[0].start_time == 0
+    assert result[-1].end_time == 1500
+    assert all(a.end_time <= b.start_time for a, b in zip(result, result[1:]))
+
+
+def test_alignment_splits_long_pause_without_repeating_sentence():
+    source = [SubtitleSegment("Hello", 0, 400), SubtitleSegment("world", 2400, 2800)]
+    result = merge_segments_based_on_sentences(source, ["Hello world."])
+    assert [(s.text, s.start_time, s.end_time) for s in result] == [
+        ("Hello", 0, 400), ("world", 2400, 2800),
+    ]
+
+
+def test_alignment_keeps_model_punctuation_on_complete_match():
+    source = [SubtitleSegment("hello", 0, 400), SubtitleSegment("world", 400, 800)]
+    result = merge_segments_based_on_sentences(source, ["Hello, world!"])
+    assert [(s.text, s.start_time, s.end_time) for s in result] == [("Hello, world!", 0, 800)]
+
+
+def test_segmentation_does_not_repeat_exhausted_sdk_request():
+    import httpx
+    from openai import APITimeoutError
+    from unittest.mock import Mock
+
+    adapter = Mock()
+    adapter.create_chat_completion.side_effect = APITimeoutError(
+        request=httpx.Request("POST", "https://example.test")
+    )
+    with pytest.raises(SmartSplitError):
+        split_by_llm("Hello world", SubtitleConfig(), adapter)
+    assert adapter.create_chat_completion.call_count == 1

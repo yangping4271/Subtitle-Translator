@@ -371,6 +371,7 @@ def merge_segments_based_on_sentences(
 
     for sentence in sentences:
         sentence_proc = preprocess_text(sentence)
+        sentence_key = re.sub(r"\W+", "", sentence_proc).casefold()
         word_count = count_words(sentence_proc)
         best_ratio = 0.0
         best_pos = None
@@ -387,9 +388,9 @@ def merge_segments_based_on_sentences(
             max_start = min(asr_index + max_shift + 1, asr_len - window_size + 1)
             for start in range(asr_index, max_start):
                 substr = "".join(asr_texts[start : start + window_size])
-                substr_proc = preprocess_text(substr)
+                substr_proc = re.sub(r"\W+", "", substr).casefold()
                 ratio = difflib.SequenceMatcher(
-                    None, sentence_proc, substr_proc
+                    None, sentence_key, substr_proc
                 ).ratio()
 
                 if ratio > best_ratio:
@@ -405,11 +406,18 @@ def merge_segments_based_on_sentences(
             start_seg_index = best_pos
             end_seg_index = best_pos + best_window_size - 1
 
+            # 模型漏掉的词段仍保留原文与时间轴。
+            new_segments.extend(segments[asr_index:start_seg_index])
             segs_to_merge = segments[start_seg_index : end_seg_index + 1]
             seg_groups = merge_by_time_gaps(segs_to_merge, max_gap=MAX_GAP)
 
+            source_key = re.sub(r"\W+", "", "".join(s.text for s in segs_to_merge)).casefold()
             for group in seg_groups:
-                merged_text = sentence_proc
+                # 跨停顿或模型增删词时采用对应原文，避免复制整句或漏词。
+                merged_text = (
+                    sentence_proc if len(seg_groups) == 1 and source_key == sentence_key
+                    else " ".join(s.text for s in group)
+                )
                 merged_start_time = group[0].start_time
                 merged_end_time = group[-1].end_time
                 merged_seg = SubtitleSegment(
@@ -426,12 +434,12 @@ def merge_segments_based_on_sentences(
                 logger.error(f"未匹配句子数量超过阈值 ({max_unmatched})，返回原始分段")
                 return segments
             max_shift = 100
-            asr_index = min(asr_index + 1, asr_len - 1)
 
     if not new_segments:
         logger.warning("没有成功匹配任何句子，返回原始分段")
         return segments
 
+    new_segments.extend(segments[asr_index:])
     return new_segments
 
 

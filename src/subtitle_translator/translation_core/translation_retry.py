@@ -62,28 +62,24 @@ class _TranslationFallback:
             else ""
         )
         logger.info(f"🔄 {batch_info}发现 {len(failed_items)} 条翻译失败，批量重试")
-        try:
-            retry_results = self._translate(
-                {str(k): v for k, v in failed_items.items()},
-                context_info,
-                batch_num=batch_num,
-                total_batches=total_batches,
-            )
+        retry_results = self._translate(
+            {str(k): v for k, v in failed_items.items()},
+            context_info,
+            batch_num=batch_num,
+            total_batches=total_batches,
+        )
 
-            retry_map = {r["id"]: r for r in retry_results if not _is_translation_failed(r)}
-            still_failed = {
-                key: value for key, value in failed_items.items() if key not in retry_map
-            }
-            logger.info(f"📊 {batch_info}批量重试成功 {len(retry_map)}/{len(failed_items)} 条")
+        retry_map = {r["id"]: r for r in retry_results if not _is_translation_failed(r)}
+        still_failed = {
+            key: value for key, value in failed_items.items() if key not in retry_map
+        }
+        logger.info(f"📊 {batch_info}批量重试成功 {len(retry_map)}/{len(failed_items)} 条")
 
-            if still_failed:
-                logger.info(f"⚡ {batch_info}降级到单条并发翻译 {len(still_failed)} 条")
-                retry_map.update(self._translate_by_single(still_failed, context_info))
+        if still_failed:
+            logger.info(f"⚡ {batch_info}降级到单条并发翻译 {len(still_failed)} 条")
+            retry_map.update(self._translate_by_single(still_failed, context_info))
 
-            return [retry_map.get(result["id"], result) for result in results]
-        except Exception as e:
-            logger.warning(f"⚠️ {batch_info}重试失败: {e}")
-            return results
+        return [retry_map.get(result["id"], result) for result in results]
 
     def _translate_by_single(self, subtitle_json: Dict[int, str], context_info: str = "") -> dict:
         futures = {
@@ -95,20 +91,19 @@ class _TranslationFallback:
             key = futures[future]
             try:
                 result = future.result()
-                if result["translation"].strip():
-                    results[key] = {
-                        "id": key,
-                        "original": subtitle_json[key],
-                        **result,
-                        "discarded": False,
-                    }
-            except Exception as e:
+                results[key] = {
+                    "id": key,
+                    "original": subtitle_json[key],
+                    **result,
+                    "discarded": False,
+                }
+            except ValueError as e:
                 logger.error(f"单条翻译失败，字幕ID: {key}，错误: {e}")
             if completed % 5 == 0 or completed == len(futures):
                 logger.info(f"单条翻译进度: {completed}/{len(futures)}")
         return results
 
-    @retry.retry(tries=2)
+    @retry.retry(exceptions=ValueError, tries=2)
     def _translate_single_subtitle(self, key: int, value: str, context_info: str = "") -> Dict:
         """翻译单条字幕（带重试）。"""
         message = [

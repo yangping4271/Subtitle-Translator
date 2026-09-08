@@ -381,37 +381,32 @@ class SubtitleTranslatorService:
             translation_context,
         ) as translator:
 
-            for i in range(0, total_batches, concurrency):
-                chunk = batches[i : i + concurrency]
-                with ThreadPoolExecutor(max_workers=len(chunk)) as executor:
-                    future_to_batch_index = {
-                        executor.submit(
-                            translator.translate_batch,
-                            batch,
-                            context_info,
-                            batch_num=index + 1,
-                            total_batches=total_batches,
-                        ): index
-                        for index, batch in enumerate(chunk, i)
-                    }
-                    chunk_results = {}
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                future_to_batch_index = {
+                    executor.submit(
+                        translator.translate_batch,
+                        batch,
+                        context_info,
+                        batch_num=index + 1,
+                        total_batches=total_batches,
+                    ): index
+                    for index, batch in enumerate(batches)
+                }
+                batch_results = {}
+                for future in as_completed(future_to_batch_index):
+                    batch_index = future_to_batch_index[future]
+                    batch_results[batch_index] = future.result()
+                    completed_batches += 1
+                    self.logger.info(f"📈 翻译进度: {completed_batches}/{total_batches}")
+                    print(
+                        "📈 [bold cyan]批次进度:[/bold cyan] "
+                        f"[cyan]{completed_batches}/{total_batches}[/cyan] "
+                        f"(当前完成: 第 {batch_index + 1} 批)"
+                    )
 
-                    for future in as_completed(future_to_batch_index):
-                        batch_index = future_to_batch_index[future]
-                        chunk_results[batch_index] = future.result()
-                        completed_batches += 1
-                        self.logger.info(
-                            f"📈 翻译进度: {completed_batches}/{total_batches}"
-                        )
-                        print(
-                            "📈 [bold cyan]批次进度:[/bold cyan] "
-                            f"[cyan]{completed_batches}/{total_batches}[/cyan] "
-                            f"(当前完成: 第 {batch_index + 1} 批)"
-                        )
-
-                    for batch_index in sorted(chunk_results):
-                        all_segments.extend(batches[batch_index].segments)
-                        all_translated_results.extend(chunk_results[batch_index])
+                for batch_index, batch in enumerate(batches):
+                    all_segments.extend(batch.segments)
+                    all_translated_results.extend(batch_results[batch_index])
 
             batch_logs_all = list(translator.batch_logs)
         translation_time = time.time() - translation_start

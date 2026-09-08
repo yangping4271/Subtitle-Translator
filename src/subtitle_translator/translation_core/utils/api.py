@@ -19,16 +19,19 @@ def validate_api_response(response: Any, context: str = "") -> str:
         str: 响应内容
 
     Raises:
-        Exception: 如果响应格式异常
+        ValueError: 如果响应格式异常或内容为空
     """
     prefix = f"{context} " if context else ""
 
     # 检查是否是字符串错误响应
     if isinstance(response, str):
-        raise Exception(f"{prefix}API调用失败: {response}")
+        raise ValueError(f"{prefix}API调用失败: {response}")
 
     # 检查是否有 choices 属性
     if not hasattr(response, 'choices') or not response.choices:
-        raise Exception(f"{prefix}API响应格式异常：缺少choices属性")
+        raise ValueError(f"{prefix}API响应格式异常：缺少choices属性")
 
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError(f"{prefix}API返回空内容")
+    return content

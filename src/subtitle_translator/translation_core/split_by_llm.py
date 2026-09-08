@@ -2,6 +2,8 @@ import math
 import re
 from typing import List, Optional
 
+from openai import APIError
+
 from .prompts import SPLIT_SYSTEM_PROMPT
 from .config import SubtitleConfig
 from .llm_client import ModelAdapter
@@ -46,8 +48,6 @@ def split_by_llm(
         )
 
         result = validate_api_response(response)
-        if not result:
-            raise Exception("API返回为空")
         if config.log_raw_payloads:
             logger.debug(f"API返回结果: \n\n{result}\n")
         else:
@@ -112,7 +112,7 @@ def split_by_llm(
         return sentences
 
     except Exception as e:
-        if max_retries > 0:
+        if max_retries > 0 and not isinstance(e, APIError):
             logger.warning(
                 f"API调用失败，第{4 - max_retries}次重试: {extract_error_message(str(e))}"
             )

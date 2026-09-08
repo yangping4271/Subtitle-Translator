@@ -6,6 +6,8 @@ import string
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, TypedDict
 
+from openai import BadRequestError
+
 from ..logger import setup_logger
 from .config import SubtitleConfig
 from .data import SubtitleData
@@ -295,8 +297,15 @@ class TranslationEngine:
                 **kwargs,
                 response_format=self._get_translation_response_format(),
             )
-        except Exception as exc:
-            logger.warning(f"⚠️ 结构化翻译输出失败，回退到普通模式: {exc}")
+        except BadRequestError as exc:
+            # 网络、限流与服务端错误由 SDK 重试；仅格式不受支持时降级。
+            error = str(exc).lower()
+            if not (
+                any(field in error for field in ("response_format", "json_schema", "json_object"))
+                and any(marker in error for marker in ("not support", "unsupported", "not available"))
+            ):
+                raise
+            logger.warning(f"⚠️ 结构化输出不受支持，回退到普通模式: {exc}")
             return self.llm.create_chat_completion(**kwargs)
 
     def _translate(
@@ -312,42 +321,38 @@ class TranslationEngine:
         )
         logger.info(f"🌍 {batch_info} 翻译 {len(original_subtitle)} 条字幕")
 
-        for attempt in range(1, 3):
-            try:
-                message = self._create_translate_message(
-                    original_subtitle, context_info
-                )
-                if self.config.log_raw_payloads:
-                    logger.debug(
-                        "输入JSON: %s",
-                        json.dumps(original_subtitle, ensure_ascii=False),
-                    )
-                response = self._create_chat_completion_with_fallback(message)
-                raw_response = validate_api_response(response, batch_info)
-                if self.config.log_raw_payloads:
-                    logger.debug("%s LLM原始返回数据:\n%s", batch_info, raw_response)
-                else:
-                    logger.info(
-                        "%s LLM返回摘要: %s 字符（原文日志已关闭）",
-                        batch_info,
-                        len(raw_response),
-                    )
+        message = self._create_translate_message(
+            original_subtitle, context_info
+        )
+        if self.config.log_raw_payloads:
+            logger.debug(
+                "输入JSON: %s",
+                json.dumps(original_subtitle, ensure_ascii=False),
+            )
+        response = self._create_chat_completion_with_fallback(message)
+        try:
+            raw_response = validate_api_response(response, batch_info)
+        except ValueError as exc:
+            logger.warning("⚠️ %s 响应内容无效: %s", batch_info, exc)
+            return self._build_translation_results({}, original_subtitle)
+        if self.config.log_raw_payloads:
+            logger.debug("%s LLM原始返回数据:\n%s", batch_info, raw_response)
+        else:
+            logger.info(
+                "%s LLM返回摘要: %s 字符（原文日志已关闭）",
+                batch_info,
+                len(raw_response),
+            )
 
-                response_content = parse_translation_response(raw_response)
-                if not response_content:
-                    raise ValueError("API返回空结果")
-                missing_ids = original_subtitle.keys() - response_content.keys()
-                if missing_ids:
-                    logger.warning(
-                        "⚠️ %s LLM丢失ID: %s", batch_info, sorted(map(int, missing_ids))
-                    )
-                return self._build_translation_results(
-                    response_content, original_subtitle
-                )
-            except Exception as exc:
-                logger.warning("⚠️ %s 翻译尝试 %s/2 失败: %s", batch_info, attempt, exc)
-
-        return self._build_translation_results({}, original_subtitle)
+        response_content = parse_translation_response(raw_response)
+        missing_ids = original_subtitle.keys() - response_content.keys()
+        if missing_ids:
+            logger.warning(
+                "⚠️ %s LLM丢失ID: %s", batch_info, sorted(map(int, missing_ids))
+            )
+        return self._build_translation_results(
+            response_content, original_subtitle
+        )
 
     def _build_translation_results(
         self, response_content: dict, original_subtitle: dict

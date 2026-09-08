@@ -221,7 +221,7 @@ def test_translation_batch_falls_back_to_a_retried_single_translation():
         [SubtitleSegment("Hello world!", start_time=0, end_time=1000)]
     )
     adapter = StubModelAdapter(
-        [failed_batch, failed_batch, RuntimeError("temporary failure"), "你好，世界！"]
+        [failed_batch, failed_batch, " ", "你好，世界！"]
     )
 
     adapter.create_chat_completion = Mock(wraps=adapter.create_chat_completion)
@@ -571,7 +571,7 @@ def test_partial_retry_preserves_order_discard_and_unrecovered_subtitles(
     single_responses = (
         ["第四句"]
         if single_succeeds
-        else [RuntimeError("unavailable"), RuntimeError("unavailable")]
+        else ["", ""]
     )
     adapter = StubModelAdapter([initial, retry_response, *single_responses])
     source = SubtitleData(
@@ -617,14 +617,14 @@ def test_concurrent_translation_keeps_batch_order_and_global_ids(monkeypatch):
         SubtitleData([SubtitleSegment(str(i), i * 1000, i * 1000 + 900)])
         for i in range(5)
     ]
-    second_finished = Event()
+    third_started = Event()
 
     def translate(self, batch, context_info, batch_num, total_batches):
         assert total_batches == 5
         if batch_num == 1:
-            assert second_finished.wait(2)
-        if batch_num == 2:
-            second_finished.set()
+            assert third_started.wait(2)
+        if batch_num == 3:
+            third_started.set()
         return [
             {
                 "id": 1,
@@ -649,3 +649,55 @@ def test_concurrent_translation_keeps_batch_order_and_global_ids(monkeypatch):
     assert [r["id"] for r in results] == list(range(1, 6))
     assert [r["original"] for r in results] == [s.text for s in sentences]
     assert [r["translation"] for r in results] == [str(i) for i in range(1, 6)]
+
+
+@pytest.mark.parametrize("error_type", ["timeout", "auth", "bad_request"])
+@pytest.mark.parametrize("phase", ["initial", "batch_retry", "single"])
+def test_api_errors_do_not_trigger_application_retries(error_type, phase):
+    import httpx
+    from openai import APITimeoutError, AuthenticationError, BadRequestError
+
+    request = httpx.Request("POST", "https://example.test")
+    if error_type == "timeout":
+        error = APITimeoutError(request=request)
+    else:
+        cls, status = (AuthenticationError, 401) if error_type == "auth" else (BadRequestError, 400)
+        error = cls("invalid request", response=httpx.Response(status, request=request), body=None)
+    failed = '{"1": {"translation": ""}}'
+    prefix = {"initial": [], "batch_retry": [failed], "single": [failed, failed]}[phase]
+    adapter = StubModelAdapter([*prefix, error])
+    adapter.create_chat_completion = Mock(wraps=adapter.create_chat_completion)
+    with TranslationEngine(SubtitleConfig(), adapter, DEFAULT_TRANSLATION_CONTEXT) as engine:
+        with pytest.raises(type(error)):
+            engine.translate_batch(SubtitleData([SubtitleSegment("Hello", 0, 1000)]), "")
+    assert adapter.create_chat_completion.call_count == len(prefix) + 1
+
+
+def test_unsupported_response_format_falls_back_once():
+    import httpx
+    from openai import BadRequestError
+
+    error = BadRequestError(
+        "response_format json_schema is not supported",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://example.test")),
+        body=None,
+    )
+    adapter = StubModelAdapter([error, '{"1": {"translation": "你好"}}'])
+    adapter.create_chat_completion = Mock(wraps=adapter.create_chat_completion)
+    with TranslationEngine(SubtitleConfig(), adapter, DEFAULT_TRANSLATION_CONTEXT) as engine:
+        result = engine.translate_batch(SubtitleData([SubtitleSegment("Hello", 0, 1000)]), "")
+    calls = adapter.create_chat_completion.call_args_list
+    assert len(calls) == 2
+    assert "response_format" in calls[0].kwargs
+    assert "response_format" not in calls[1].kwargs
+    assert result[0]["translation"] == "你好"
+
+
+def test_invalid_content_has_bounded_batch_and_single_attempts():
+    adapter = StubModelAdapter(["", "not JSON", "", ""])
+    adapter.create_chat_completion = Mock(wraps=adapter.create_chat_completion)
+    with TranslationEngine(SubtitleConfig(), adapter, DEFAULT_TRANSLATION_CONTEXT) as engine:
+        results = engine.translate_batch(SubtitleData([SubtitleSegment("Hello", 0, 1000)]), "")
+    assert adapter.create_chat_completion.call_count == 4
+    assert results[0]["original"] == "Hello"
+    assert results[0]["translation"] == ""
