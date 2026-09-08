@@ -2,14 +2,6 @@ from ..types import ThinkingCapability, ThinkingDisableMethod, ThinkingPlugin
 
 PLUGINS = (
     ThinkingPlugin(
-        names=frozenset({"glm-5.3"}),
-        prefixes=("glm-5.3-",),
-        method=ThinkingDisableMethod.OPENAI_REASONING_EFFORT,
-        reasoning_effort="low",
-        capability=ThinkingCapability.MIN_REASONING,
-        overrides_provider=True,
-    ),
-    ThinkingPlugin(
         names=frozenset(
             {
                 "glm-5.2",

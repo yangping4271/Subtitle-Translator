@@ -12,10 +12,8 @@ from .catalog import (
     get_thinking_disable_spec,
     normalize_model_name,
     resolve_thinking_plan,
-    thinking_cannot_disable,
     thinking_console_suffix,
     thinking_disable_applies,
-    thinking_uses_min_reasoning,
 )
 from .encode import encode_thinking_extra_body
 from .plugin import register_plugin, unregister_plugin
@@ -44,9 +42,7 @@ __all__ = [
     "normalize_model_name",
     "register_plugin",
     "resolve_thinking_plan",
-    "thinking_cannot_disable",
     "thinking_console_suffix",
     "thinking_disable_applies",
-    "thinking_uses_min_reasoning",
     "unregister_plugin",
 ]

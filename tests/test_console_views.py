@@ -12,16 +12,23 @@ def test_show_model_config_shows_reasoning_disabled(capsys):
     assert "模型: gpt-5.6-luna (思考模式: 已关闭)" in output
 
 
+def test_show_model_config_treats_dated_deepseek_flash_as_base_model(capsys):
+    show_model_config("deepseek-v4-flash-0731")
+
+    output = capsys.readouterr().out
+    assert "模型: deepseek-v4-flash-0731 (思考模式: 已关闭)" in output
+
+
 def test_show_model_config_warns_for_unregistered_models(capsys):
     show_model_config("gpt-5")
 
     output = capsys.readouterr().out
-    assert "⚠️ 思考模式: 未适配" in output
+    assert "⚠️ 思考模式: 无法关闭" in output
     assert "使用默认强度" in output
     assert "最低强度" not in output
 
 
-def test_show_model_config_warns_when_thinking_cannot_be_disabled(capsys):
+def test_show_model_config_treats_undisableable_models_as_default(capsys):
     show_model_config("gemini-2.5-pro")
 
     output = capsys.readouterr().out
@@ -30,19 +37,21 @@ def test_show_model_config_warns_when_thinking_cannot_be_disabled(capsys):
     assert "最低强度" not in output
 
 
-def test_show_model_config_shows_min_reasoning_for_grok_4_6(capsys):
+def test_show_model_config_shows_default_for_grok_4_6(capsys):
     show_model_config("grok-4.6")
 
     output = capsys.readouterr().out
-    assert "模型: grok-4.6 (思考模式: 无法关闭，已降至最低强度)" in output
-    assert "未识别" not in output
+    assert "模型: grok-4.6" in output
+    assert "⚠️ 思考模式: 无法关闭（使用默认强度）" in output
+    assert "已关闭" not in output
 
 
-def test_show_model_config_shows_min_reasoning_for_glm_5_3_flash(capsys):
+def test_show_model_config_shows_default_for_glm_5_3_flash(capsys):
     show_model_config("glm-5.3-flash", provider_type="zhipu")
 
     output = capsys.readouterr().out
-    assert "模型: glm-5.3-flash (思考模式: 无法关闭，已降至最低强度)" in output
+    assert "模型: glm-5.3-flash" in output
+    assert "⚠️ 思考模式: 无法关闭（使用默认强度）" in output
     assert "已关闭" not in output
 
 
@@ -64,7 +73,7 @@ def test_show_model_config_warns_for_unsupported_model(capsys):
     show_model_config("gpt-4o-mini")
 
     output = capsys.readouterr().out
-    assert "⚠️ 思考模式: 未适配（使用默认强度）" in output
+    assert "⚠️ 思考模式: 无法关闭（使用默认强度）" in output
     assert "最低强度" not in output
 
 

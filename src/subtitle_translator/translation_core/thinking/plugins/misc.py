@@ -3,6 +3,7 @@ from ..types import ThinkingCapability, ThinkingDisableMethod, ThinkingPlugin
 PLUGINS = (
     ThinkingPlugin(
         names=frozenset({"deepseek-v4-flash", "deepseek-v4-pro"}),
+        prefixes=("deepseek-v4-flash-", "deepseek-v4-pro-"),
         method=ThinkingDisableMethod.THINKING_TYPE_DISABLED,
         capability=ThinkingCapability.DISABLED,
     ),

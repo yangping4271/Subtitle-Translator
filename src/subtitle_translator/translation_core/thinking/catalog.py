@@ -43,8 +43,6 @@ def _find_model_plugin(
             continue
         if capability is not None and plugin.capability is not capability:
             continue
-        if capability is None and plugin.capability is ThinkingCapability.CANNOT_DISABLE:
-            continue
         rank = plugin.match_rank(name)
         if rank is not None:
             ranked.append((rank, plugin))
@@ -55,7 +53,7 @@ def _find_model_plugin(
 
 
 def get_thinking_disable_spec(model: str) -> Optional[ThinkingDisableSpec]:
-    """查找模型的关闭或降档配置；未登记则返回 None。"""
+    """查找模型的关闭思考配置；未登记或不能关闭则返回 None。"""
     plugin = _find_model_plugin(model)
     if plugin is None or plugin.method is None:
         return None
@@ -72,25 +70,10 @@ def get_provider_thinking_method(
     return plugin.method
 
 
-def thinking_uses_min_reasoning(model: str) -> bool:
-    """关闭思考时只会降到最低推理强度，而不是完全关闭。"""
-    plugin = _find_model_plugin(model)
-    return plugin is not None and plugin.capability is ThinkingCapability.MIN_REASONING
-
-
-def thinking_cannot_disable(model: str) -> bool:
-    """已知官方不允许关闭思考、且没有可用最低强度参数的模型。"""
-    plugin = _find_model_plugin(model, ThinkingCapability.CANNOT_DISABLE)
-    return plugin is not None
-
-
 def thinking_disable_applies(model: str, provider_type: Optional[str] = None) -> bool:
-    """请求路径和 console 共用：供应商级开关或登记模型才会改思考参数。"""
+    """请求路径和 console 共用：只有能关闭思考时才改请求参数。"""
     plan = resolve_thinking_plan(model, provider_type, disable_thinking=True)
-    return plan.capability in {
-        ThinkingCapability.DISABLED,
-        ThinkingCapability.MIN_REASONING,
-    }
+    return plan.capability is ThinkingCapability.DISABLED
 
 
 def get_reasoning_effort(model: str) -> Optional[str]:
@@ -134,9 +117,7 @@ def resolve_thinking_plan(
         return _plan_from_plugin(provider_plugin)
     if model_plugin is not None:
         return _plan_from_plugin(model_plugin)
-    if thinking_cannot_disable(model):
-        return ThinkingPlan(capability=ThinkingCapability.CANNOT_DISABLE)
-    return ThinkingPlan(capability=ThinkingCapability.UNADAPTED)
+    return ThinkingPlan(capability=ThinkingCapability.DEFAULT)
 
 
 def apply_thinking_options(
@@ -182,26 +163,16 @@ def detected_reasoning_notice(
     display_model = model or "unknown"
     plan = resolve_thinking_plan(display_model, provider_type, disable_thinking)
     capability = plan.capability
-    if capability is ThinkingCapability.MIN_REASONING:
-        return DetectedReasoningNotice(
-            "info",
-            f"该模型无法关闭思考，已使用最低强度: {display_model}, {evidence}",
-        )
     if capability is ThinkingCapability.DISABLED:
         return DetectedReasoningNotice(
             "warning",
             "检测到模型实际使用了思考模式（关闭参数未生效）: "
             f"{display_model}, {evidence}",
         )
-    if capability is ThinkingCapability.CANNOT_DISABLE:
+    if capability is ThinkingCapability.DEFAULT:
         return DetectedReasoningNotice(
             "info",
             f"该模型无法关闭思考，使用默认强度: {display_model}, {evidence}",
-        )
-    if capability is ThinkingCapability.UNADAPTED:
-        return DetectedReasoningNotice(
-            "warning",
-            f"未适配该模型的关闭方式，使用默认强度: {display_model}, {evidence}",
         )
     return DetectedReasoningNotice(
         "info",

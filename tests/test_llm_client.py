@@ -101,7 +101,7 @@ def test_detected_reasoning_warns_once_per_model(monkeypatch):
     )
 
 
-def test_min_reasoning_model_reports_expected_thinking(monkeypatch):
+def test_cannot_disable_grok_reports_default_reasoning(monkeypatch):
     config = SubtitleConfig(
         openai_base_url="https://api.x.ai/v1",
         openai_api_key="test-key",
@@ -123,19 +123,19 @@ def test_min_reasoning_model_reports_expected_thinking(monkeypatch):
     )
 
     notice = terminal_notice.call_args.args[0]
-    assert "该模型无法关闭思考，已使用最低强度" in notice
+    assert "该模型无法关闭思考，使用默认强度" in notice
     assert "grok-4.6" in notice
     assert "reasoning_tokens=683" in notice
-    assert "关闭参数未生效" not in notice
+    assert "最低强度" not in notice
     log_warning.assert_not_called()
     assert any(
-        "该模型无法关闭思考，已使用最低强度: grok-4.6, reasoning_tokens=683"
+        "该模型无法关闭思考，使用默认强度: grok-4.6, reasoning_tokens=683"
         in str(call.args[0])
         for call in log_info.call_args_list
     )
 
 
-def test_unadapted_model_reports_default_reasoning(monkeypatch):
+def test_unknown_model_reports_default_reasoning(monkeypatch):
     config = SubtitleConfig(
         openai_base_url="https://api.openai.com/v1",
         openai_api_key="test-key",
@@ -153,7 +153,7 @@ def test_unadapted_model_reports_default_reasoning(monkeypatch):
     )
 
     notice = terminal_notice.call_args.args[0]
-    assert "未适配该模型的关闭方式，使用默认强度" in notice
+    assert "该模型无法关闭思考，使用默认强度" in notice
     assert "gpt-5" in notice
     assert "reasoning_tokens=12" in notice
     assert "最低强度" not in notice
@@ -663,21 +663,9 @@ def test_detected_reasoning_warns_once_under_concurrency(monkeypatch):
         ),
         ("https://api.anthropic.com/v1/", "claude-fable-5", True, {}, {}),
         ("https://api.x.ai/v1", "grok-4.3", True, {}, {"reasoning_effort": "none"}),
-        ("https://api.x.ai/v1", "grok-4.6", True, {}, {"reasoning_effort": "low"}),
-        (
-            "https://example.com/v1",
-            "glm-5.3-flash",
-            True,
-            {},
-            {"reasoning_effort": "low"},
-        ),
-        (
-            "https://open.bigmodel.cn/api/paas/v4/",
-            "glm-5.3-flash",
-            True,
-            {},
-            {"reasoning_effort": "low"},
-        ),
+        ("https://api.x.ai/v1", "grok-4.6", True, {}, {}),
+        ("https://example.com/v1", "glm-5.3-flash", True, {}, {}),
+        ("https://open.bigmodel.cn/api/paas/v4/", "glm-5.3-flash", True, {}, {}),
         (
             "https://example.com/v1",
             "qwen-plus",
@@ -775,6 +763,13 @@ def test_detected_reasoning_warns_once_under_concurrency(monkeypatch):
         (
             "https://example.com/v1",
             "vendor/deepseek-v4-flash",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        (
+            "https://example.com/v1",
+            "deepseek-v4-flash-0731",
             True,
             {},
             {"extra_body": {"thinking": {"type": "disabled"}}},

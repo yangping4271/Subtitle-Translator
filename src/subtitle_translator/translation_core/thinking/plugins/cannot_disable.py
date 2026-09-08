@@ -1,17 +1,17 @@
 from ..types import ThinkingCapability, ThinkingPlugin
 
+# 官方不能关闭思考：不发关闭参数，也不降档，沿用默认强度。
+# overrides_provider 避免供应商级开关把 thinking.disabled 发给这些模型。
 PLUGINS = (
     ThinkingPlugin(
-        names=frozenset(
-            {
-                "kimi-k3",
-                "kimi-k2.7-code",
-                "minimax-m2.7",
-                "claude-fable-5",
-                "claude-mythos-5",
-                "gemini-2.5-pro",
-            }
-        ),
-        capability=ThinkingCapability.CANNOT_DISABLE,
+        names=frozenset({"glm-5.3"}),
+        prefixes=("glm-5.3-",),
+        capability=ThinkingCapability.DEFAULT,
+        overrides_provider=True,
+    ),
+    ThinkingPlugin(
+        prefixes=("grok-4.5", "grok-4.6"),
+        capability=ThinkingCapability.DEFAULT,
+        overrides_provider=True,
     ),
 )

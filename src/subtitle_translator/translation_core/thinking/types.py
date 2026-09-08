@@ -6,7 +6,7 @@ from typing import Callable, Optional
 
 
 class ThinkingDisableMethod(str, Enum):
-    """已知可用的关闭或降低思考方式。"""
+    """已知可用的关闭思考方式。"""
 
     OPENAI_REASONING_EFFORT = "openai_reasoning_effort"
     THINKING_TYPE_DISABLED = "thinking_type_disabled"
@@ -20,25 +20,16 @@ class ThinkingCapability(str, Enum):
     """一次请求实际采取的思考策略。"""
 
     DISABLED = "disabled"
-    MIN_REASONING = "min_reasoning"
-    CANNOT_DISABLE = "cannot_disable"
-    UNADAPTED = "unadapted"
+    DEFAULT = "default"
     FEATURE_OFF = "feature_off"
 
     def console_suffix(self) -> str:
         if self is ThinkingCapability.DISABLED:
             return " [dim](思考模式: 已关闭)[/dim]"
-        if self is ThinkingCapability.MIN_REASONING:
-            return " [dim](思考模式: 无法关闭，已降至最低强度)[/dim]"
-        if self is ThinkingCapability.CANNOT_DISABLE:
-            return (
-                " [bold yellow]⚠️ 思考模式: 无法关闭"
-                "（使用默认强度）[/bold yellow]"
-            )
         if self is ThinkingCapability.FEATURE_OFF:
             return " [dim](思考模式: 关闭功能未启用)[/dim]"
         return (
-            " [bold yellow]⚠️ 思考模式: 未适配"
+            " [bold yellow]⚠️ 思考模式: 无法关闭"
             "（使用默认强度）[/bold yellow]"
         )
 

@@ -8,9 +8,7 @@ from subtitle_translator.translation_core.thinking import (
     get_thinking_disable_spec,
     normalize_model_name,
     register_plugin,
-    thinking_cannot_disable,
     thinking_disable_applies,
-    thinking_uses_min_reasoning,
     unregister_plugin,
 )
 
@@ -34,7 +32,12 @@ def test_registered_gpt_5_6_models_use_openai_none():
 
 
 def test_registered_deepseek_v4_models_use_thinking_disabled():
-    for model in ("deepseek-v4-flash", "vendor/deepseek-v4-pro"):
+    for model in (
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-0731",
+        "vendor/deepseek-v4-pro",
+        "deepseek-v4-pro-0731",
+    ):
         spec = get_thinking_disable_spec(model)
         assert spec is not None
         assert spec.method is ThinkingDisableMethod.THINKING_TYPE_DISABLED
@@ -45,14 +48,11 @@ def test_registered_mainstream_models_use_expected_methods():
         spec = get_thinking_disable_spec(model)
         assert spec is not None
         assert spec.method is ThinkingDisableMethod.THINKING_TYPE_DISABLED
-        assert not thinking_uses_min_reasoning(model)
 
     for model in ("glm-5.3", "glm-5.3-flash", "zhipu/glm-5.3-flash"):
-        spec = get_thinking_disable_spec(model)
-        assert spec is not None
-        assert spec.method is ThinkingDisableMethod.OPENAI_REASONING_EFFORT
-        assert spec.reasoning_effort == "low"
-        assert thinking_uses_min_reasoning(model)
+        assert get_thinking_disable_spec(model) is None
+        assert not thinking_disable_applies(model)
+        assert not thinking_disable_applies(model, "zhipu")
 
     for model in (
         "gemini-3.7-flash",
@@ -88,11 +88,8 @@ def test_registered_mainstream_models_use_expected_methods():
     assert spec.reasoning_effort == "none"
 
     for model in ("grok-4.6", "x-ai/grok-4.6", "grok-4.5"):
-        spec = get_thinking_disable_spec(model)
-        assert spec is not None
-        assert spec.method is ThinkingDisableMethod.OPENAI_REASONING_EFFORT
-        assert spec.reasoning_effort == "low"
-        assert thinking_uses_min_reasoning(model)
+        assert get_thinking_disable_spec(model) is None
+        assert not thinking_disable_applies(model)
 
     spec = get_thinking_disable_spec("qwen-plus")
     assert spec is not None
@@ -121,12 +118,9 @@ def test_models_that_cannot_disable_thinking_are_not_registered():
     assert get_thinking_disable_spec("qwq-plus") is None
     assert get_thinking_disable_spec("gpt-oss-120b") is None
     assert get_thinking_disable_spec("qwen2.5-7b") is None
-    assert thinking_cannot_disable("gemini-2.5-pro")
-    assert thinking_cannot_disable("kimi-k3")
-    assert not thinking_cannot_disable("grok-4.6")
-    assert not thinking_cannot_disable("glm-5.3-flash")
-    assert not thinking_cannot_disable("grok-4.3")
-    assert not thinking_cannot_disable("gpt-5")
+    assert get_thinking_disable_spec("gemini-2.5-pro") is None
+    assert not thinking_disable_applies("gemini-2.5-pro")
+    assert not thinking_disable_applies("kimi-k3")
 
 
 def test_unregistered_models_are_not_in_the_table():
@@ -150,9 +144,9 @@ def test_thinking_disable_applies_registry_or_official_providers():
     assert thinking_disable_applies("qwen-plus")
     assert thinking_disable_applies("Qwen3.8-27B-UD-Q3_K_XL")
     assert thinking_disable_applies("unsloth/Qwen3.8-27B-GGUF", "custom")
-    assert thinking_disable_applies("grok-4.6", "xai")
-    assert thinking_disable_applies("glm-5.3-flash")
-    assert thinking_disable_applies("glm-5.3-flash", "zhipu")
+    assert not thinking_disable_applies("grok-4.6", "xai")
+    assert not thinking_disable_applies("glm-5.3-flash")
+    assert not thinking_disable_applies("glm-5.3-flash", "zhipu")
     assert not thinking_disable_applies("gpt-5.1", "openai")
     assert not thinking_disable_applies("kimi-k3", "kimi")
     assert not thinking_disable_applies("llama-3.3-70b", "groq")
@@ -206,26 +200,22 @@ def test_provider_thinking_method_only_for_unified_official_switches():
 def test_registering_a_plugin_adapts_a_new_model_without_core_changes():
     plugin = ThinkingPlugin(
         names=frozenset({"demo-reasoner-9"}),
-        method=ThinkingDisableMethod.OPENAI_REASONING_EFFORT,
-        reasoning_effort="low",
-        capability=ThinkingCapability.MIN_REASONING,
-        overrides_provider=True,
+        method=ThinkingDisableMethod.THINKING_TYPE_DISABLED,
+        capability=ThinkingCapability.DISABLED,
     )
     assert get_thinking_disable_spec("demo-reasoner-9") is None
     register_plugin(plugin)
     try:
         spec = get_thinking_disable_spec("vendor/demo-reasoner-9")
         assert spec is not None
-        assert spec.reasoning_effort == "low"
-        assert thinking_uses_min_reasoning("demo-reasoner-9")
+        assert spec.method is ThinkingDisableMethod.THINKING_TYPE_DISABLED
         request, plan = apply_thinking_options(
             {"model": "demo-reasoner-9", "messages": []},
-            provider_type="zhipu",
+            provider_type="custom",
             disable_thinking=True,
         )
-        assert request["reasoning_effort"] == "low"
-        assert "extra_body" not in request
-        assert plan.capability is ThinkingCapability.MIN_REASONING
+        assert request["extra_body"] == {"thinking": {"type": "disabled"}}
+        assert plan.capability is ThinkingCapability.DISABLED
     finally:
         unregister_plugin(plugin)
     assert get_thinking_disable_spec("demo-reasoner-9") is None
