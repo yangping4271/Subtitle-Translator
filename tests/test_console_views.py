@@ -16,9 +16,26 @@ def test_show_model_config_warns_for_unregistered_models(capsys):
     show_model_config("gpt-5")
 
     output = capsys.readouterr().out
-    assert "⚠️ 思考模式: 未关闭" in output
-    assert "未识别该模型的关闭方式" in output
-    assert "推理强度" not in output
+    assert "⚠️ 思考模式: 未适配" in output
+    assert "使用默认强度" in output
+    assert "最低强度" not in output
+
+
+def test_show_model_config_warns_when_thinking_cannot_be_disabled(capsys):
+    show_model_config("gemini-2.5-pro")
+
+    output = capsys.readouterr().out
+    assert "⚠️ 思考模式: 无法关闭" in output
+    assert "使用默认强度" in output
+    assert "最低强度" not in output
+
+
+def test_show_model_config_shows_min_reasoning_for_grok_4_6(capsys):
+    show_model_config("grok-4.6")
+
+    output = capsys.readouterr().out
+    assert "模型: grok-4.6 (思考模式: 无法关闭，已降至最低强度)" in output
+    assert "未识别" not in output
 
 
 def test_show_model_config_shows_official_provider_disable(capsys):
@@ -39,8 +56,8 @@ def test_show_model_config_warns_for_unsupported_model(capsys):
     show_model_config("gpt-4o-mini")
 
     output = capsys.readouterr().out
-    assert "推理强度" not in output
-    assert "⚠️ 思考模式: 未关闭" in output
+    assert "⚠️ 思考模式: 未适配（使用默认强度）" in output
+    assert "最低强度" not in output
 
 
 def test_show_model_config_notes_when_disable_thinking_off(capsys):

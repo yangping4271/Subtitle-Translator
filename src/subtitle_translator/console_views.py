@@ -12,7 +12,11 @@ from rich.panel import Panel
 from rich import box
 
 from .file_discovery import get_file_type_info, format_file_size
-from .translation_core.thinking import thinking_disable_applies
+from .translation_core.thinking import (
+    thinking_cannot_disable,
+    thinking_disable_applies,
+    thinking_uses_min_reasoning,
+)
 
 
 def show_api_config(base_url: str, api_key: str) -> None:
@@ -40,12 +44,19 @@ def show_model_config(
     print("[bold blue]🤖 模型配置:[/bold blue]")
 
     if disable_thinking:
-        if thinking_disable_applies(llm_model, provider_type):
+        if thinking_uses_min_reasoning(llm_model):
+            reasoning = " [dim](思考模式: 无法关闭，已降至最低强度)[/dim]"
+        elif thinking_disable_applies(llm_model, provider_type):
             reasoning = " [dim](思考模式: 已关闭)[/dim]"
+        elif thinking_cannot_disable(llm_model):
+            reasoning = (
+                " [bold yellow]⚠️ 思考模式: 无法关闭"
+                "（使用默认强度）[/bold yellow]"
+            )
         else:
             reasoning = (
-                " [bold yellow]⚠️ 思考模式: 未关闭"
-                "（未识别该模型的关闭方式）[/bold yellow]"
+                " [bold yellow]⚠️ 思考模式: 未适配"
+                "（使用默认强度）[/bold yellow]"
             )
     else:
         reasoning = " [dim](思考模式: 关闭功能未启用)[/dim]"

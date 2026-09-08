@@ -4,7 +4,9 @@ from subtitle_translator.translation_core.thinking import (
     get_provider_thinking_method,
     get_thinking_disable_spec,
     normalize_model_name,
+    thinking_cannot_disable,
     thinking_disable_applies,
+    thinking_uses_min_reasoning,
 )
 
 
@@ -72,6 +74,13 @@ def test_registered_mainstream_models_use_expected_methods():
     assert spec.method is ThinkingDisableMethod.OPENAI_REASONING_EFFORT
     assert spec.reasoning_effort == "none"
 
+    for model in ("grok-4.6", "x-ai/grok-4.6", "grok-4.5"):
+        spec = get_thinking_disable_spec(model)
+        assert spec is not None
+        assert spec.method is ThinkingDisableMethod.OPENAI_REASONING_EFFORT
+        assert spec.reasoning_effort == "low"
+        assert thinking_uses_min_reasoning(model)
+
     spec = get_thinking_disable_spec("qwen-plus")
     assert spec is not None
     assert spec.method is ThinkingDisableMethod.ENABLE_THINKING_FALSE
@@ -96,11 +105,14 @@ def test_models_that_cannot_disable_thinking_are_not_registered():
     assert get_thinking_disable_spec("minimax-m2.7") is None
     assert get_thinking_disable_spec("claude-fable-5") is None
     assert get_thinking_disable_spec("claude-mythos-5") is None
-    assert get_thinking_disable_spec("grok-4.6") is None
-    assert get_thinking_disable_spec("grok-4.5") is None
     assert get_thinking_disable_spec("qwq-plus") is None
     assert get_thinking_disable_spec("gpt-oss-120b") is None
     assert get_thinking_disable_spec("qwen2.5-7b") is None
+    assert thinking_cannot_disable("gemini-2.5-pro")
+    assert thinking_cannot_disable("kimi-k3")
+    assert not thinking_cannot_disable("grok-4.6")
+    assert not thinking_cannot_disable("grok-4.3")
+    assert not thinking_cannot_disable("gpt-5")
 
 
 def test_unregistered_models_are_not_in_the_table():
@@ -124,11 +136,11 @@ def test_thinking_disable_applies_registry_or_official_providers():
     assert thinking_disable_applies("qwen-plus")
     assert thinking_disable_applies("Qwen3.8-27B-UD-Q3_K_XL")
     assert thinking_disable_applies("unsloth/Qwen3.8-27B-GGUF", "custom")
+    assert thinking_disable_applies("grok-4.6", "xai")
     assert not thinking_disable_applies("gpt-5.1", "openai")
     assert not thinking_disable_applies("kimi-k3", "kimi")
     assert not thinking_disable_applies("llama-3.3-70b", "groq")
     assert not thinking_disable_applies("claude-fable-5", "anthropic")
-    assert not thinking_disable_applies("grok-4.6", "xai")
 
 
 def test_google_thinking_config_encodes_one_field_per_generation():

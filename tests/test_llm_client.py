@@ -101,6 +101,88 @@ def test_detected_reasoning_warns_once_per_model(monkeypatch):
     )
 
 
+def test_min_reasoning_model_reports_expected_thinking(monkeypatch):
+    config = SubtitleConfig(
+        openai_base_url="https://api.x.ai/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    client._client.chat.completions.create = Mock(
+        return_value=_completion_response(reasoning_tokens=683)
+    )
+    terminal_notice = Mock()
+    log_info = Mock()
+    log_warning = Mock()
+    monkeypatch.setattr(llm_client, "rich_print", terminal_notice)
+    monkeypatch.setattr(llm_client.logger, "info", log_info)
+    monkeypatch.setattr(llm_client.logger, "warning", log_warning)
+
+    client.create_chat_completion(
+        model="grok-4.6",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    notice = terminal_notice.call_args.args[0]
+    assert "该模型无法关闭思考，已使用最低强度" in notice
+    assert "grok-4.6" in notice
+    assert "reasoning_tokens=683" in notice
+    assert "关闭参数未生效" not in notice
+    log_warning.assert_not_called()
+    assert any(
+        "该模型无法关闭思考，已使用最低强度: grok-4.6, reasoning_tokens=683"
+        in str(call.args[0])
+        for call in log_info.call_args_list
+    )
+
+
+def test_unadapted_model_reports_default_reasoning(monkeypatch):
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    client._client.chat.completions.create = Mock(
+        return_value=_completion_response(reasoning_tokens=12)
+    )
+    terminal_notice = Mock()
+    monkeypatch.setattr(llm_client, "rich_print", terminal_notice)
+
+    client.create_chat_completion(
+        model="gpt-5",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    notice = terminal_notice.call_args.args[0]
+    assert "未适配该模型的关闭方式，使用默认强度" in notice
+    assert "gpt-5" in notice
+    assert "reasoning_tokens=12" in notice
+    assert "最低强度" not in notice
+
+
+def test_cannot_disable_model_reports_default_reasoning(monkeypatch):
+    config = SubtitleConfig(
+        openai_base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        openai_api_key="test-key",
+    )
+    client = LLMClient(config)
+    client._client.chat.completions.create = Mock(
+        return_value=_completion_response(reasoning_tokens=9)
+    )
+    terminal_notice = Mock()
+    monkeypatch.setattr(llm_client, "rich_print", terminal_notice)
+
+    client.create_chat_completion(
+        model="gemini-2.5-pro",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    notice = terminal_notice.call_args.args[0]
+    assert "该模型无法关闭思考，使用默认强度" in notice
+    assert "gemini-2.5-pro" in notice
+    assert "reasoning_tokens=9" in notice
+    assert "最低强度" not in notice
+
+
 def test_zero_reasoning_tokens_does_not_show_notice(monkeypatch):
     config = SubtitleConfig(
         openai_base_url="https://api.deepseek.com",
@@ -581,7 +663,7 @@ def test_detected_reasoning_warns_once_under_concurrency(monkeypatch):
         ),
         ("https://api.anthropic.com/v1/", "claude-fable-5", True, {}, {}),
         ("https://api.x.ai/v1", "grok-4.3", True, {}, {"reasoning_effort": "none"}),
-        ("https://api.x.ai/v1", "grok-4.6", True, {}, {}),
+        ("https://api.x.ai/v1", "grok-4.6", True, {}, {"reasoning_effort": "low"}),
         (
             "https://example.com/v1",
             "qwen-plus",

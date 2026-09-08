@@ -20,6 +20,9 @@ from .thinking import (
     encode_thinking_extra_body,
     get_provider_thinking_method,
     get_thinking_disable_spec,
+    thinking_cannot_disable,
+    thinking_disable_applies,
+    thinking_uses_min_reasoning,
 )
 
 logger = setup_logger("llm_client")
@@ -416,9 +419,44 @@ class LLMClient:
             if reasoning_tokens is not None and reasoning_tokens > 0
             else "reasoning_content=present"
         )
-        if self.config.disable_thinking:
+        if thinking_uses_min_reasoning(display_model):
+            message = (
+                "该模型无法关闭思考，已使用最低强度: "
+                f"{display_model}, {evidence}"
+            )
+            try:
+                logger.info(message)
+                rich_print(f"[bold cyan]🧠 {escape(message)}[/bold cyan]")
+            except Exception:
+                pass
+            return
+        if self.config.disable_thinking and thinking_disable_applies(
+            display_model, self._provider_type
+        ):
             message = (
                 "检测到模型实际使用了思考模式（关闭参数未生效）: "
+                f"{display_model}, {evidence}"
+            )
+            try:
+                logger.warning(message)
+                rich_print(f"[bold yellow]⚠️ {escape(message)}[/bold yellow]")
+            except Exception:
+                pass
+            return
+        if self.config.disable_thinking and thinking_cannot_disable(display_model):
+            message = (
+                "该模型无法关闭思考，使用默认强度: "
+                f"{display_model}, {evidence}"
+            )
+            try:
+                logger.info(message)
+                rich_print(f"[bold cyan]🧠 {escape(message)}[/bold cyan]")
+            except Exception:
+                pass
+            return
+        if self.config.disable_thinking:
+            message = (
+                "未适配该模型的关闭方式，使用默认强度: "
                 f"{display_model}, {evidence}"
             )
             try:

@@ -57,6 +57,13 @@ def _openai_none() -> ThinkingDisableSpec:
     )
 
 
+def _openai_low() -> ThinkingDisableSpec:
+    return ThinkingDisableSpec(
+        ThinkingDisableMethod.OPENAI_REASONING_EFFORT,
+        reasoning_effort="low",
+    )
+
+
 def _thinking_disabled() -> ThinkingDisableSpec:
     return ThinkingDisableSpec(ThinkingDisableMethod.THINKING_TYPE_DISABLED)
 
@@ -109,9 +116,11 @@ THINKING_DISABLE_MODELS: dict[str, ThinkingDisableSpec] = {
     "claude-opus-4-5": _thinking_disabled(),
     "claude-opus-4-8": _thinking_disabled(),
     "claude-opus-4-7": _thinking_disabled(),
-    # xAI：grok-4.5 / grok-4.6 官方不能关思考
+    # xAI：grok-4.3 可关思考；4.5 / 4.6 官方不能关，降到最低强度 low
     "grok-4.3": _openai_none(),
     "grok-4.3-latest": _openai_none(),
+    "grok-4.5": _openai_low(),
+    "grok-4.6": _openai_low(),
     # 千问主流混合思考模型
     "qwen-plus": _enable_thinking_false(),
     "qwen-turbo": _enable_thinking_false(),
@@ -129,6 +138,18 @@ THINKING_DISABLE_MODELS: dict[str, ThinkingDisableSpec] = {
     "doubao-seed-1-8": _thinking_disabled(),
     "doubao-seed-2-0": _thinking_disabled(),
 }
+
+# 已确认官方不能关闭思考；不要登记到 THINKING_DISABLE_MODELS。
+THINKING_CANNOT_DISABLE_MODELS = frozenset(
+    {
+        "kimi-k3",
+        "kimi-k2.7-code",
+        "minimax-m2.7",
+        "claude-fable-5",
+        "claude-mythos-5",
+        "gemini-2.5-pro",
+    }
+)
 
 
 def _is_qwen3_hybrid_thinking_model(model: str) -> bool:
@@ -160,6 +181,9 @@ def get_thinking_disable_spec(model: str) -> Optional[ThinkingDisableSpec]:
     spec = THINKING_DISABLE_MODELS.get(name)
     if spec is not None:
         return spec
+    grok_min_spec = _grok_min_reasoning_spec(name)
+    if grok_min_spec is not None:
+        return grok_min_spec
     gemini_spec = _gemini_thinking_spec(name)
     if gemini_spec is not None:
         return gemini_spec
@@ -175,6 +199,29 @@ def get_provider_thinking_method(
     if not provider_type:
         return None
     return PROVIDER_THINKING_DISABLE.get(provider_type)
+
+
+def _grok_min_reasoning_spec(name: str) -> Optional[ThinkingDisableSpec]:
+    """grok-4.5 / grok-4.6 不能关思考，降到最低 reasoning_effort。"""
+    if name.startswith("grok-4.5") or name.startswith("grok-4.6"):
+        return _openai_low()
+    return None
+
+
+def thinking_uses_min_reasoning(model: str) -> bool:
+    """关闭思考时只会降到最低推理强度，而不是完全关闭。"""
+    spec = get_thinking_disable_spec(model)
+    return (
+        spec is not None
+        and spec.method is ThinkingDisableMethod.OPENAI_REASONING_EFFORT
+        and spec.reasoning_effort == "low"
+    )
+
+
+def thinking_cannot_disable(model: str) -> bool:
+    """已知官方不允许关闭思考、且没有可用最低强度参数的模型。"""
+    name = normalize_model_name(model)
+    return name in THINKING_CANNOT_DISABLE_MODELS
 
 
 def thinking_disable_applies(model: str, provider_type: Optional[str] = None) -> bool:
