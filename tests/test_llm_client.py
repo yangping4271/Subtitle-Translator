@@ -738,7 +738,20 @@ def test_detected_reasoning_warns_once_under_concurrency(monkeypatch):
             {},
             {"extra_body": {"thinking": {"type": "disabled"}}},
         ),
-        ("https://example.com/v1", "deepseek-v4-other", True, {}, {}),
+        (
+            "https://example.com/v1",
+            "deepseek-v4-other",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
+        (
+            "https://example.com/v1",
+            "deepseek-v4.1-flash-expires-on-0910",
+            True,
+            {},
+            {"extra_body": {"thinking": {"type": "disabled"}}},
+        ),
         ("https://api.openai.com/v1", "gpt-5", True, {}, {}),
         (
             "https://openrouter.ai/api/v1",

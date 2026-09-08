@@ -31,12 +31,15 @@ def test_registered_gpt_5_6_models_use_openai_none():
         assert spec.reasoning_effort == "none"
 
 
-def test_registered_deepseek_v4_models_use_thinking_disabled():
+def test_registered_deepseek_models_use_thinking_disabled():
     for model in (
         "deepseek-v4-flash",
         "deepseek-v4-flash-0731",
         "vendor/deepseek-v4-pro",
         "deepseek-v4-pro-0731",
+        # 未逐个登记的 DeepSeek 新模型也按前缀匹配
+        "deepseek-v4.1-flash-expires-on-0910",
+        "deepseek-v5-anything",
     ):
         spec = get_thinking_disable_spec(model)
         assert spec is not None
@@ -126,15 +129,15 @@ def test_models_that_cannot_disable_thinking_are_not_registered():
 def test_unregistered_models_are_not_in_the_table():
     assert get_thinking_disable_spec("gpt-5.1") is None
     assert get_thinking_disable_spec("gpt-4o") is None
-    assert get_thinking_disable_spec("deepseek-v4-other") is None
     assert get_thinking_disable_spec("gpt-6") is None
     assert get_thinking_disable_spec("gpt-5.6-pro") is None
-    assert get_thinking_disable_spec("deepseek-v4-xxx") is None
 
 
 def test_thinking_disable_applies_registry_or_official_providers():
     assert thinking_disable_applies("gpt-5.6-luna")
     assert thinking_disable_applies("vendor/deepseek-v4-flash")
+    assert thinking_disable_applies("deepseek-v4.1-flash-expires-on-0910")
+    assert thinking_disable_applies("vendor/deepseek-v5-anything", "custom")
     assert thinking_disable_applies("anthropic/claude-sonnet", "openrouter")
     assert thinking_disable_applies("any-model", "deepseek")
     assert thinking_disable_applies("any-model", "zhipu")
