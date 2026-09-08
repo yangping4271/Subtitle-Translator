@@ -666,6 +666,20 @@ def test_detected_reasoning_warns_once_under_concurrency(monkeypatch):
         ("https://api.x.ai/v1", "grok-4.6", True, {}, {"reasoning_effort": "low"}),
         (
             "https://example.com/v1",
+            "glm-5.3-flash",
+            True,
+            {},
+            {"reasoning_effort": "low"},
+        ),
+        (
+            "https://open.bigmodel.cn/api/paas/v4/",
+            "glm-5.3-flash",
+            True,
+            {},
+            {"reasoning_effort": "low"},
+        ),
+        (
+            "https://example.com/v1",
             "qwen-plus",
             True,
             {},

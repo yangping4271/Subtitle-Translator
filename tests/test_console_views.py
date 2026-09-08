@@ -38,6 +38,14 @@ def test_show_model_config_shows_min_reasoning_for_grok_4_6(capsys):
     assert "未识别" not in output
 
 
+def test_show_model_config_shows_min_reasoning_for_glm_5_3_flash(capsys):
+    show_model_config("glm-5.3-flash", provider_type="zhipu")
+
+    output = capsys.readouterr().out
+    assert "模型: glm-5.3-flash (思考模式: 无法关闭，已降至最低强度)" in output
+    assert "已关闭" not in output
+
+
 def test_show_model_config_shows_official_provider_disable(capsys):
     show_model_config("glm-4-flash", provider_type="zhipu")
 

@@ -14,16 +14,7 @@ from rich.markup import escape
 
 from ..logger import setup_logger
 from .config import SubtitleConfig, validate_api_configuration
-from .thinking import (
-    ThinkingDisableMethod,
-    ThinkingDisableSpec,
-    encode_thinking_extra_body,
-    get_provider_thinking_method,
-    get_thinking_disable_spec,
-    thinking_cannot_disable,
-    thinking_disable_applies,
-    thinking_uses_min_reasoning,
-)
+from .thinking import apply_thinking_options, detected_reasoning_notice
 
 logger = setup_logger("llm_client")
 
@@ -275,16 +266,6 @@ class ModelAdapter(Protocol):
         ...
 
 
-def get_reasoning_effort(model: str) -> Optional[str]:
-    """返回已登记 GPT 模型的关闭推理档位；未登记或非 GPT 方式则返回 None。"""
-    spec = get_thinking_disable_spec(model)
-    if spec is None:
-        return None
-    if spec.method is ThinkingDisableMethod.OPENAI_REASONING_EFFORT:
-        return spec.reasoning_effort
-    return None
-
-
 class LLMClient:
     """一次运行所有的 OpenAI-compatible adapter。"""
 
@@ -304,65 +285,13 @@ class LLMClient:
         self._metrics_lock = threading.Lock()
         self._reported_reasoning_models: set[str] = set()
 
-    def _build_extra_body(
-        self,
-        kwargs: dict,
-        spec: Optional[ThinkingDisableSpec],
-    ) -> dict:
-        """官方供应商有统一开关时按供应商编码；否则只对登记模型编码。"""
-        extra_body = dict(kwargs.get("extra_body") or {})
-        if not self.config.disable_thinking:
-            return extra_body
-
-        provider_method = get_provider_thinking_method(self._provider_type)
-        if provider_method is not None:
-            return encode_thinking_extra_body(extra_body, provider_method)
-
-        if (
-            spec is not None
-            and spec.method is not ThinkingDisableMethod.OPENAI_REASONING_EFFORT
-        ):
-            return encode_thinking_extra_body(extra_body, spec.method)
-
-        return extra_body
-
     def _apply_reasoning_options(self, kwargs: dict) -> dict:
-        """按供应商或登记模型追加关闭思考参数。"""
-        request = dict(kwargs)
-        model = str(request.get("model") or "")
-        spec = get_thinking_disable_spec(model)
-        provider_method = get_provider_thinking_method(self._provider_type)
-
-        extra_body = self._build_extra_body(request, spec)
-        if extra_body:
-            request["extra_body"] = extra_body
-
-        reasoning_effort = None
-        if self.config.disable_thinking:
-            request.pop("reasoning_effort", None)
-            if provider_method is None:
-                reasoning_effort = get_reasoning_effort(model)
-        if reasoning_effort:
-            request["reasoning_effort"] = reasoning_effort
-
-        reasoning_state = "default"
-        if extra_body.get("thinking") == {"type": "disabled"}:
-            reasoning_state = "thinking-disabled"
-        elif extra_body.get("reasoning") == {"effort": "none"}:
-            reasoning_state = "openrouter-none"
-        elif extra_body.get("enable_thinking") is False:
-            reasoning_state = "enable-thinking-false"
-        elif isinstance(extra_body.get("extra_body"), dict) and extra_body[
-            "extra_body"
-        ].get("google", {}).get("thinking_config"):
-            thinking_config = extra_body["extra_body"]["google"]["thinking_config"]
-            if thinking_config.get("thinking_level") == "minimal":
-                reasoning_state = "google-minimal"
-            elif thinking_config.get("thinking_budget") == 0:
-                reasoning_state = "google-budget-0"
-        elif reasoning_effort:
-            reasoning_state = f"openai-{reasoning_effort}"
-
+        """按插件计划追加关闭或降档思考参数。"""
+        request, plan = apply_thinking_options(
+            kwargs,
+            self._provider_type,
+            self.config.disable_thinking,
+        )
         response_format = request.get("response_format")
         response_format_type = (
             response_format.get("type") if isinstance(response_format, dict) else "none"
@@ -371,13 +300,12 @@ class LLMClient:
             logger.info(
                 "请求参数: provider=%s, model=%s, response_format=%s, reasoning=%s",
                 self._provider_type,
-                model,
+                request.get("model") or "",
                 response_format_type,
-                reasoning_state,
+                plan.log_state,
             )
         except Exception:
             pass
-
         return request
 
     def metrics_checkpoint(self) -> int:
@@ -419,57 +347,19 @@ class LLMClient:
             if reasoning_tokens is not None and reasoning_tokens > 0
             else "reasoning_content=present"
         )
-        if thinking_uses_min_reasoning(display_model):
-            message = (
-                "该模型无法关闭思考，已使用最低强度: "
-                f"{display_model}, {evidence}"
-            )
-            try:
-                logger.info(message)
-                rich_print(f"[bold cyan]🧠 {escape(message)}[/bold cyan]")
-            except Exception:
-                pass
-            return
-        if self.config.disable_thinking and thinking_disable_applies(
-            display_model, self._provider_type
-        ):
-            message = (
-                "检测到模型实际使用了思考模式（关闭参数未生效）: "
-                f"{display_model}, {evidence}"
-            )
-            try:
-                logger.warning(message)
-                rich_print(f"[bold yellow]⚠️ {escape(message)}[/bold yellow]")
-            except Exception:
-                pass
-            return
-        if self.config.disable_thinking and thinking_cannot_disable(display_model):
-            message = (
-                "该模型无法关闭思考，使用默认强度: "
-                f"{display_model}, {evidence}"
-            )
-            try:
-                logger.info(message)
-                rich_print(f"[bold cyan]🧠 {escape(message)}[/bold cyan]")
-            except Exception:
-                pass
-            return
-        if self.config.disable_thinking:
-            message = (
-                "未适配该模型的关闭方式，使用默认强度: "
-                f"{display_model}, {evidence}"
-            )
-            try:
-                logger.warning(message)
-                rich_print(f"[bold yellow]⚠️ {escape(message)}[/bold yellow]")
-            except Exception:
-                pass
-            return
-
-        message = f"检测到模型实际使用了思考模式: {display_model}, {evidence}"
+        notice = detected_reasoning_notice(
+            display_model,
+            self._provider_type,
+            self.config.disable_thinking,
+            evidence,
+        )
         try:
-            logger.info(message)
-            rich_print(f"[bold cyan]🧠 {escape(message)}[/bold cyan]")
+            if notice.level == "warning":
+                logger.warning(notice.message)
+                rich_print(f"[bold yellow]⚠️ {escape(notice.message)}[/bold yellow]")
+            else:
+                logger.info(notice.message)
+                rich_print(f"[bold cyan]🧠 {escape(notice.message)}[/bold cyan]")
         except Exception:
             pass
 
