@@ -154,16 +154,19 @@ def init():
 
     print("[bold green]🚀 Subtitle Translator 配置初始化[/bold green]\n")
 
-    # 交互式输入
+    def ask_required(label: str, *, password: bool = False) -> str:
+        value = Prompt.ask(label, password=password)
+        while not value.strip():
+            print(f"[red]❌ {label} 不能为空[/red]")
+            value = Prompt.ask(label, password=password)
+        return value.strip()
+
     print("[bold]1. API 配置[/bold]")
     api_base = Prompt.ask(
         "API Base URL",
         default="https://api.openai.com/v1"
     )
-    api_key = Prompt.ask("API Key", password=True)
-    while not api_key.strip():
-        print("[red]❌ API Key 不能为空[/red]")
-        api_key = Prompt.ask("API Key", password=True)
+    api_key = ask_required("API Key", password=True)
 
     from .translation_core.config import validate_api_configuration
     try:
@@ -173,14 +176,9 @@ def init():
         raise typer.Exit(code=1) from exc
 
     print("\n[bold]2. 模型配置[/bold]")
-    split_model = Prompt.ask(
-        "断句模型 (用于智能分句)",
-        default="gpt-4o-mini"
-    )
-    translation_model = Prompt.ask(
-        "翻译模型 (用于字幕翻译)",
-        default="gpt-4o"
-    )
+    print("[dim]无内置默认模型，请按所用 API 手动填写模型名。[/dim]")
+    split_model = ask_required("断句模型 (用于智能分句)")
+    translation_model = ask_required("翻译模型 (用于字幕翻译)")
 
     # 创建配置内容
     config_content = f"""# Subtitle Translator 配置文件
@@ -190,10 +188,9 @@ def init():
 OPENAI_BASE_URL={api_base}
 OPENAI_API_KEY={api_key}
 
-# 模型配置
+# 模型配置（无内置默认值，需按所用 API 填写）
 SPLIT_MODEL={split_model}
 TRANSLATION_MODEL={translation_model}
-LLM_MODEL={split_model}
 """
 
     # 创建目录并写入文件

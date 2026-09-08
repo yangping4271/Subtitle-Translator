@@ -68,6 +68,9 @@ Only remote API endpoints are supported. `OPENAI_API_KEY` is required; existing
 local or unauthenticated endpoint configurations must be replaced with an
 authenticated remote API.
 
+Model names have no built-in defaults. Set `SPLIT_MODEL` and
+`TRANSLATION_MODEL`, or set `LLM_MODEL` to use one model for both.
+
 Manual configuration also works:
 
 ```bash
@@ -75,7 +78,6 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
 SPLIT_MODEL=your-split-model
 TRANSLATION_MODEL=your-translation-model
-LLM_MODEL=your-default-model
 LOG_RAW_PAYLOADS=false
 ```
 

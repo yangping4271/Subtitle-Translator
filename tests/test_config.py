@@ -61,6 +61,40 @@ def test_config_rejects_missing_api_key(monkeypatch):
         SubtitleConfig.from_env()
 
 
+def test_config_rejects_missing_models(monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.delenv("SPLIT_MODEL", raising=False)
+    monkeypatch.delenv("TRANSLATION_MODEL", raising=False)
+    with pytest.raises(ValueError, match="SPLIT_MODEL"):
+        SubtitleConfig.from_env()
+
+
+def test_config_from_env_uses_explicit_split_and_translation_models(monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("SPLIT_MODEL", "split-model")
+    monkeypatch.setenv("TRANSLATION_MODEL", "translation-model")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+
+    config = SubtitleConfig.from_env()
+
+    assert config.llm_model == ""
+    assert config.split_model == "split-model"
+    assert config.translation_model == "translation-model"
+
+
+def test_config_rejects_blank_model_names(monkeypatch):
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "   ")
+    monkeypatch.setenv("SPLIT_MODEL", "")
+    monkeypatch.setenv("TRANSLATION_MODEL", "")
+    with pytest.raises(ValueError, match="模型配置"):
+        SubtitleConfig.from_env()
+
+
 @pytest.mark.parametrize(
     "base_url",
     [
@@ -82,6 +116,7 @@ def test_config_rejects_loopback_endpoint(monkeypatch, base_url):
 def test_disable_thinking_env_override(monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.deepseek.com")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
     monkeypatch.setenv("DISABLE_THINKING", "false")
 
     config = SubtitleConfig.from_env()
@@ -97,6 +132,7 @@ def test_raw_payload_logging_is_disabled_by_default_and_can_be_enabled(monkeypat
 
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
     monkeypatch.setenv("LOG_RAW_PAYLOADS", "true")
     assert SubtitleConfig.from_env().log_raw_payloads is True
 

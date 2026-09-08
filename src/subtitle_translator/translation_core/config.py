@@ -127,16 +127,43 @@ def validate_api_configuration(base_url: str, api_key: str) -> None:
         raise ValueError("不支持本地模型服务；请配置远程 OpenAI-compatible API 端点。")
 
 
+def resolve_configured_models(
+    environ: Mapping[str, str],
+) -> tuple[str, str, str]:
+    """从环境变量解析模型名，不提供内置默认值。"""
+    llm_model = _env_text(environ, "LLM_MODEL")
+    split_model = _env_text(environ, "SPLIT_MODEL") or llm_model
+    translation_model = _env_text(environ, "TRANSLATION_MODEL") or llm_model
+    return llm_model, split_model, translation_model
+
+
+def validate_model_configuration(split_model: str, translation_model: str) -> None:
+    """验证断句和翻译模型均已手动配置。"""
+    missing = []
+    if not split_model:
+        missing.append("SPLIT_MODEL")
+    if not translation_model:
+        missing.append("TRANSLATION_MODEL")
+    if missing:
+        raise ValueError(
+            "缺少必需的模型配置: "
+            + "、".join(missing)
+            + "。请设置 SPLIT_MODEL 和 TRANSLATION_MODEL，"
+            "或设置 LLM_MODEL 作为两者的共用模型。"
+            "请运行 'translate init' 初始化配置。"
+        )
+
+
 @dataclass
 class SubtitleConfig:
     """字幕处理配置类"""
 
     openai_base_url: str = ""
     openai_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = ""
 
-    split_model: str = "gpt-4o-mini"
-    translation_model: str = "gpt-4o"
+    split_model: str = ""
+    translation_model: str = ""
 
     max_word_count_english: int = 19
     thread_num: int = 18
@@ -202,7 +229,8 @@ class SubtitleConfig:
         openai_api_key = env.get("OPENAI_API_KEY", "")
         validate_api_configuration(openai_base_url, openai_api_key)
 
-        llm_model = env.get("LLM_MODEL", defaults.llm_model)
+        llm_model, split_model, translation_model = resolve_configured_models(env)
+        validate_model_configuration(split_model, translation_model)
         external_glossary_domains = defaults.external_glossary_domains
         if env.get("EXTERNAL_GLOSSARY_DOMAINS"):
             parsed_domains = tuple(
@@ -217,8 +245,8 @@ class SubtitleConfig:
             openai_base_url=openai_base_url,
             openai_api_key=openai_api_key,
             llm_model=llm_model,
-            split_model=env.get("SPLIT_MODEL", llm_model),
-            translation_model=env.get("TRANSLATION_MODEL", llm_model),
+            split_model=split_model,
+            translation_model=translation_model,
             thread_num=_env_int(env, "THREAD_NUM", defaults.thread_num, minimum=1),
             max_batch_words=_env_int(env, "MAX_BATCH_WORDS", defaults.max_batch_words, minimum=1),
             disable_thinking=_env_bool(
@@ -241,6 +269,10 @@ class SubtitleConfig:
                 env, "EXTERNAL_GLOSSARY_MAX_TERMS", defaults.external_glossary_max_terms
             ),
         )
+
+
+def _env_text(environ: Mapping[str, str], name: str) -> str:
+    return (environ.get(name) or "").strip()
 
 
 def _env_bool(
