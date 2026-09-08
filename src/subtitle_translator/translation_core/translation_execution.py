@@ -285,7 +285,7 @@ class TranslationEngine:
     def _create_chat_completion_with_fallback(self, message):
         """优先使用结构化输出，失败时回退到普通聊天补全。"""
         kwargs = {
-            "model": self.config.translation_model,
+            "model": self.config.llm_model,
             "stream": False,
             "messages": message,
             "temperature": 0.7,

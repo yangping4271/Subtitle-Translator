@@ -28,7 +28,7 @@ def split_by_llm(
     logger.info(f"📝 处理文本: 共{count_words(text)}个单词")
 
     if model is None:
-        model = config.split_model
+        model = config.llm_model
 
     system_prompt = SPLIT_SYSTEM_PROMPT.format(
         max_word_count_english=max_word_count_english

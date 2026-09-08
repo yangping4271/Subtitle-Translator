@@ -6,15 +6,14 @@ from subtitle_translator.console_views import (
 
 
 def test_show_model_config_shows_reasoning_disabled(capsys):
-    show_model_config("gpt-5.6-luna", "openai/gpt-5.6-sol")
+    show_model_config("gpt-5.6-luna")
 
     output = capsys.readouterr().out
-    assert "断句: gpt-5.6-luna (思考模式: 已关闭)" in output
-    assert "翻译: openai/gpt-5.6-sol (思考模式: 已关闭)" in output
+    assert "模型: gpt-5.6-luna (思考模式: 已关闭)" in output
 
 
 def test_show_model_config_warns_for_unregistered_models(capsys):
-    show_model_config("gpt-5", "gpt-5.1")
+    show_model_config("gpt-5")
 
     output = capsys.readouterr().out
     assert "⚠️ 思考模式: 未关闭" in output
@@ -23,27 +22,21 @@ def test_show_model_config_warns_for_unregistered_models(capsys):
 
 
 def test_show_model_config_shows_official_provider_disable(capsys):
-    show_model_config("glm-4-flash", "any-model", provider_type="zhipu")
+    show_model_config("glm-4-flash", provider_type="zhipu")
 
     output = capsys.readouterr().out
-    assert "断句: glm-4-flash (思考模式: 已关闭)" in output
-    assert "翻译: any-model (思考模式: 已关闭)" in output
+    assert "模型: glm-4-flash (思考模式: 已关闭)" in output
 
 
 def test_show_model_config_shows_openrouter_provider_disable(capsys):
-    show_model_config(
-        "qwen/qwen3.6-27b",
-        "anthropic/claude-sonnet",
-        provider_type="openrouter",
-    )
+    show_model_config("qwen/qwen3.6-27b", provider_type="openrouter")
 
     output = capsys.readouterr().out
-    assert "断句: qwen/qwen3.6-27b (思考模式: 已关闭)" in output
-    assert "翻译: anthropic/claude-sonnet (思考模式: 已关闭)" in output
+    assert "模型: qwen/qwen3.6-27b (思考模式: 已关闭)" in output
 
 
 def test_show_model_config_warns_for_unsupported_model(capsys):
-    show_model_config("gpt-4o-mini", "gpt-4o")
+    show_model_config("gpt-4o-mini")
 
     output = capsys.readouterr().out
     assert "推理强度" not in output
@@ -51,7 +44,7 @@ def test_show_model_config_warns_for_unsupported_model(capsys):
 
 
 def test_show_model_config_notes_when_disable_thinking_off(capsys):
-    show_model_config("gpt-4o-mini", "gemini-3.7-flash", disable_thinking=False)
+    show_model_config("gemini-3.7-flash", disable_thinking=False)
 
     output = capsys.readouterr().out
     assert "思考模式: 关闭功能未启用" in output
@@ -146,11 +139,10 @@ def test_show_api_performance_stats_hides_longest_context(capsys):
 
 
 def test_show_model_config_shows_prefixed_deepseek_as_disabled(capsys):
-    show_model_config("vendor/deepseek-v4-flash", "deepseek-v4-pro")
+    show_model_config("vendor/deepseek-v4-flash")
 
     output = capsys.readouterr().out
-    assert "断句: vendor/deepseek-v4-flash (思考模式: 已关闭)" in output
-    assert "翻译: deepseek-v4-pro (思考模式: 已关闭)" in output
+    assert "模型: vendor/deepseek-v4-flash (思考模式: 已关闭)" in output
 
 
 def test_show_time_stats_hides_values_that_round_to_zero(capsys):

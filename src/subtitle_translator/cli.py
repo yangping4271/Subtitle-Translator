@@ -31,9 +31,7 @@ def main(
     max_count: int = typer.Option(-1, "--count", "-n", help="最大处理文件数量，-1表示处理所有文件。"),
     target_lang: str = typer.Option("zh", "--target-lang", "-t", help="目标翻译语言。支持：zh/zh-cn(简中), zh-tw(繁中), ja(日), ko(韩), fr(法), de(德), es(西), pt(葡), it(意), ru(俄), ar(阿), th(泰), vi(越)等。"),
     output_dir: Optional[Path] = typer.Option(None, "--output-dir", "-o", help="输出文件的目录，默认为当前目录。"),
-    llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="覆盖所有模型（优先级低于独立参数）"),
-    split_model: Optional[str] = typer.Option(None, "--split-model", help="断句模型"),
-    translation_model: Optional[str] = typer.Option(None, "--translation-model", help="翻译模型"),
+    llm_model: Optional[str] = typer.Option(None, "--llm-model", "-m", help="覆盖配置中的模型"),
     preserve_intermediate: bool = typer.Option(False, "--preserve-intermediate", "-p", help="保留中间的英文和目标语言SRT文件，便于进一步处理或调试。"),
     dry_run: bool = typer.Option(False, "--dry-run", help="预览模式，只显示将要处理的文件信息而不实际执行翻译。"),
     version: bool = typer.Option(False, "--version", help="显示版本信息并退出。"),
@@ -109,8 +107,7 @@ def main(
         raise typer.Exit(code=1)
 
     process_batch(
-        files_to_process, target_lang, output_dir, llm_model,
-        split_model, translation_model, preserve_intermediate
+        files_to_process, target_lang, output_dir, llm_model, preserve_intermediate
     )
 
 
@@ -177,8 +174,7 @@ def init():
 
     print("\n[bold]2. 模型配置[/bold]")
     print("[dim]无内置默认模型，请按所用 API 手动填写模型名。[/dim]")
-    split_model = ask_required("断句模型 (用于智能分句)")
-    translation_model = ask_required("翻译模型 (用于字幕翻译)")
+    llm_model = ask_required("模型")
 
     # 创建配置内容
     config_content = f"""# Subtitle Translator 配置文件
@@ -189,8 +185,7 @@ OPENAI_BASE_URL={api_base}
 OPENAI_API_KEY={api_key}
 
 # 模型配置（无内置默认值，需按所用 API 填写）
-SPLIT_MODEL={split_model}
-TRANSLATION_MODEL={translation_model}
+LLM_MODEL={llm_model}
 """
 
     # 创建目录并写入文件

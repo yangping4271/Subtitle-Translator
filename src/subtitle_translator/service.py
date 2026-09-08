@@ -63,8 +63,6 @@ class SubtitleTranslatorService:
     def init_translation_env(
         self,
         llm_model: Optional[str] = None,
-        split_model: Optional[str] = None,
-        translation_model: Optional[str] = None,
         show_config: bool = True,
     ) -> None:
         """初始化翻译环境配置"""
@@ -72,27 +70,16 @@ class SubtitleTranslatorService:
         log_section_start(self.logger, "翻译环境初始化", "⚙️")
 
         if llm_model:
-            self.config.split_model = llm_model
-            self.config.translation_model = llm_model
-
-        if split_model:
-            self.config.split_model = split_model
-        if translation_model:
-            self.config.translation_model = translation_model
+            self.config.llm_model = llm_model
 
         self.logger.info(f"🌐 API端点: {self.config.openai_base_url}")
 
-        model_config = {
-            "断句模型": self.config.split_model,
-            "翻译模型": self.config.translation_model,
-        }
-        log_stats(self.logger, model_config, "模型配置")
+        log_stats(self.logger, {"模型": self.config.llm_model}, "模型配置")
 
         if show_config:
             show_api_config(self.config.openai_base_url, self.config.openai_api_key)
             show_model_config(
-                self.config.split_model,
-                self.config.translation_model,
+                self.config.llm_model,
                 provider_type=self.config.provider_type(),
                 disable_thinking=self.config.disable_thinking,
             )

@@ -49,8 +49,7 @@ def test_config_from_env_is_the_explicit_environment_seam(monkeypatch):
     config = SubtitleConfig.from_env()
 
     assert config.openai_base_url == "https://api.openai.com/v1"
-    assert config.split_model == "test-model"
-    assert config.translation_model == "test-model"
+    assert config.llm_model == "test-model"
     assert config.thread_num == 18
 
 
@@ -65,33 +64,15 @@ def test_config_rejects_missing_models(monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.delenv("LLM_MODEL", raising=False)
-    monkeypatch.delenv("SPLIT_MODEL", raising=False)
-    monkeypatch.delenv("TRANSLATION_MODEL", raising=False)
-    with pytest.raises(ValueError, match="SPLIT_MODEL"):
+    with pytest.raises(ValueError, match="LLM_MODEL"):
         SubtitleConfig.from_env()
-
-
-def test_config_from_env_uses_explicit_split_and_translation_models(monkeypatch):
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.setenv("SPLIT_MODEL", "split-model")
-    monkeypatch.setenv("TRANSLATION_MODEL", "translation-model")
-    monkeypatch.delenv("LLM_MODEL", raising=False)
-
-    config = SubtitleConfig.from_env()
-
-    assert config.llm_model == ""
-    assert config.split_model == "split-model"
-    assert config.translation_model == "translation-model"
 
 
 def test_config_rejects_blank_model_names(monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("LLM_MODEL", "   ")
-    monkeypatch.setenv("SPLIT_MODEL", "")
-    monkeypatch.setenv("TRANSLATION_MODEL", "")
-    with pytest.raises(ValueError, match="模型配置"):
+    with pytest.raises(ValueError, match="LLM_MODEL"):
         SubtitleConfig.from_env()
 
 

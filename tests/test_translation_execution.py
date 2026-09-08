@@ -156,8 +156,6 @@ def test_batch_run_uses_the_ass_path_returned_by_single_file(
         target_lang="zh",
         output_dir=tmp_path,
         llm_model=None,
-        split_model=None,
-        translation_model=None,
         preserve_intermediate=False,
     )
 
@@ -190,8 +188,6 @@ def test_batch_progress_shows_one_translation_line_with_filename(
         target_lang="zh",
         output_dir=tmp_path,
         llm_model=None,
-        split_model=None,
-        translation_model=None,
         preserve_intermediate=False,
     )
 
@@ -260,8 +256,6 @@ def test_batch_run_closes_owned_service_when_interrupted(monkeypatch, tmp_path):
             target_lang="zh",
             output_dir=tmp_path,
             llm_model=None,
-            split_model=None,
-            translation_model=None,
             preserve_intermediate=False,
         )
 
@@ -527,8 +521,6 @@ def test_process_batch_does_not_repeat_start_filename_in_app_log(
         target_lang="zh",
         output_dir=tmp_path,
         llm_model=None,
-        split_model=None,
-        translation_model=None,
         preserve_intermediate=False,
     )
 

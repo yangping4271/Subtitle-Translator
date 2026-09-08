@@ -49,8 +49,6 @@ def test_missing_config(tmp_path, monkeypatch):
     monkeypatch.setattr(env_setup, "_env_loaded", False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("SPLIT_MODEL", raising=False)
-    monkeypatch.delenv("TRANSLATION_MODEL", raising=False)
     monkeypatch.delenv("LLM_MODEL", raising=False)
     with patch("subtitle_translator.env_setup._get_config_path", return_value=tmp_path / ".env"):
         result = runner.invoke(app, ["--dry-run"])
@@ -61,22 +59,18 @@ def test_missing_models(tmp_path, monkeypatch):
     monkeypatch.setattr(env_setup, "_env_loaded", False)
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.delenv("SPLIT_MODEL", raising=False)
-    monkeypatch.delenv("TRANSLATION_MODEL", raising=False)
     monkeypatch.delenv("LLM_MODEL", raising=False)
     with patch("subtitle_translator.env_setup._get_config_path", return_value=tmp_path / ".env"):
         result = runner.invoke(app, ["--dry-run"])
     assert result.exit_code == 1
-    assert "SPLIT_MODEL" in result.output
-    assert "TRANSLATION_MODEL" in result.output
+    assert "LLM_MODEL" in result.output
 
 
 def test_dry_run_allows_api_key(tmp_path, monkeypatch):
     monkeypatch.setattr(env_setup, "_env_loaded", False)
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    monkeypatch.setenv("SPLIT_MODEL", "test-split")
-    monkeypatch.setenv("TRANSLATION_MODEL", "test-translation")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
 
     test_srt = tmp_path / "test.srt"
     test_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nTest subtitle\n")
@@ -117,18 +111,17 @@ def test_init_writes_explicit_model_names(tmp_path, monkeypatch):
         side_effect=[
             "https://api.openai.com/v1",
             "test-key",
-            "my-split-model",
-            "my-translation-model",
+            "my-model",
         ],
     ):
         result = runner.invoke(app, ["init"])
 
     assert result.exit_code == 0
     config_text = (tmp_path / ".config" / "subtitle-translator" / ".env").read_text()
-    assert "SPLIT_MODEL=my-split-model" in config_text
-    assert "TRANSLATION_MODEL=my-translation-model" in config_text
+    assert "LLM_MODEL=my-model" in config_text
+    assert "SPLIT_MODEL=" not in config_text
+    assert "TRANSLATION_MODEL=" not in config_text
     assert "gpt-4o" not in config_text
-    assert "LLM_MODEL=" not in config_text
 
 
 def test_dry_run_empty_dir(tmp_path):

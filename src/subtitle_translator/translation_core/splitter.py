@@ -317,7 +317,7 @@ def merge_segments_within_batch(
         return []
 
     if model is None:
-        model = config.split_model
+        model = config.llm_model
 
     # 提取批次对应的单词片段
     start_index = pre_split_sentences[0].word_start_index

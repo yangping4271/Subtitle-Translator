@@ -119,7 +119,7 @@ class _TranslationFallback:
         ]
 
         response = self.llm.create_chat_completion(
-            model=self.config.translation_model,
+            model=self.config.llm_model,
             stream=False,
             messages=message,
             temperature=0.7,

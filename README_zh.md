@@ -64,15 +64,14 @@ translate init
 
 项目只支持远程 API 端点，且 `OPENAI_API_KEY` 为必填项；已有的本地服务或无鉴权端点配置需要替换为带认证的远程 API。
 
-模型名没有内置默认值。必须设置 `SPLIT_MODEL` 和 `TRANSLATION_MODEL`；也可以只设 `LLM_MODEL`，同时用于断句和翻译。
+模型名没有内置默认值。必须设置 `LLM_MODEL`，断句和翻译共用这一项。
 
 也可以手动配置：
 
 ```bash
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-api-key-here
-SPLIT_MODEL=your-split-model
-TRANSLATION_MODEL=your-translation-model
+LLM_MODEL=your-model
 LOG_RAW_PAYLOADS=false
 ```
 

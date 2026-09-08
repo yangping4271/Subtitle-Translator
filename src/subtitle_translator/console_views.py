@@ -32,28 +32,25 @@ def show_api_config(base_url: str, api_key: str) -> None:
 
 
 def show_model_config(
-    split_model: str,
-    translation_model: str,
+    llm_model: str,
     provider_type: Optional[str] = None,
     disable_thinking: bool = True,
 ) -> None:
     """显示模型配置信息"""
     print("[bold blue]🤖 模型配置:[/bold blue]")
 
-    def format_reasoning(model: str) -> str:
-        if disable_thinking:
-            if thinking_disable_applies(model, provider_type):
-                return " [dim](思考模式: 已关闭)[/dim]"
-            return (
+    if disable_thinking:
+        if thinking_disable_applies(llm_model, provider_type):
+            reasoning = " [dim](思考模式: 已关闭)[/dim]"
+        else:
+            reasoning = (
                 " [bold yellow]⚠️ 思考模式: 未关闭"
                 "（未识别该模型的关闭方式）[/bold yellow]"
             )
-        return " [dim](思考模式: 关闭功能未启用)[/dim]"
+    else:
+        reasoning = " [dim](思考模式: 关闭功能未启用)[/dim]"
 
-    split_reasoning = format_reasoning(split_model)
-    translation_reasoning = format_reasoning(translation_model)
-    print(f"   断句: [cyan]{split_model}[/cyan]{split_reasoning}")
-    print(f"   翻译: [cyan]{translation_model}[/cyan]{translation_reasoning}")
+    print(f"   模型: [cyan]{llm_model}[/cyan]{reasoning}")
 
 
 def show_time_stats(stages: dict, total_time: float) -> None:

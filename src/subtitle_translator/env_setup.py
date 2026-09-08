@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from .exceptions import ConfigurationError
 from .translation_core.config import (
-    resolve_configured_models,
+    resolve_configured_model,
     validate_api_configuration,
     validate_model_configuration,
 )
@@ -50,11 +50,9 @@ def setup_environment(allow_missing_config=False):
         logger = setup_logger(__name__)
 
     missing_vars = [v for v in required_vars if not os.environ.get(v)]
-    _, split_model, translation_model = resolve_configured_models(os.environ)
-    if not split_model:
-        missing_vars.append("SPLIT_MODEL")
-    if not translation_model:
-        missing_vars.append("TRANSLATION_MODEL")
+    llm_model = resolve_configured_model(os.environ)
+    if not llm_model:
+        missing_vars.append("LLM_MODEL")
 
     openai_base_url = os.environ.get("OPENAI_BASE_URL", "")
     openai_api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -88,14 +86,12 @@ def setup_environment(allow_missing_config=False):
         rprint("   [bold]配置示例:[/bold]")
         rprint("      [dim]OPENAI_BASE_URL=https://api.openai.com/v1[/dim]")
         rprint("      [dim]OPENAI_API_KEY=your-api-key-here[/dim]")
-        rprint("      [dim]SPLIT_MODEL=your-split-model[/dim]")
-        rprint("      [dim]TRANSLATION_MODEL=your-translation-model[/dim]")
-        rprint("      [dim]# 也可只设 LLM_MODEL 作为断句和翻译的共用模型[/dim]")
+        rprint("      [dim]LLM_MODEL=your-model[/dim]")
         rprint()
         raise ConfigurationError("缺少必需的配置项，请运行 'translate init' 初始化配置")
 
     try:
-        validate_model_configuration(split_model, translation_model)
+        validate_model_configuration(llm_model)
     except ValueError as exc:
         from rich import print as rprint
 

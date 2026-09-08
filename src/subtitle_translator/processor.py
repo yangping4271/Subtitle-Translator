@@ -21,8 +21,6 @@ def process_batch(
     target_lang: str,
     output_dir: Path,
     llm_model: Optional[str],
-    split_model: Optional[str],
-    translation_model: Optional[str],
     preserve_intermediate: bool,
 ) -> None:
     """批量处理文件"""
@@ -36,8 +34,6 @@ def process_batch(
             translator_service = SubtitleTranslatorService()
             translator_service.init_translation_env(
                 llm_model=llm_model,
-                split_model=split_model,
-                translation_model=translation_model,
                 show_config=True,
             )
             print()
