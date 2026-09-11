@@ -8,7 +8,7 @@
 
 - 把英文字幕翻译成中文、日文、韩文、法文等多种语言
 - 输出双语 `.ass`，并可选择保留中间 `.srt` 文件
-- 支持远程 OpenAI-compatible API
+- 支持 OpenAI-compatible API
 - 支持通过 `context.txt` / `ctx.txt` 提供额外上下文
 - 支持全局和局部术语表，保持术语翻译一致
 
@@ -62,7 +62,7 @@ translate init
 
 它会创建 `~/.config/subtitle-translator/.env`。
 
-项目只支持远程 API 端点，且 `OPENAI_API_KEY` 为必填项；已有的本地服务或无鉴权端点配置需要替换为带认证的远程 API。
+`OPENAI_BASE_URL` 和 `LLM_MODEL` 为必填项；`OPENAI_API_KEY` 可留空，用于本地或无需鉴权的端点。
 
 模型名没有内置默认值。必须设置 `LLM_MODEL`，断句和翻译共用这一项。
 
@@ -70,7 +70,7 @@ translate init
 
 ```bash
 OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_API_KEY=your-api-key-here
+OPENAI_API_KEY=your-api-key-here  # 可留空
 LLM_MODEL=your-model
 LOG_RAW_PAYLOADS=false
 ```

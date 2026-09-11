@@ -163,14 +163,7 @@ def init():
         "API Base URL",
         default="https://api.openai.com/v1"
     )
-    api_key = ask_required("API Key", password=True)
-
-    from .translation_core.config import validate_api_configuration
-    try:
-        validate_api_configuration(api_base, api_key)
-    except ValueError as exc:
-        print(f"[red]❌ 配置无效:[/red] {exc}")
-        raise typer.Exit(code=1) from exc
+    api_key = Prompt.ask("API Key（无鉴权端点可留空）", password=True).strip()
 
     print("\n[bold]2. 模型配置[/bold]")
     print("[dim]无内置默认模型，请按所用 API 手动填写模型名。[/dim]")

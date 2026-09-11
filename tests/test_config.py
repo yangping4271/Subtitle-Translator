@@ -53,11 +53,12 @@ def test_config_from_env_is_the_explicit_environment_seam(monkeypatch):
     assert config.thread_num == 18
 
 
-def test_config_rejects_missing_api_key(monkeypatch):
+def test_config_allows_missing_api_key(monkeypatch):
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
-        SubtitleConfig.from_env()
+
+    assert SubtitleConfig.from_env().openai_api_key == ""
 
 
 def test_config_rejects_missing_models(monkeypatch):
@@ -87,11 +88,12 @@ def test_config_rejects_blank_model_names(monkeypatch):
         "http://[::ffff:127.0.0.1]:1234/v1",
     ],
 )
-def test_config_rejects_loopback_endpoint(monkeypatch, base_url):
+def test_config_accepts_local_endpoint(monkeypatch, base_url):
     monkeypatch.setenv("OPENAI_BASE_URL", base_url)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    with pytest.raises(ValueError, match="不支持本地模型服务"):
-        SubtitleConfig.from_env()
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    assert SubtitleConfig.from_env().openai_base_url == base_url
 
 
 def test_disable_thinking_env_override(monkeypatch):

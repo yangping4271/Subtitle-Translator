@@ -79,29 +79,31 @@ def test_dry_run_allows_api_key(tmp_path, monkeypatch):
     assert result.exit_code == 0
 
 
-def test_dry_run_rejects_loopback_endpoint(tmp_path, monkeypatch):
+def test_dry_run_accepts_local_endpoint(tmp_path, monkeypatch):
     monkeypatch.setattr(env_setup, "_env_loaded", False)
     monkeypatch.setenv("OPENAI_BASE_URL", "http://127.0.0.2:1234/v1")
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     test_srt = tmp_path / "test.srt"
     test_srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nTest subtitle\n")
 
     result = runner.invoke(app, ["--dry-run", "-i", str(test_srt)])
-    assert result.exit_code == 1
-    assert "不支持本地模型服务" in result.output
+    assert result.exit_code == 0
 
 
-def test_init_rejects_loopback_endpoint(tmp_path, monkeypatch):
+def test_init_accepts_local_endpoint_without_api_key(tmp_path, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     with patch(
         "rich.prompt.Prompt.ask",
-        side_effect=["http://localhost:1234/v1", "test-key"],
+        side_effect=["http://localhost:1234/v1", "", "my-model"],
     ):
         result = runner.invoke(app, ["init"])
 
-    assert result.exit_code == 1
-    assert "不支持本地模型服务" in result.output
+    assert result.exit_code == 0
+    config_text = (tmp_path / ".config" / "subtitle-translator" / ".env").read_text()
+    assert "OPENAI_BASE_URL=http://localhost:1234/v1" in config_text
+    assert "LLM_MODEL=my-model" in config_text
 
 
 def test_init_writes_explicit_model_names(tmp_path, monkeypatch):

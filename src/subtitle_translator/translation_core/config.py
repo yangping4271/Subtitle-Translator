@@ -1,5 +1,4 @@
 import os
-from ipaddress import ip_address
 from dataclasses import dataclass
 from typing import Mapping
 from urllib.parse import urlparse
@@ -102,29 +101,12 @@ def _build_language_error(lang_code: str) -> str:
     raise ValueError(error_msg)
 
 
-def validate_api_configuration(base_url: str, api_key: str) -> None:
-    """验证仅支持远程 API 的 LLM 配置。"""
+def validate_base_url(base_url: str) -> None:
+    """验证 OpenAI-compatible API 端点已配置。"""
     if not base_url:
         raise ValueError(
             "缺少必需的环境变量: OPENAI_BASE_URL。请运行 'translate init' 初始化配置。"
         )
-    if not api_key:
-        raise ValueError(
-            "缺少必需的环境变量: OPENAI_API_KEY。请运行 'translate init' 初始化配置。"
-        )
-
-    hostname = (urlparse(base_url).hostname or "").rstrip(".").lower()
-    if hostname == "localhost":
-        raise ValueError("不支持本地模型服务；请配置远程 OpenAI-compatible API 端点。")
-
-    try:
-        address = ip_address(hostname)
-    except ValueError:
-        return
-
-    mapped_address = getattr(address, "ipv4_mapped", None)
-    if address.is_loopback or (mapped_address and mapped_address.is_loopback):
-        raise ValueError("不支持本地模型服务；请配置远程 OpenAI-compatible API 端点。")
 
 
 def resolve_configured_model(environ: Mapping[str, str]) -> str:
@@ -210,7 +192,7 @@ class SubtitleConfig:
         defaults = cls()
         openai_base_url = env.get("OPENAI_BASE_URL", "")
         openai_api_key = env.get("OPENAI_API_KEY", "")
-        validate_api_configuration(openai_base_url, openai_api_key)
+        validate_base_url(openai_base_url)
 
         llm_model = resolve_configured_model(env)
         validate_model_configuration(llm_model)

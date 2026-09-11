@@ -13,7 +13,7 @@ from rich import print as rich_print
 from rich.markup import escape
 
 from ..logger import setup_logger
-from .config import SubtitleConfig, validate_api_configuration
+from .config import SubtitleConfig, validate_base_url
 from .thinking import apply_thinking_options, detected_reasoning_notice
 
 logger = setup_logger("llm_client")
@@ -275,10 +275,10 @@ class LLMClient:
         Args:
             config: 字幕翻译配置对象
         """
-        validate_api_configuration(config.openai_base_url, config.openai_api_key)
+        validate_base_url(config.openai_base_url)
         self.config = config
         self._client = OpenAI(
-            base_url=config.openai_base_url, api_key=config.openai_api_key
+            base_url=config.openai_base_url, api_key=config.openai_api_key or ""
         )
         self._provider_type = config.provider_type()
         self._metrics: list[RequestMetric] = []

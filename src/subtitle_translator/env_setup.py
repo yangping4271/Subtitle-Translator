@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from .exceptions import ConfigurationError
 from .translation_core.config import (
     resolve_configured_model,
-    validate_api_configuration,
     validate_model_configuration,
 )
 
@@ -29,14 +28,14 @@ def setup_environment(allow_missing_config=False):
     1. 已有的环境变量
     2. ~/.config/subtitle-translator/.env
 
-    API 和模型均必须手动配置；缺失时提示运行 'translate init'。
+    API 与模型均必须手动配置；API Key 可留空，用于本地或无鉴权端点。
     """
     global _env_loaded, logger
 
     if _env_loaded:
         return
 
-    required_vars = ['OPENAI_BASE_URL', 'OPENAI_API_KEY']
+    required_vars = ['OPENAI_BASE_URL']
 
     # 先加载配置文件（不覆盖已有的环境变量）
     env_path = _get_config_path()
@@ -53,17 +52,6 @@ def setup_environment(allow_missing_config=False):
     llm_model = resolve_configured_model(os.environ)
     if not llm_model:
         missing_vars.append("LLM_MODEL")
-
-    openai_base_url = os.environ.get("OPENAI_BASE_URL", "")
-    openai_api_key = os.environ.get("OPENAI_API_KEY", "")
-    if openai_base_url and openai_api_key:
-        try:
-            validate_api_configuration(openai_base_url, openai_api_key)
-        except ValueError as exc:
-            from rich import print as rprint
-
-            rprint(f"[red]❌ 配置无效:[/red] {exc}")
-            raise ConfigurationError(str(exc)) from exc
 
     if missing_vars:
         if allow_missing_config:
@@ -85,7 +73,7 @@ def setup_environment(allow_missing_config=False):
         rprint()
         rprint("   [bold]配置示例:[/bold]")
         rprint("      [dim]OPENAI_BASE_URL=https://api.openai.com/v1[/dim]")
-        rprint("      [dim]OPENAI_API_KEY=your-api-key-here[/dim]")
+        rprint("      [dim]OPENAI_API_KEY=your-api-key-here  # 无鉴权端点可留空[/dim]")
         rprint("      [dim]LLM_MODEL=your-model[/dim]")
         rprint()
         raise ConfigurationError("缺少必需的配置项，请运行 'translate init' 初始化配置")
