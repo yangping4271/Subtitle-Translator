@@ -682,6 +682,14 @@ def test_detected_reasoning_warns_once_under_concurrency(monkeypatch):
         ),
         ("https://api.openai.com/v1", "gpt-5.1", True, {}, {}),
         (
+            "https://zenmux.ai/api/v1",
+            "openai/gpt-6-luna",
+            True,
+            {},
+            {"reasoning_effort": "none"},
+        ),
+        ("https://zenmux.ai/api/v1", "openai/gpt-6-luna", False, {}, {}),
+        (
             "https://api.openai.com/v1",
             "gpt-5.6",
             True,

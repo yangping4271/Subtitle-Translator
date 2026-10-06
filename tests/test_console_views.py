@@ -12,6 +12,13 @@ def test_show_model_config_shows_reasoning_disabled(capsys):
     assert "模型: gpt-5.6-luna (思考模式: 已关闭)" in output
 
 
+def test_show_model_config_shows_gpt_6_luna_reasoning_disabled(capsys):
+    show_model_config("openai/gpt-6-luna", provider_type="custom")
+
+    output = capsys.readouterr().out
+    assert "模型: openai/gpt-6-luna (思考模式: 已关闭)" in output
+
+
 def test_show_model_config_treats_dated_deepseek_flash_as_base_model(capsys):
     show_model_config("deepseek-v4-flash-0731")
 

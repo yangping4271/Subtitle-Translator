@@ -18,12 +18,14 @@ def test_normalize_model_name_strips_vendor_prefix():
     assert normalize_model_name("deepseek/deepseek-v4-pro") == "deepseek-v4-pro"
 
 
-def test_registered_gpt_5_6_models_use_openai_none():
+def test_registered_openai_models_use_openai_none():
     for model in (
         "gpt-5.6",
         "gpt-5.6-sol",
         "gpt-5.6-terra",
         "openai/gpt-5.6-luna",
+        "gpt-6-luna",
+        "openai/gpt-6-luna",
     ):
         spec = get_thinking_disable_spec(model)
         assert spec is not None
