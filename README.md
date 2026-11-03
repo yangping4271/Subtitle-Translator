@@ -80,6 +80,10 @@ LLM_MODEL=your-model
 LOG_RAW_PAYLOADS=false
 ```
 
+For OpenCode Go, use its OpenAI-compatible endpoint and the hyphenated model ID
+shown by `GET /models` (for example `deepseek-v4.1-flash`). The client sends the
+required `x-opencode-session` and `User-Agent` headers automatically.
+
 Logs are stored in `~/.local/share/subtitle-translator/logs/app.log`, rotate
 automatically, and use private file permissions. Full subtitle requests and
 model responses are omitted by default; set `LOG_RAW_PAYLOADS=true` only when

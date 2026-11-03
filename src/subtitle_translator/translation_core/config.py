@@ -181,6 +181,8 @@ class SubtitleConfig:
             return "xai"
         if hostname.endswith(("volces.com", "bytepluses.com")):
             return "volcengine"
+        if hostname.endswith("opencode.ai"):
+            return "opencode"
         if hostname == "api.openai.com":
             return "openai"
         return "custom"

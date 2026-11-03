@@ -8,11 +8,13 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol
+from uuid import uuid4
 from openai import OpenAI
 from rich import print as rich_print
 from rich.markup import escape
 
 from ..logger import setup_logger
+from ..version_utils import get_project_version
 from .config import SubtitleConfig, validate_base_url
 from .thinking import apply_thinking_options, detected_reasoning_notice
 
@@ -20,6 +22,18 @@ logger = setup_logger("llm_client")
 
 SLOW_REQUEST_SECONDS = 30.0
 CONTEXT_REFERENCE_TOKENS = 4096
+
+
+def build_default_headers(provider_type: str, session_id: Optional[str] = None) -> dict[str, str]:
+    """构造请求默认头。
+
+    OpenCode Go 要求客户端自报 user agent，并用 x-opencode-session 标记一次
+    会话以复用路由和 prompt 缓存。
+    """
+    headers = {"User-Agent": f"subtitle-translator/{get_project_version()}"}
+    if provider_type == "opencode":
+        headers["x-opencode-session"] = session_id or f"subtitle-translator-{uuid4().hex}"
+    return headers
 
 
 @dataclass(frozen=True)
@@ -277,10 +291,12 @@ class LLMClient:
         """
         validate_base_url(config.openai_base_url)
         self.config = config
-        self._client = OpenAI(
-            base_url=config.openai_base_url, api_key=config.openai_api_key or ""
-        )
         self._provider_type = config.provider_type()
+        self._client = OpenAI(
+            base_url=config.openai_base_url,
+            api_key=config.openai_api_key or "",
+            default_headers=build_default_headers(self._provider_type),
+        )
         self._metrics: list[RequestMetric] = []
         self._metrics_lock = threading.Lock()
         self._reported_reasoning_models: set[str] = set()

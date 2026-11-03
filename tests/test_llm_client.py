@@ -320,6 +320,35 @@ def test_close_releases_the_owned_openai_client(monkeypatch):
     openai_client.close.assert_called_once_with()
 
 
+def test_opencode_client_sends_session_and_user_agent(monkeypatch):
+    openai_factory = Mock(return_value=Mock())
+    monkeypatch.setattr(llm_client, "OpenAI", openai_factory)
+    config = SubtitleConfig(
+        openai_base_url="https://opencode.ai/zen/go/v1",
+        openai_api_key="test-key",
+    )
+
+    LLMClient(config)
+
+    headers = openai_factory.call_args.kwargs["default_headers"]
+    assert headers["x-opencode-session"].startswith("subtitle-translator-")
+    assert headers["User-Agent"].startswith("subtitle-translator/")
+
+
+def test_non_opencode_client_omits_session_header(monkeypatch):
+    openai_factory = Mock(return_value=Mock())
+    monkeypatch.setattr(llm_client, "OpenAI", openai_factory)
+    config = SubtitleConfig(
+        openai_base_url="https://api.openai.com/v1",
+        openai_api_key="test-key",
+    )
+
+    LLMClient(config)
+
+    headers = openai_factory.call_args.kwargs["default_headers"]
+    assert "x-opencode-session" not in headers
+
+
 def test_response_usage_reads_top_level_reasoning_tokens():
     response = {
         "id": "chatcmpl-top-level",

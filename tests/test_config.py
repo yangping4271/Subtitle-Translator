@@ -139,6 +139,7 @@ def test_raw_payload_logging_is_disabled_by_default_and_can_be_enabled(monkeypat
         ("https://api.groq.com/openai/v1", "groq"),
         ("https://generativelanguage.googleapis.com/v1beta/openai/", "google"),
         ("https://api.anthropic.com/v1/", "anthropic"),
+        ("https://opencode.ai/zen/go/v1", "opencode"),
         ("https://api.x.ai/v1", "xai"),
         ("https://ark.cn-beijing.volces.com/api/v3", "volcengine"),
         ("https://ark.ap-southeast.bytepluses.com/api/v3", "volcengine"),

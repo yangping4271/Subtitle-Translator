@@ -75,6 +75,8 @@ LLM_MODEL=your-model
 LOG_RAW_PAYLOADS=false
 ```
 
+使用 OpenCode Go 时，填入它的 OpenAI 兼容端点和 `GET /models` 返回的带连字符模型 ID（例如 `deepseek-v4.1-flash`）。客户端会自动带上必需的 `x-opencode-session` 和 `User-Agent` 请求头。
+
 日志固定保存在 `~/.local/share/subtitle-translator/logs/app.log`，会自动轮转并使用私有文件权限。默认不记录完整字幕请求和模型原始响应；只有排查 payload 问题时才建议临时设置 `LOG_RAW_PAYLOADS=true`。
 
 ## 可选：上下文与术语表
